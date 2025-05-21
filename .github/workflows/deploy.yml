@@ -45,26 +45,6 @@ jobs:
                 git reset --hard origin/main
               fi
               
-              # Tạo file .env từ các biến môi trường
-              cat > .env << EOL
-              AZURE_CLIENT_ID="0a39cc1e-f792-457d-8f99-f9c270243665"
-              AZURE_CLIENT_SECRET="jh98Q~kSTnyifpHtOT8dMHeghreSoc35QccevbpB"
-              AZURE_TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
-              AZURE_GROUP_IDS="dd475730-881b-4c7e-8c8b-13f2160da442,989da314-610e-4be4-9f67-1d6d63e2fc34"
-              MONGO_URI="mongodb://app:$$Group$2024@172.16.20.130:27017/workspace?authSource=workspace"
-              PORT=5001
-              JWT_SECRET="wellspring"
-              BASE_URL="https://api-dev.wellspring.edu.vn"
-              REDIS_URL="redis://:$$Group#2024@172.16.20.120:6379"
-              EMAIL_USER="it@wellspring.edu.vn"
-              TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
-              CLIENT_ID="6af29a3d-2846-4fe3-ab7e-f9f3dc4b74e1"
-              CLIENT_SECRET="HPw8Q~_cHcBT.WAg1PRoNp5A2XRRMlKbjzI6xb_q"
-              EOL
-              
-              # Đảm bảo quyền truy cập phù hợp cho file .env
-              chmod 600 .env
-              
               # Cài đặt dependencies và chạy script
               npm install --production
               node scripts/addEmoji.js
@@ -94,26 +74,6 @@ jobs:
                 git fetch origin
                 git reset --hard origin/main
               fi
-              
-              # Tạo file .env từ các biến môi trường
-              cat > .env << EOL
-              AZURE_CLIENT_ID="0a39cc1e-f792-457d-8f99-f9c270243665"
-              AZURE_CLIENT_SECRET="jh98Q~kSTnyifpHtOT8dMHeghreSoc35QccevbpB"
-              AZURE_TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
-              AZURE_GROUP_IDS="dd475730-881b-4c7e-8c8b-13f2160da442,989da314-610e-4be4-9f67-1d6d63e2fc34"
-              MONGO_URI="mongodb://app:$$Group$2024@172.16.20.130:27017/workspace?authSource=workspace"
-              PORT=5001
-              JWT_SECRET="wellspring"
-              BASE_URL="https://api-dev.wellspring.edu.vn"
-              REDIS_URL="redis://:$$Group#2024@172.16.20.120:6379"
-              EMAIL_USER="it@wellspring.edu.vn"
-              TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
-              CLIENT_ID="6af29a3d-2846-4fe3-ab7e-f9f3dc4b74e1"
-              CLIENT_SECRET="HPw8Q~_cHcBT.WAg1PRoNp5A2XRRMlKbjzI6xb_q"
-              EOL
-              
-              # Đảm bảo quyền truy cập phù hợp cho file .env
-              chmod 600 .env
               
               # Cài đặt dependencies và chạy script
               npm install --production
