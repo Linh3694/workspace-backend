@@ -32,19 +32,13 @@ jobs:
           script: |
             # SSH vào BE-01 và thực hiện deploy
             ssh be-01 '
-              cd /srv/app/backend
+              cd /srv/app/workspace-backend
               
               # Kiểm tra xem đã có git repo chưa
               if [ ! -d .git ]; then
                 # Nếu chưa có git repo, clone mới
                 rm -rf * .*
                 git clone https://github.com/Linh3694/workspace-backend.git .
-                # Di chuyển tất cả files từ workspace-backend ra ngoài (nếu cần)
-                if [ -d "workspace-backend" ]; then
-                  mv workspace-backend/* .
-                  mv workspace-backend/.* . 2>/dev/null || true
-                  rm -rf workspace-backend
-                fi
               else
                 # Nếu đã có git repo, fetch và reset
                 git fetch origin
@@ -88,19 +82,13 @@ jobs:
           script: |
             # SSH vào BE-02 và thực hiện deploy
             ssh be-02 '
-              cd /srv/app/backend
+              cd /srv/app/workspace-backend
               
               # Kiểm tra xem đã có git repo chưa
               if [ ! -d .git ]; then
                 # Nếu chưa có git repo, clone mới
                 rm -rf * .*
                 git clone https://github.com/Linh3694/workspace-backend.git .
-                # Di chuyển tất cả files từ workspace-backend ra ngoài (nếu cần)
-                if [ -d "workspace-backend" ]; then
-                  mv workspace-backend/* .
-                  mv workspace-backend/.* . 2>/dev/null || true
-                  rm -rf workspace-backend
-                fi
               else
                 # Nếu đã có git repo, fetch và reset
                 git fetch origin
