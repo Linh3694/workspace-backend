@@ -6,6 +6,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { check, validationResult } = require("express-validator");
 const mongoose = require("mongoose");
+const redisService = require('../../services/redisService');
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('Kết nối MongoDB thành công!'))
@@ -61,17 +62,25 @@ router.post(
         { expiresIn: "365d" }
       );
 
+      // Lưu token vào Redis
+      await redisService.setAuthToken(user._id, token);
+
+      // Lưu thông tin user vào Redis
+      const userData = {
+        _id: user._id,
+        fullname: user.fullname || "N/A",
+        email: user.email || "N/A",
+        role: user.role || "user",
+        avatar: user.avatar || "https://via.placeholder.com/150",
+        department: user.department || "N/A",
+        needProfileUpdate: user.needProfileUpdate || false,
+      };
+      await redisService.setUserData(user._id, userData);
+
       return res.status(200).json({
         message: "Đăng nhập thành công!",
         token,
-        user: {
-          _id: user._id,
-          fullname: user.fullname || "N/A",
-          email: user.email || "N/A",
-          role: user.role || "user",
-          avatar: user.avatar || "https://via.placeholder.com/150",
-          needProfileUpdate: user.needProfileUpdate || false,
-        },
+        user: userData
       });
     } catch (error) {
       console.error("Lỗi đăng nhập:", error.message);
@@ -150,7 +159,7 @@ router.post("/verify-name", async (req, res) => {
     if (mongoose.Types.ObjectId.isValid(userId)) {
       user = await User.findById(new mongoose.Types.ObjectId(userId));
     }
-    
+
     // Nếu không tìm thấy trong Users, tìm trong Students
     if (!user) {
       user = await Student.findOne({ _id: userId }) || await Student.findOne({ studentCode: userId });
@@ -175,6 +184,28 @@ router.post("/verify-name", async (req, res) => {
   } catch (error) {
     console.error("⚠️ Lỗi xác thực tên:", error);
     return res.status(500).json({ success: false, message: "Lỗi server!" });
+  }
+});
+
+// Thêm route đăng xuất
+router.post("/logout", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(400).json({ message: "Token không tồn tại" });
+    }
+
+    // Giải mã token để lấy user ID
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id;
+
+    // Xóa token khỏi Redis
+    await redisService.deleteAuthToken(userId);
+
+    res.status(200).json({ message: "Đăng xuất thành công" });
+  } catch (error) {
+    console.error("Lỗi đăng xuất:", error);
+    res.status(500).json({ message: "Lỗi server khi đăng xuất" });
   }
 });
 

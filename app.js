@@ -78,7 +78,7 @@ const connectDB = async () => {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    await connectRedis();
+    // await connectRedis();
   } catch (error) {
     process.exit(1);
   }

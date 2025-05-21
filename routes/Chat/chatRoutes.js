@@ -12,6 +12,9 @@ router.post('/create', authenticate, chatController.createOrGetChat);
 // Lấy danh sách chat của user
 router.get('/list', authenticate, chatController.getUserChats);
 
+// Lấy danh sách người dùng gần đây
+router.get('/recent-users', authenticate, chatController.getRecentUsers);
+
 // Gửi tin nhắn
 router.post('/message', authenticate, chatController.sendMessage);
 

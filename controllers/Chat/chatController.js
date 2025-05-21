@@ -2,6 +2,7 @@ const Chat = require('../../models/Chat');
 const Message = require('../../models/Message');
 const User = require('../../models/Users');
 const notificationController = require('../Notification/notificationController');
+const redisService = require('../../services/redisService');
 
 // Tạo chat mới hoặc lấy chat hiện có
 exports.createOrGetChat = async (req, res) => {
@@ -9,20 +10,29 @@ exports.createOrGetChat = async (req, res) => {
         const { participantId } = req.body;
         const currentUserId = req.user._id;
 
-        // Kiểm tra xem đã có chat giữa 2 người chưa
-        let chat = await Chat.findOne({
-            participants: {
-                $all: [currentUserId, participantId],
-                $size: 2
-            }
-        }).populate('participants', 'fullname avatarUrl email');
+        // Kiểm tra cache trước
+        const cacheKey = `chat:${currentUserId}_${participantId}`;
+        let chat = await redisService.getChatData(cacheKey);
 
         if (!chat) {
-            // Tạo chat mới nếu chưa có
-            chat = await Chat.create({
-                participants: [currentUserId, participantId]
-            });
-            chat = await chat.populate('participants', 'fullname avatarUrl email');
+            // Nếu không có trong cache, truy vấn database
+            chat = await Chat.findOne({
+                participants: {
+                    $all: [currentUserId, participantId],
+                    $size: 2
+                }
+            }).populate('participants', 'fullname avatarUrl email department');
+
+            if (!chat) {
+                // Tạo chat mới nếu chưa có
+                chat = await Chat.create({
+                    participants: [currentUserId, participantId]
+                });
+                chat = await chat.populate('participants', 'fullname avatarUrl email department');
+            }
+
+            // Lưu vào cache
+            await redisService.setChatData(cacheKey, chat);
         }
 
         res.status(200).json(chat);
@@ -36,14 +46,22 @@ exports.getUserChats = async (req, res) => {
     try {
         const userId = req.user._id;
 
-        // Chỉ lấy các cuộc trò chuyện có lastMessage (đã có tin nhắn)
-        const chats = await Chat.find({
-            participants: userId,
-            lastMessage: { $exists: true, $ne: null }
-        })
-            .populate('participants', 'fullname avatarUrl email')
-            .populate('lastMessage')
-            .sort({ updatedAt: -1 });
+        // Kiểm tra cache trước
+        let chats = await redisService.getUserChats(userId);
+
+        if (!chats) {
+            // Nếu không có trong cache, truy vấn database
+            chats = await Chat.find({
+                participants: userId,
+                lastMessage: { $exists: true, $ne: null }
+            })
+                .populate('participants', 'fullname avatarUrl email department')
+                .populate('lastMessage')
+                .sort({ updatedAt: -1 });
+
+            // Lưu vào cache
+            await redisService.setUserChats(userId, chats);
+        }
 
         res.status(200).json(chats);
     } catch (error) {
@@ -106,6 +124,12 @@ exports.sendMessage = async (req, res) => {
             io.to(p._id.toString()).emit('newChat', updatedChat)
         );
 
+        // Xóa cache liên quan
+        await redisService.deleteChatMessagesCache(chatId);
+        updatedChat.participants.forEach(async (p) => {
+            await redisService.deleteUserChatsCache(p._id.toString());
+        });
+
         // Gửi thông báo push cho người nhận
         if (chat) {
             notificationController.sendNewChatMessageNotification(
@@ -125,17 +149,27 @@ exports.sendMessage = async (req, res) => {
 exports.getChatMessages = async (req, res) => {
     try {
         const { chatId } = req.params;
-        const messages = await Message.find({ chat: chatId })
-            .populate('sender', 'fullname avatarUrl email')
-            .populate('originalSender', 'fullname avatarUrl email')
-            .populate({
-                path: 'replyTo',
-                populate: {
-                    path: 'sender',
-                    select: 'fullname avatarUrl email'
-                }
-            })
-            .sort({ createdAt: 1 });
+
+        // Kiểm tra cache trước
+        let messages = await redisService.getChatMessages(chatId);
+
+        if (!messages) {
+            // Nếu không có trong cache, truy vấn database
+            messages = await Message.find({ chat: chatId })
+                .populate('sender', 'fullname avatarUrl email')
+                .populate('originalSender', 'fullname avatarUrl email')
+                .populate({
+                    path: 'replyTo',
+                    populate: {
+                        path: 'sender',
+                        select: 'fullname avatarUrl email'
+                    }
+                })
+                .sort({ createdAt: 1 });
+
+            // Lưu vào cache
+            await redisService.setChatMessages(chatId, messages);
+        }
 
         res.status(200).json(messages);
     } catch (error) {
@@ -157,6 +191,9 @@ exports.markMessageAsRead = async (req, res) => {
         if (!message.readBy.includes(userId)) {
             message.readBy.push(userId);
             await message.save();
+
+            // Xóa cache tin nhắn của chat
+            await redisService.deleteChatMessagesCache(message.chat);
 
             // Emit socket event thông báo tin nhắn đã được đọc
             const io = req.app.get('io');
@@ -206,19 +243,29 @@ exports.uploadChatAttachment = async (req, res) => {
             lastMessage: message._id,
             updatedAt: Date.now()
         });
+
         // Populate sender
         const populatedMessage = await Message.findById(message._id)
             .populate('sender', 'fullname avatarUrl email');
+
         // Emit socket event
         const io = req.app.get('io');
         io.to(chatId).emit('receiveMessage', populatedMessage);
+
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email')
             .populate('lastMessage');
+
         updatedChat.participants.forEach(p =>
             io.to(p._id.toString()).emit('newChat', updatedChat)
         );
+
+        // Xóa cache liên quan
+        await redisService.deleteChatMessagesCache(chatId);
+        updatedChat.participants.forEach(async (p) => {
+            await redisService.deleteUserChatsCache(p._id.toString());
+        });
 
         // Gửi thông báo push cho người nhận
         if (chat) {
@@ -285,6 +332,12 @@ exports.uploadMultipleImages = async (req, res) => {
             io.to(p._id.toString()).emit('newChat', updatedChat)
         );
 
+        // Xóa cache liên quan
+        await redisService.deleteChatMessagesCache(chatId);
+        updatedChat.participants.forEach(async (p) => {
+            await redisService.deleteUserChatsCache(p._id.toString());
+        });
+
         // Gửi thông báo push cho người nhận
         if (chat) {
             notificationController.sendNewChatMessageNotification(
@@ -339,6 +392,9 @@ exports.addReaction = async (req, res) => {
 
         await message.save();
 
+        // Xóa cache tin nhắn của chat
+        await redisService.deleteChatMessagesCache(message.chat);
+
         const populatedMessage = await Message.findById(messageId)
             .populate('sender', 'fullname avatarUrl email')
             .populate('reactions.user', 'fullname avatarUrl email');
@@ -373,6 +429,9 @@ exports.removeReaction = async (req, res) => {
         );
 
         await message.save();
+
+        // Xóa cache tin nhắn của chat
+        await redisService.deleteChatMessagesCache(message.chat);
 
         // Emit socket event
         const io = req.app.get('io');
@@ -426,13 +485,17 @@ exports.replyToMessage = async (req, res) => {
                 }
             });
 
+        // Xóa cache liên quan
+        await redisService.deleteChatMessagesCache(chatId);
+        const chat = await Chat.findById(chatId)
+            .populate('participants', 'fullname avatarUrl email');
+        chat.participants.forEach(async (p) => {
+            await redisService.deleteUserChatsCache(p._id.toString());
+        });
+
         // Emit socket event
         const io = req.app.get('io');
         io.to(chatId).emit('receiveMessage', populatedMessage);
-
-        // Lấy thông tin chat để gửi thông báo
-        const chat = await Chat.findById(chatId)
-            .populate('participants', 'fullname avatarUrl email');
 
         // Gửi thông báo push cho người nhận
         notificationController.sendNewChatMessageNotification(
@@ -514,6 +577,12 @@ exports.pinMessage = async (req, res) => {
             await chat.save();
         }
 
+        // Xóa cache liên quan
+        await redisService.deleteChatMessagesCache(chat._id);
+        chat.participants.forEach(async (p) => {
+            await redisService.deleteUserChatsCache(p.toString());
+        });
+
         // Populate tin nhắn đã ghim
         const populatedMessage = await Message.findById(messageId)
             .populate('sender', 'fullname avatarUrl email')
@@ -569,6 +638,12 @@ exports.unpinMessage = async (req, res) => {
         );
         await chat.save();
 
+        // Xóa cache liên quan
+        await redisService.deleteChatMessagesCache(chat._id);
+        chat.participants.forEach(async (p) => {
+            await redisService.deleteUserChatsCache(p.toString());
+        });
+
         // Emit socket event
         const io = req.app.get('io');
         io.to(chat._id.toString()).emit('messageUnpinned', { messageId });
@@ -618,44 +693,77 @@ exports.getPinnedMessages = async (req, res) => {
 
 // === THÊM MỚI: XỬ LÝ CHUYỂN TIẾP TIN NHẮN ===
 
+// Lấy danh sách người dùng đã chat gần đây
+exports.getRecentUsers = async (req, res) => {
+    try {
+        const currentUserId = req.user._id;
+
+        // Lấy các chat gần đây của user
+        const recentChats = await Chat.find({
+            participants: currentUserId,
+            lastMessage: { $exists: true }
+        })
+            .sort({ updatedAt: -1 })
+            .limit(10)
+            .populate('participants', 'fullname avatarUrl email department');
+
+        // Lọc ra danh sách người dùng (không bao gồm user hiện tại)
+        const recentUsers = recentChats.reduce((users, chat) => {
+            const otherParticipants = chat.participants.filter(
+                p => p._id.toString() !== currentUserId.toString()
+            );
+            return [...users, ...otherParticipants];
+        }, []);
+
+        // Loại bỏ các user trùng lặp
+        const uniqueUsers = Array.from(new Map(
+            recentUsers.map(user => [user._id.toString(), user])
+        ).values());
+
+        res.status(200).json({ users: uniqueUsers });
+    } catch (error) {
+        console.error('Lỗi khi lấy danh sách người dùng gần đây:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
 // Chuyển tiếp tin nhắn
 exports.forwardMessage = async (req, res) => {
     try {
-        const { messageId, targetChatId } = req.body;
-        const senderId = req.user._id;
+        const { messageId, toUserId } = req.body;
+        const fromUserId = req.user._id;
 
-        // Tìm tin nhắn gốc
-        const originalMessage = await Message.findById(messageId).populate('sender', 'fullname avatarUrl email');
+        // Kiểm tra tin nhắn gốc
+        const originalMessage = await Message.findById(messageId)
+            .populate('sender', 'fullname avatarUrl email');
         if (!originalMessage) {
             return res.status(404).json({ message: 'Không tìm thấy tin nhắn gốc' });
         }
 
-        // Tìm chat đích
-        const targetChat = await Chat.findById(targetChatId);
-        if (!targetChat) {
-            return res.status(404).json({ message: 'Không tìm thấy chat đích' });
-        }
+        // Tìm hoặc tạo chat với người nhận
+        let chat = await Chat.findOne({
+            participants: {
+                $all: [fromUserId, toUserId],
+                $size: 2
+            }
+        });
 
-        // Kiểm tra xem người dùng có quyền truy cập chat đích không
-        const isParticipant = targetChat.participants.some(
-            participant => participant.toString() === senderId.toString()
-        );
-
-        if (!isParticipant) {
-            return res.status(403).json({ message: 'Bạn không có quyền truy cập chat đích' });
+        if (!chat) {
+            chat = await Chat.create({
+                participants: [fromUserId, toUserId]
+            });
         }
 
         // Tạo tin nhắn chuyển tiếp
         const forwardedMessage = new Message({
-            chat: targetChatId,
-            sender: senderId,
+            chat: chat._id,
+            sender: fromUserId,
             content: originalMessage.content,
             type: originalMessage.type,
             isForwarded: true,
             originalMessage: messageId,
             originalSender: originalMessage.sender._id,
-            readBy: [senderId],
-            // Sao chép các trường khác cần thiết
+            readBy: [fromUserId],
             fileUrl: originalMessage.fileUrl,
             fileUrls: originalMessage.fileUrls,
             isEmoji: originalMessage.isEmoji,
@@ -667,23 +775,29 @@ exports.forwardMessage = async (req, res) => {
 
         await forwardedMessage.save();
 
-        // Cập nhật lastMessage trong chat đích
-        await Chat.findByIdAndUpdate(targetChatId, {
+        // Cập nhật lastMessage trong chat
+        await Chat.findByIdAndUpdate(chat._id, {
             lastMessage: forwardedMessage._id,
             updatedAt: Date.now()
         });
 
-        // Populate các trường cần thiết cho tin nhắn chuyển tiếp
+        // Populate các trường cần thiết
         const populatedMessage = await Message.findById(forwardedMessage._id)
             .populate('sender', 'fullname avatarUrl email')
             .populate('originalSender', 'fullname avatarUrl email');
 
+        // Xóa cache liên quan
+        await redisService.deleteChatMessagesCache(chat._id);
+        chat.participants.forEach(async (p) => {
+            await redisService.deleteUserChatsCache(p.toString());
+        });
+
         // Emit socket event
         const io = req.app.get('io');
-        io.to(targetChatId).emit('receiveMessage', populatedMessage);
+        io.to(chat._id.toString()).emit('receiveMessage', populatedMessage);
 
         // Lấy lại chat đã cập nhật kèm populate
-        const updatedChat = await Chat.findById(targetChatId)
+        const updatedChat = await Chat.findById(chat._id)
             .populate('participants', 'fullname avatarUrl email')
             .populate('lastMessage');
 
@@ -695,12 +809,12 @@ exports.forwardMessage = async (req, res) => {
         notificationController.sendNewChatMessageNotification(
             forwardedMessage,
             req.user.fullname,
-            targetChat
+            chat
         );
 
         res.status(201).json(populatedMessage);
     } catch (error) {
-        console.error('Error forwarding message:', error);
+        console.error('Lỗi khi chuyển tiếp tin nhắn:', error);
         res.status(500).json({ message: error.message });
     }
 }; 

@@ -5,6 +5,7 @@ const { OIDCStrategy } = require("passport-azure-ad");
 const jwt = require("jsonwebtoken");
 const User = require("../../models/Users");
 const router = express.Router();
+const redisService = require('../../services/redisService');
 
 const azureConfig = require("../../config/azure");
 
@@ -49,8 +50,14 @@ passport.use(
             needProfileUpdate: true, // Đánh dấu yêu cầu bổ sung thông tin
           });
           await user.save();
+
+          // Xóa cache danh sách users khi tạo user mới
+          await redisService.deleteAllUsersCache();
         }
-        // Nếu user đã tồn tại, bạn có thể cập nhật thông tin (nếu cần)
+
+        // Lưu thông tin user vào Redis
+        await redisService.setUserData(user._id, user);
+
         return done(null, user);
       } catch (error) {
         return done(error, null);
@@ -62,8 +69,21 @@ passport.use(
 // Serialize/Deserialize (nếu dùng session)
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser(async (id, done) => {
-  const user = await User.findById(id);
-  done(null, user);
+  try {
+    // Kiểm tra cache trước
+    let user = await redisService.getUserData(id);
+    if (!user) {
+      // Nếu không có trong cache, truy vấn database
+      user = await User.findById(id);
+      if (user) {
+        // Lưu vào cache
+        await redisService.setUserData(id, user);
+      }
+    }
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
 });
 
 // Route bắt đầu flow OAuth với Microsoft
@@ -79,7 +99,6 @@ router.get("/microsoft", (req, res, next) => {
 });
 
 router.get("/microsoft/callback", (req, res, next) => {
-
   let redirectUri = "";
   let isMobile = false;
   let isAdmission = false;
@@ -93,7 +112,7 @@ router.get("/microsoft/callback", (req, res, next) => {
     delete req.session.authState;
   }
 
-  passport.authenticate("azuread-openidconnect", (err, user, info) => {
+  passport.authenticate("azuread-openidconnect", async (err, user, info) => {
     if (err) {
       console.error("❌ Lỗi từ Microsoft OAuth:", err);
       return res.redirect(`http://localhost:3000/login?error=${encodeURIComponent(err.message)}`);
@@ -110,6 +129,10 @@ router.get("/microsoft/callback", (req, res, next) => {
         process.env.JWT_SECRET,
         { expiresIn: "365d" }
       );
+
+      // Lưu token vào Redis
+      await redisService.setAuthToken(user._id, token);
+
       // Nếu đăng nhập từ mobile và có redirectUri thì chuyển về mobile
       if (isMobile && redirectUri) {
         return res.redirect(`${redirectUri}?token=${token}`);

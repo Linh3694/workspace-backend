@@ -5,6 +5,7 @@ const Projector = require("../../models/Projector");
 const Printer = require("../../models/Printer");
 const Tool = require("../../models/Tool");
 const bcrypt = require("bcryptjs"); // Import bcrypt for password hashing
+const redisService = require('../../services/redisService');
 
 // Gán thiết bị cho người dùng
 exports.getAssignedItems = async (req, res) => {
@@ -46,7 +47,16 @@ exports.getAssignedItems = async (req, res) => {
 // Get Users
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find({}, "-password"); // Exclude password for security
+    // Kiểm tra cache trước
+    let users = await redisService.getAllUsers();
+
+    if (!users) {
+      // Nếu không có trong cache, truy vấn database
+      users = await User.find({}, "-password"); // Exclude password for security
+      // Lưu vào cache
+      await redisService.setAllUsers(users);
+    }
+
     res.status(200).json(users);
   } catch (error) {
     console.error("Error fetching users:", error.message);
@@ -65,7 +75,7 @@ exports.createUser = async (req, res) => {
     const newUser = new User({
       fullname,
       email,
-      password: hashedPassword, // Chỉ lưu nếu password được cung cấp
+      password: hashedPassword,
       role,
       employeeCode,
       avatarUrl: avatar,
@@ -73,6 +83,10 @@ exports.createUser = async (req, res) => {
     });
 
     await newUser.save();
+
+    // Xóa cache danh sách users
+    await redisService.deleteAllUsersCache();
+
     res.status(201).json({ message: "Tạo người dùng thành công", user: newUser });
   } catch (error) {
     console.error("Error creating user:", error.message);
@@ -106,7 +120,6 @@ exports.updateUser = async (req, res) => {
 
     // Nếu gửi file avatar => cập nhật avatarUrl
     if (req.file) {
-      // đường dẫn file do multer lưu
       user.avatarUrl = `/uploads/Avatar/${req.file.filename}`;
     }
 
@@ -149,6 +162,11 @@ exports.updateUser = async (req, res) => {
     }
 
     await user.save();
+
+    // Xóa cache liên quan
+    await redisService.deleteUserCache(id);
+    await redisService.deleteAllUsersCache();
+
     console.log("Đã cập nhật user thành công:", user.fullname);
 
     // Ẩn password
@@ -173,6 +191,10 @@ exports.deleteUser = async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
+    // Xóa cache liên quan
+    await redisService.deleteUserCache(req.params.id);
+    await redisService.deleteAllUsersCache();
+
     res.status(200).json({ message: "User deleted successfully!" });
   } catch (error) {
     console.error("Error deleting user:", error.message);
@@ -190,14 +212,17 @@ exports.updateAttendance = async (req, res) => {
 
     // Tìm user bằng employeeCode và cập nhật attendanceLog
     const user = await User.findOneAndUpdate(
-      { employeeCode }, // Bộ lọc sử dụng employeeCode
-      { $push: { attendanceLog: { $each: attendanceLog } } }, // Thêm attendanceLog mới
+      { employeeCode },
+      { $push: { attendanceLog: { $each: attendanceLog } } },
       { new: true, upsert: false }
     );
 
     if (!user) {
       return res.status(404).json({ message: "Không tìm thấy nhân viên" });
     }
+
+    // Xóa cache user
+    await redisService.deleteUserCache(user._id);
 
     return res.status(200).json({ message: "Cập nhật thành công", user });
   } catch (error) {
@@ -217,39 +242,34 @@ exports.bulkAvatarUpload = async (req, res) => {
     let updatedCount = 0;
 
     for (const file of req.files) {
-      // Lấy tên gốc khi upload
-      const originalName = file.originalname; // ví dụ: "Bùi Quỳnh Mai+_WT02GO.jpeg"
-
-      // Tách chuỗi bằng ký tự '_', phần cuối sẽ là mã nhân viên + extension
-      // "Bùi Quỳnh Mai+" / "WT02GO.jpeg"
+      const originalName = file.originalname;
       const parts = originalName.split("_");
       if (parts.length < 2) {
-        // Nếu không đúng format (không có dấu '_'), thì bỏ qua
         continue;
       }
 
-      // Lấy phần cuối cùng "WT02GO.jpeg"
       const lastPart = parts[parts.length - 1];
-      // Tách tiếp để bỏ đuôi .jpeg
-      const employeeCode = lastPart.split(".")[0]; // "WT02GO"
+      const employeeCode = lastPart.split(".")[0];
 
       if (!employeeCode) {
-        // Nếu không lấy được employeeCode thì bỏ qua
         continue;
       }
 
-      // Tìm user trong DB theo employeeCode
       const user = await User.findOneAndUpdate(
         { employeeCode: employeeCode },
-        { avatarUrl: file.filename }, // hoặc bạn muốn lưu cả đường dẫn: `'/uploads/Avatar/' + file.filename`
+        { avatarUrl: file.filename },
         { new: true }
       );
 
-      // Nếu update thành công, tăng biến đếm
       if (user) {
+        // Xóa cache user
+        await redisService.deleteUserCache(user._id);
         updatedCount++;
       }
     }
+
+    // Xóa cache danh sách users
+    await redisService.deleteAllUsersCache();
 
     return res.status(200).json({
       message: "Bulk avatar upload thành công",
@@ -277,14 +297,23 @@ exports.bulkUpdateUsers = async (req, res) => {
     // Lặp và cập nhật
     const updatePromises = users.map(async (user) => {
       if (!user.email) throw new Error("Email là bắt buộc");
-      return User.findOneAndUpdate(
+      const updatedUser = await User.findOneAndUpdate(
         { email: user.email },
         { $set: user },
         { new: true, upsert: false }
       );
+      if (updatedUser) {
+        // Xóa cache user
+        await redisService.deleteUserCache(updatedUser._id);
+      }
+      return updatedUser;
     });
 
     await Promise.all(updatePromises);
+
+    // Xóa cache danh sách users
+    await redisService.deleteAllUsersCache();
+
     res.json({ message: "Cập nhật thành công!" });
   } catch (error) {
     console.error("Lỗi khi cập nhật:", error.message);
@@ -320,13 +349,42 @@ exports.searchUsers = async (req, res) => {
 exports.getUserById = async (req, res) => {
   try {
     const userId = req.params.id === "me" ? req.user.id : req.params.id;
-    const user = await User.findById(userId);
+
+    // Kiểm tra cache trước
+    let user = await redisService.getUserData(userId);
+
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      // Nếu không có trong cache, truy vấn database
+      user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      // Lưu vào cache
+      await redisService.setUserData(userId, user);
     }
+
     res.json(user);
   } catch (error) {
     console.error("Error fetching user by ID:", error.message);
     res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Lấy danh sách người dùng trong cùng phòng ban
+exports.getUsersByDepartment = async (req, res) => {
+  console.log('Received params:', req.params);
+  console.log('Department param:', req.params.department);
+  try {
+    const { department } = req.params;
+
+    const users = await User.find(
+      { department },
+      "fullname avatarUrl email department"
+    );
+
+    res.status(200).json({ users });
+  } catch (error) {
+    console.error("Error fetching department users:", error.message);
+    res.status(500).json({ message: "Error fetching department users", error: error.message });
   }
 };

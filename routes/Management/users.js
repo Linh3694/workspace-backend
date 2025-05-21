@@ -16,6 +16,9 @@ router.put("/bulk-avatar", uploadAvatar.array("avatars"), userController.bulkAva
 // GET search
 router.get("/search", userController.searchUsers);
 
+// GET danh sách người dùng trong cùng phòng ban
+router.get("/department/:department", validateToken, userController.getUsersByDepartment);
+
 // GET user theo ID (hoặc 'me')
 router.get("/:id", validateToken, userController.getUserById);
 
