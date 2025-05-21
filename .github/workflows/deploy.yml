@@ -1,0 +1,129 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy through Load Balancer to BE-01
+        uses: appleboy/ssh-action@master
+        with:
+          host: 42.96.41.26
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # SSH vào BE-01 và thực hiện deploy
+            ssh be-01 '
+              cd /srv/app/backend
+              git pull origin main
+              npm ci --production
+              
+              # Tạo file .env từ các biến môi trường
+              cat > .env << EOL
+              AZURE_CLIENT_ID="0a39cc1e-f792-457d-8f99-f9c270243665"
+              AZURE_CLIENT_SECRET="jh98Q~kSTnyifpHtOT8dMHeghreSoc35QccevbpB"
+              AZURE_TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
+              AZURE_GROUP_IDS="dd475730-881b-4c7e-8c8b-13f2160da442,989da314-610e-4be4-9f67-1d6d63e2fc34"
+              MONGO_URI="mongodb://app:$$Group$2024@172.16.20.130:27017/workspace?authSource=workspace"
+              PORT=5001
+              JWT_SECRET="wellspring"
+              BASE_URL="https://api-dev.wellspring.edu.vn"
+              REDIS_URL="redis://:$$Group#2024@172.16.20.120:6379"
+              EMAIL_USER="it@wellspring.edu.vn"
+              TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
+              CLIENT_ID="6af29a3d-2846-4fe3-ab7e-f9f3dc4b74e1"
+              CLIENT_SECRET="HPw8Q~_cHcBT.WAg1PRoNp5A2XRRMlKbjzI6xb_q"
+              EOL
+              
+              # Đảm bảo quyền truy cập phù hợp cho file .env
+              chmod 600 .env
+              
+              # Chạy script emoji
+              node scripts/addEmoji.js
+              
+              # Reload ứng dụng
+              pm2 reload all
+            '
+
+      - name: Deploy through Load Balancer to BE-02
+        uses: appleboy/ssh-action@master
+        with:
+          host: 42.96.41.26
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # SSH vào BE-02 và thực hiện deploy
+            ssh be-02 '
+              cd /srv/app/backend
+              git pull origin main
+              npm ci --production
+              
+              # Tạo file .env từ các biến môi trường
+              cat > .env << EOL
+              AZURE_CLIENT_ID="0a39cc1e-f792-457d-8f99-f9c270243665"
+              AZURE_CLIENT_SECRET="jh98Q~kSTnyifpHtOT8dMHeghreSoc35QccevbpB"
+              AZURE_TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
+              AZURE_GROUP_IDS="dd475730-881b-4c7e-8c8b-13f2160da442,989da314-610e-4be4-9f67-1d6d63e2fc34"
+              MONGO_URI="mongodb://app:$$Group$2024@172.16.20.130:27017/workspace?authSource=workspace"
+              PORT=5001
+              JWT_SECRET="wellspring"
+              BASE_URL="https://api-dev.wellspring.edu.vn"
+              REDIS_URL="redis://:$$Group#2024@172.16.20.120:6379"
+              EMAIL_USER="it@wellspring.edu.vn"
+              TENANT_ID="653b7f37-392c-416b-b3f0-34859ed6d6eb"
+              CLIENT_ID="6af29a3d-2846-4fe3-ab7e-f9f3dc4b74e1"
+              CLIENT_SECRET="HPw8Q~_cHcBT.WAg1PRoNp5A2XRRMlKbjzI6xb_q"
+              EOL
+              
+              # Đảm bảo quyền truy cập phù hợp cho file .env
+              chmod 600 .env
+              
+              # Chạy script emoji
+              node scripts/addEmoji.js
+              
+              # Reload ứng dụng
+              pm2 reload all
+            '
+
+      - name: Health Check
+        uses: appleboy/ssh-action@master
+        with:
+          host: 42.96.41.26
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Chờ 30 giây cho các service khởi động
+            sleep 30
+            
+            # Kiểm tra health của BE-01
+            BE1_HEALTH=$(ssh be-01 'curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/health')
+            
+            # Kiểm tra health của BE-02
+            BE2_HEALTH=$(ssh be-02 'curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/health')
+            
+            if [ "$BE1_HEALTH" != "200" ] || [ "$BE2_HEALTH" != "200" ]; then
+              echo "Health check failed!"
+              echo "BE-01 health status: $BE1_HEALTH"
+              echo "BE-02 health status: $BE2_HEALTH"
+              exit 1
+            fi
+            
+            echo "Deployment successful! Both backends are healthy." 
