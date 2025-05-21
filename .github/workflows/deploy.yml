@@ -33,8 +33,23 @@ jobs:
             # SSH vào BE-01 và thực hiện deploy
             ssh be-01 '
               cd /srv/app/backend
-              git pull origin main
-              npm ci --production
+              
+              # Kiểm tra xem đã có git repo chưa
+              if [ ! -d .git ]; then
+                # Nếu chưa có git repo, clone mới
+                rm -rf * .*
+                git clone https://github.com/Linh3694/workspace-backend.git .
+                # Di chuyển tất cả files từ workspace-backend ra ngoài (nếu cần)
+                if [ -d "workspace-backend" ]; then
+                  mv workspace-backend/* .
+                  mv workspace-backend/.* . 2>/dev/null || true
+                  rm -rf workspace-backend
+                fi
+              else
+                # Nếu đã có git repo, fetch và reset
+                git fetch origin
+                git reset --hard origin/main
+              fi
               
               # Tạo file .env từ các biến môi trường
               cat > .env << EOL
@@ -56,7 +71,8 @@ jobs:
               # Đảm bảo quyền truy cập phù hợp cho file .env
               chmod 600 .env
               
-              # Chạy script emoji
+              # Cài đặt dependencies và chạy script
+              npm ci --production
               node scripts/addEmoji.js
               
               # Reload ứng dụng
@@ -73,8 +89,23 @@ jobs:
             # SSH vào BE-02 và thực hiện deploy
             ssh be-02 '
               cd /srv/app/backend
-              git pull origin main
-              npm ci --production
+              
+              # Kiểm tra xem đã có git repo chưa
+              if [ ! -d .git ]; then
+                # Nếu chưa có git repo, clone mới
+                rm -rf * .*
+                git clone https://github.com/Linh3694/workspace-backend.git .
+                # Di chuyển tất cả files từ workspace-backend ra ngoài (nếu cần)
+                if [ -d "workspace-backend" ]; then
+                  mv workspace-backend/* .
+                  mv workspace-backend/.* . 2>/dev/null || true
+                  rm -rf workspace-backend
+                fi
+              else
+                # Nếu đã có git repo, fetch và reset
+                git fetch origin
+                git reset --hard origin/main
+              fi
               
               # Tạo file .env từ các biến môi trường
               cat > .env << EOL
@@ -96,7 +127,8 @@ jobs:
               # Đảm bảo quyền truy cập phù hợp cho file .env
               chmod 600 .env
               
-              # Chạy script emoji
+              # Cài đặt dependencies và chạy script
+              npm ci --production
               node scripts/addEmoji.js
               
               # Reload ứng dụng
