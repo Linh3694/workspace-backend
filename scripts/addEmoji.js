@@ -7,7 +7,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 // Kết nối MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/inventory')
+mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('Đã kết nối với MongoDB'))
     .catch(err => {
         console.error('Lỗi kết nối MongoDB:', err);

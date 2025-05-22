@@ -6,7 +6,18 @@ class RedisService {
         // Trong môi trường local, không khởi tạo Redis client
         if (process.env.NODE_ENV === 'production') {
             this.client = createClient({
-                url: process.env.REDIS_URL
+                socket: {
+                    host: process.env.REDIS_HOST || 'localhost',
+                    port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
+                    reconnectStrategy: (retries) => {
+                        if (retries > 10) {
+                            console.error('Redis connection lost. Max retries reached.');
+                            return new Error('Redis max retries reached');
+                        }
+                        return Math.min(retries * 100, 3000);
+                    }
+                },
+                password: process.env.REDIS_PASSWORD
             });
 
             this.client.on('error', (err) => console.log('Redis Client Error', err));

@@ -45,16 +45,16 @@ exports.createTicket = async (req, res) => {
   try {
     const { title, description, priority, creator, notes } = req.body;
 
-   const newTicket = await createTicketHelper({
-     title,
-     description,
-     priority,
-     creatorId: creator,
-     files: req.files || [],
-   });
+    const newTicket = await createTicketHelper({
+      title,
+      description,
+      priority,
+      creatorId: creator,
+      files: req.files || [],
+    });
     // notes
-   newTicket.notes = notes || "";
-   await newTicket.save();
+    newTicket.notes = notes || "";
+    await newTicket.save();
 
     // Gửi thông báo đến admin và technical
     await notificationController.sendNewTicketNotification(newTicket);
@@ -67,7 +67,7 @@ exports.createTicket = async (req, res) => {
 
 // a) Lấy danh sách ticket
 exports.getTickets = async (req, res) => {
-    console.log("🔵 Kiểm tra req.user:", req.user); // ✅ Kiểm tra user có tồn tại không
+  console.log("🔵 Kiểm tra req.user:", req.user); // ✅ Kiểm tra user có tồn tại không
 
   const { status, priority } = req.query;
   const userId = req.user._id; // Lấy ID user từ token
@@ -238,7 +238,7 @@ exports.addFeedback = async (req, res) => {
 
       // Gán giá trị feedback
       ticket.feedback = {
-        assignedTo: ticket.assignedTo, 
+        assignedTo: ticket.assignedTo,
         rating,
         comment: comment || "", // comment không bắt buộc, nếu không có thì lưu chuỗi rỗng
         badges: badges || [], // Gán mảng huy hiệu
@@ -273,17 +273,17 @@ exports.addFeedback = async (req, res) => {
       ticket.feedback.badges = badges || [];
 
       ticket.history.push({
-  timestamp: new Date(),
-  action: ` <strong>${req.user.fullname}</strong> đã cập nhật đánh giá từ <strong>${oldRating}</strong> lên <strong>${rating}</strong> sao, nhận xét: "<strong>${comment}</strong>"`,
-  user: req.user._id,
-});
+        timestamp: new Date(),
+        action: ` <strong>${req.user.fullname}</strong> đã cập nhật đánh giá từ <strong>${oldRating}</strong> lên <strong>${rating}</strong> sao, nhận xét: "<strong>${comment}</strong>"`,
+        user: req.user._id,
+      });
     }
 
     await ticket.save();
-    
+
     // Gửi thông báo khi khách hàng gửi feedback
     await notificationController.sendFeedbackNotification(ticket);
-    
+
     return res.status(200).json({
       success: true,
       ticket,
@@ -666,7 +666,7 @@ exports.removeUserFromSupportTeam = async (req, res) => {
 
 async function createTicketHelper({ title, description, creatorId, priority, files = [] }) {
   // 1) Tính SLA Phase 1 (4h, 8:00 - 17:00)
-  const phase1Duration = 4; 
+  const phase1Duration = 4;
   const startHour = 8;
   const endHour = 17;
 

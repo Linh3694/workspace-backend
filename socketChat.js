@@ -9,7 +9,7 @@ const typingUsers = {};
 const userActivityTimeouts = {};
 const USER_OFFLINE_TIMEOUT = 60 * 1000; // 60 giây không hoạt động sẽ tự động offline
 
-module.exports = function(io) {
+module.exports = function (io) {
   // Hàm để đánh dấu người dùng offline sau một khoảng thời gian
   const setUserInactiveTimeout = (userId) => {
     // Xóa timeout cũ nếu có
@@ -258,7 +258,7 @@ module.exports = function(io) {
         // Lưu trạng thái typing
         typingUsers[chatId][userId] = true;
 
-      // Broadcast typing event to the chat room
+        // Broadcast typing event to the chat room
         socket.to(chatId).emit("userTyping", { userId });
 
         // Reset timeout khi có hoạt động
@@ -275,7 +275,7 @@ module.exports = function(io) {
           delete typingUsers[chatId][userId];
         }
 
-      // Broadcast stop typing event to the chat room
+        // Broadcast stop typing event to the chat room
         socket.to(chatId).emit("userStopTyping", { userId });
 
         // Reset timeout khi có hoạt động
