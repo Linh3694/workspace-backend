@@ -62,10 +62,7 @@ router.post(
         { expiresIn: "365d" }
       );
 
-      // Lưu token vào Redis
-      await redisService.setAuthToken(user._id, token);
-
-      // Lưu thông tin user vào Redis
+      // Chuẩn bị user data
       const userData = {
         _id: user._id,
         fullname: user.fullname || "N/A",
@@ -75,7 +72,15 @@ router.post(
         department: user.department || "N/A",
         needProfileUpdate: user.needProfileUpdate || false,
       };
-      await redisService.setUserData(user._id, userData);
+
+      // Lưu vào Redis nếu có thể, nhưng không block luồng chính
+      try {
+        await redisService.setAuthToken(user._id, token);
+        await redisService.setUserData(user._id, userData);
+      } catch (redisError) {
+        console.warn("Không thể lưu vào Redis:", redisError);
+        // Tiếp tục xử lý mà không block
+      }
 
       return res.status(200).json({
         message: "Đăng nhập thành công!",

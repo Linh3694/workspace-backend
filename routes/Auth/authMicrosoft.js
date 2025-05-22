@@ -130,8 +130,14 @@ router.get("/microsoft/callback", (req, res, next) => {
         { expiresIn: "365d" }
       );
 
-      // Lưu token vào Redis
-      await redisService.setAuthToken(user._id, token);
+      // Lưu token vào Redis nếu có thể, nhưng không block luồng chính
+      try {
+        await redisService.setAuthToken(user._id, token);
+        await redisService.setUserData(user._id, user);
+      } catch (redisError) {
+        console.warn("Không thể lưu vào Redis:", redisError);
+        // Tiếp tục xử lý mà không block
+      }
 
       // Nếu đăng nhập từ mobile và có redirectUri thì chuyển về mobile
       if (isMobile && redirectUri) {
