@@ -15,7 +15,7 @@ const customEmojiSchema = new mongoose.Schema({
         enum: ['gif', 'static', 'unicode'],
         default: 'static'
     },
-    url: {
+    path: {
         type: String,
         required: true
     },
