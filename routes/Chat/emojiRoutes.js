@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const CustomEmoji = require('../../models/CustomEmoji');
 const authenticate = require('../../middleware/authMiddleware');
-const uploadEmoji = require('../../middleware/uploadEmoji');
 
 // Lấy danh sách emoji
 router.get('/list', async (req, res) => {
@@ -21,7 +20,7 @@ router.get('/list', async (req, res) => {
 });
 
 // Thêm emoji mới (cần quyền admin)
-router.post('/add', authenticate, uploadEmoji.single('file'), async (req, res) => {
+router.post('/add', authenticate, async (req, res) => {
     try {
         const { name, code, category, type } = req.body;
 
@@ -31,15 +30,11 @@ router.post('/add', authenticate, uploadEmoji.single('file'), async (req, res) =
             return res.status(400).json({ message: 'Mã emoji đã tồn tại' });
         }
 
-        // Đường dẫn file
-        const url = `/uploads/Emoji/${req.file.filename}`;
-
         const newEmoji = await CustomEmoji.create({
             name,
             code,
             category: category || 'custom',
-            type: type || (req.file.mimetype.includes('gif') ? 'gif' : 'static'),
-            url,
+            type: type || 'static',
             isDefault: false
         });
 
