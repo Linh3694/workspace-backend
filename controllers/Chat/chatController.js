@@ -71,6 +71,7 @@ exports.getUserChats = async (req, res) => {
 
 // Gửi tin nhắn
 const CustomEmoji = require('../../models/CustomEmoji');
+const mongoose = require('mongoose');
 exports.sendMessage = async (req, res) => {
     try {
         const {
@@ -91,14 +92,21 @@ exports.sendMessage = async (req, res) => {
                 required: { emojiId, emojiType, emojiName }
             });
         }
-        // If emoji, fetch its URL from DB
+        // If emoji, fetch its URL and resolve actual ID (lookup by _id or code)
         let emojiUrl;
+        let actualEmojiId;
         if (isEmoji) {
-            const emojiRecord = await CustomEmoji.findById(emojiId);
+            let emojiRecord;
+            if (mongoose.Types.ObjectId.isValid(emojiId)) {
+                emojiRecord = await CustomEmoji.findById(emojiId);
+            } else {
+                emojiRecord = await CustomEmoji.findOne({ code: emojiId });
+            }
             if (!emojiRecord) {
                 return res.status(404).json({ message: 'Emoji not found' });
             }
             emojiUrl = emojiRecord.url;
+            actualEmojiId = emojiRecord._id;
         }
 
         // Tạo tin nhắn mới
@@ -110,13 +118,12 @@ exports.sendMessage = async (req, res) => {
             readBy: [senderId]
         };
 
-        // Add emoji fields if this is an emoji message
         if (isEmoji) {
-            messageData.isEmoji = true;
-            messageData.emojiId = emojiId;
+            messageData.isEmoji   = true;
+            messageData.emojiId   = actualEmojiId;
             messageData.emojiType = emojiType;
             messageData.emojiName = emojiName;
-            messageData.emojiUrl = emojiUrl;
+            messageData.emojiUrl  = emojiUrl;
         }
 
         const message = await Message.create(messageData);
