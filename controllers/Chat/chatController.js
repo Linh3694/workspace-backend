@@ -96,6 +96,7 @@ exports.sendMessage = async (req, res) => {
         let emojiUrl;
         let actualEmojiId;
         if (isEmoji) {
+            console.log('emojiId nhận được:', emojiId);
             let emojiRecord;
             if (mongoose.Types.ObjectId.isValid(emojiId)) {
                 emojiRecord = await CustomEmoji.findById(emojiId);
@@ -103,6 +104,7 @@ exports.sendMessage = async (req, res) => {
                 emojiRecord = await CustomEmoji.findOne({ code: emojiId });
             }
             if (!emojiRecord) {
+                console.error('Emoji not found. emojiId:', emojiId);
                 return res.status(404).json({ message: 'Emoji not found' });
             }
             emojiUrl = emojiRecord.url;
@@ -843,6 +845,39 @@ exports.forwardMessage = async (req, res) => {
         res.status(201).json(populatedMessage);
     } catch (error) {
         console.error('Lỗi khi chuyển tiếp tin nhắn:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Đánh dấu tất cả tin nhắn trong chat là đã đọc (chỉ cho các tin nhắn mình là người nhận)
+exports.markAllMessagesAsRead = async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const userId = req.user._id;
+
+        // Chỉ update các message mà user là người nhận (không phải người gửi)
+        const result = await Message.updateMany(
+            {
+                chat: chatId,
+                sender: { $ne: userId },
+                readBy: { $ne: userId }
+            },
+            { $push: { readBy: userId } }
+        );
+
+        // Xóa cache tin nhắn của chat
+        await redisService.deleteChatMessagesCache(chatId);
+
+        // Emit socket event cho các client khác
+        const io = req.app.get('io');
+        io.to(chatId).emit('messageRead', {
+            userId,
+            chatId,
+            timestamp: new Date().toISOString()
+        });
+
+        res.status(200).json({ success: true, modifiedCount: result.modifiedCount });
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 }; 

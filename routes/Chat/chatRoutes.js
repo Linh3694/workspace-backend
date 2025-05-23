@@ -128,5 +128,7 @@ router.get('/:chatId/pinned-messages', authenticate, chatController.getPinnedMes
 // API chuyển tiếp tin nhắn
 router.post('/message/forward', authenticate, chatController.forwardMessage);
 
+// Đánh dấu tất cả tin nhắn trong chat là đã đọc (chỉ cho các tin nhắn mình là người nhận)
+router.put('/chats/read-all/:chatId', authenticate, chatController.markAllMessagesAsRead);
 
 module.exports = router; 
