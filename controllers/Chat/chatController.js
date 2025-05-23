@@ -77,29 +77,46 @@ exports.sendMessage = async (req, res) => {
             content,
             type = 'text',
             isEmoji = false,
-            emojiId = null,
-            emojiType = null,
-            emojiName = null,
-            emojiUrl = null
-        } = req.body;
-        const senderId = req.user._id;
-
-        // Tạo tin nhắn mới
-        const message = await Message.create({
-            chat: chatId,
-            sender: senderId,
-            content,
-            type,
-            readBy: [senderId],
-            isEmoji,
             emojiId,
             emojiType,
             emojiName,
             emojiUrl
-        });
+        } = req.body;
+        const senderId = req.user._id;
+
+        // Validate required fields for emoji messages
+        if (isEmoji && (!emojiId || !emojiType || !emojiName || !emojiUrl)) {
+            return res.status(400).json({ 
+                message: 'Missing required emoji fields',
+                required: { emojiId, emojiType, emojiName, emojiUrl }
+            });
+        }
+
+        // Tạo tin nhắn mới
+        const messageData = {
+            chat: chatId,
+            sender: senderId,
+            content,
+            type,
+            readBy: [senderId]
+        };
+
+        // Add emoji fields if this is an emoji message
+        if (isEmoji) {
+            messageData.isEmoji = true;
+            messageData.emojiId = emojiId;
+            messageData.emojiType = emojiType;
+            messageData.emojiName = emojiName;
+            messageData.emojiUrl = emojiUrl;
+        }
+
+        const message = await Message.create(messageData);
 
         // Lấy thông tin chat để gửi thông báo
         const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: 'Chat not found' });
+        }
 
         // Cập nhật lastMessage trong chat
         await Chat.findByIdAndUpdate(chatId, {
@@ -124,12 +141,6 @@ exports.sendMessage = async (req, res) => {
             io.to(p._id.toString()).emit('newChat', updatedChat)
         );
 
-        // Xóa cache liên quan
-        await redisService.deleteChatMessagesCache(chatId);
-        updatedChat.participants.forEach(async (p) => {
-            await redisService.deleteUserChatsCache(p._id.toString());
-        });
-
         // Gửi thông báo push cho người nhận
         if (chat) {
             notificationController.sendNewChatMessageNotification(
@@ -141,6 +152,7 @@ exports.sendMessage = async (req, res) => {
 
         res.status(201).json(populatedMessage);
     } catch (error) {
+        console.error('Error sending message:', error);
         res.status(500).json({ message: error.message });
     }
 };

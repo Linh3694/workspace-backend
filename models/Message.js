@@ -56,17 +56,28 @@ const messageSchema = new mongoose.Schema(
       default: false
     },
     emojiId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "CustomEmoji"
+      type: String,
+      required: function() {
+        return this.isEmoji === true;
+      }
     },
     emojiType: {
-      type: String
+      type: String,
+      required: function() {
+        return this.isEmoji === true;
+      }
     },
     emojiName: {
-      type: String
+      type: String,
+      required: function() {
+        return this.isEmoji === true;
+      }
     },
     emojiUrl: {
-      type: String
+      type: String,
+      required: function() {
+        return this.isEmoji === true;
+      }
     },
     fileUrl: {
       type: String,
