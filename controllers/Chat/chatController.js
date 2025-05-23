@@ -897,6 +897,16 @@ exports.revokeMessage = async (req, res) => {
 
         message.isRevoked = true;
         message.content = '';
+        // Xóa các trường liên quan đến file/hình ảnh
+        message.fileUrl = undefined;
+        message.fileUrls = undefined;
+        message.fileName = undefined;
+        message.fileSize = undefined;
+        message.emojiUrl = undefined;
+        message.emojiType = undefined;
+        message.emojiId = undefined;
+        message.isEmoji = false;
+        
         await message.save();
 
         // Xóa cache nếu có
