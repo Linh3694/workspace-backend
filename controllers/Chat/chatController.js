@@ -70,6 +70,7 @@ exports.getUserChats = async (req, res) => {
 };
 
 // Gửi tin nhắn
+const CustomEmoji = require('../../models/CustomEmoji');
 exports.sendMessage = async (req, res) => {
     try {
         const {
@@ -79,17 +80,25 @@ exports.sendMessage = async (req, res) => {
             isEmoji = false,
             emojiId,
             emojiType,
-            emojiName,
-            emojiUrl
+            emojiName
         } = req.body;
         const senderId = req.user._id;
 
         // Validate required fields for emoji messages
-        if (isEmoji && (!emojiId || !emojiType || !emojiName || !emojiUrl)) {
+        if (isEmoji && (!emojiId || !emojiType || !emojiName)) {
             return res.status(400).json({ 
                 message: 'Missing required emoji fields',
-                required: { emojiId, emojiType, emojiName, emojiUrl }
+                required: { emojiId, emojiType, emojiName }
             });
+        }
+        // If emoji, fetch its URL from DB
+        let emojiUrl;
+        if (isEmoji) {
+            const emojiRecord = await CustomEmoji.findById(emojiId);
+            if (!emojiRecord) {
+                return res.status(404).json({ message: 'Emoji not found' });
+            }
+            emojiUrl = emojiRecord.url;
         }
 
         // Tạo tin nhắn mới

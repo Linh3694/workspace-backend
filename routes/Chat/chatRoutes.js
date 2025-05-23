@@ -128,37 +128,5 @@ router.get('/:chatId/pinned-messages', authenticate, chatController.getPinnedMes
 // API chuyển tiếp tin nhắn
 router.post('/message/forward', authenticate, chatController.forwardMessage);
 
-// === THÊM MỚI: API XỬ LÝ EMOJI ===
-
-// API gửi emoji
-router.post('/message', authenticate, async (req, res) => {
-    try {
-        const {
-            chatId,
-            content,
-            type = 'text',
-            isEmoji = false,
-            emojiId,
-            emojiType,
-            emojiName
-        } = req.body;
-
-        // If this is an emoji message, validate the emoji exists
-        if (isEmoji) {
-            const emoji = await CustomEmoji.findOne({ code: content });
-            if (!emoji) {
-                return res.status(404).json({ message: 'Emoji not found' });
-            }
-            // Add the emoji URL to the message
-            req.body.emojiUrl = emoji.url;
-        }
-
-        // Forward to the regular message handler
-        return chatController.sendMessage(req, res);
-    } catch (error) {
-        console.error('Error sending emoji message:', error);
-        res.status(500).json({ message: error.message });
-    }
-});
 
 module.exports = router; 
