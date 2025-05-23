@@ -242,6 +242,65 @@ class RedisService {
             console.error('Redis deleteUserChatsCache error:', error);
         }
     }
+
+    // === ONLINE STATUS METHODS ===
+
+    // Set user's online status
+    async setUserOnlineStatus(userId, isOnline, lastSeen = Date.now()) {
+        if (!this.client) return;
+        try {
+            const key = `user:online:${userId}`;
+            const data = JSON.stringify({ isOnline, lastSeen });
+            // Cache online status for 5 minutes
+            await this.client.setEx(key, 300, data);
+        } catch (error) {
+            console.error('Redis setUserOnlineStatus error:', error);
+        }
+    }
+
+    // Get user's online status
+    async getUserOnlineStatus(userId) {
+        if (!this.client) return null;
+        try {
+            const key = `user:online:${userId}`;
+            const data = await this.client.get(key);
+            return data ? JSON.parse(data) : null;
+        } catch (error) {
+            console.error('Redis getUserOnlineStatus error:', error);
+            return null;
+        }
+    }
+
+    // Get multiple users' online status
+    async getMultipleUsersOnlineStatus(userIds) {
+        if (!this.client) return null;
+        try {
+            const pipeline = this.client.multi();
+            userIds.forEach(userId => {
+                const key = `user:online:${userId}`;
+                pipeline.get(key);
+            });
+            const results = await pipeline.exec();
+            return results.map((result, index) => ({
+                userId: userIds[index],
+                status: result ? JSON.parse(result) : null
+            }));
+        } catch (error) {
+            console.error('Redis getMultipleUsersOnlineStatus error:', error);
+            return null;
+        }
+    }
+
+    // Delete user's online status
+    async deleteUserOnlineStatus(userId) {
+        if (!this.client) return;
+        try {
+            const key = `user:online:${userId}`;
+            await this.client.del(key);
+        } catch (error) {
+            console.error('Redis deleteUserOnlineStatus error:', error);
+        }
+    }
 }
 
 module.exports = new RedisService(); 
