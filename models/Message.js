@@ -108,6 +108,7 @@ const messageSchema = new mongoose.Schema(
     pinnedAt: {
       type: Date
     },
+    isRevoked: { type: Boolean, default: false },
     createdAt: {
       type: Date,
       default: Date.now,

@@ -880,4 +880,36 @@ exports.markAllMessagesAsRead = async (req, res) => {
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
-}; 
+};
+
+exports.revokeMessage = async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const userId = req.user._id;
+
+        const message = await Message.findById(messageId);
+        if (!message) return res.status(404).json({ message: 'Không tìm thấy tin nhắn' });
+
+        // Chỉ cho phép người gửi thu hồi
+        if (message.sender.toString() !== userId.toString()) {
+            return res.status(403).json({ message: 'Bạn không có quyền thu hồi tin nhắn này' });
+        }
+
+        message.isRevoked = true;
+        message.content = '';
+        await message.save();
+
+        // Xóa cache nếu có
+        await redisService.deleteChatMessagesCache(message.chat);
+
+        // Emit socket event
+        const io = req.app.get('io');
+        io.to(message.chat.toString()).emit('messageRevoked', {
+            messageId: message._id
+        });
+
+        res.status(200).json(message);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};

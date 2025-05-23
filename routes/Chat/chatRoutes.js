@@ -131,4 +131,7 @@ router.post('/message/forward', authenticate, chatController.forwardMessage);
 // Đánh dấu tất cả tin nhắn trong chat là đã đọc (chỉ cho các tin nhắn mình là người nhận)
 router.put('/chats/read-all/:chatId', authenticate, chatController.markAllMessagesAsRead);
 
+// API thu hồi tin nhắn
+router.delete('/message/:messageId/revoke', authenticate, chatController.revokeMessage);
+
 module.exports = router; 
