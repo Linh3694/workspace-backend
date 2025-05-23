@@ -896,7 +896,7 @@ exports.revokeMessage = async (req, res) => {
         }
 
         message.isRevoked = true;
-        message.content = '';
+        message.content = '[revoked]';
         // Xóa các trường liên quan đến file/hình ảnh
         message.fileUrl = undefined;
         message.fileUrls = undefined;
