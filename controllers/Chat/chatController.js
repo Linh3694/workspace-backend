@@ -267,11 +267,44 @@ exports.getChatMessages = async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
+        // Validate chatId
+        if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid chat ID' 
+            });
+        }
+
+        // Validate pagination parameters
+        if (page < 1 || limit < 1 || limit > 100) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid pagination parameters' 
+            });
+        }
+
+        // Kiểm tra user có quyền truy cập chat không
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Chat not found' 
+            });
+        }
+
+        if (!chat.participants.includes(req.user._id)) {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Access denied' 
+            });
+        }
+
         // Kiểm tra cache trước với key bao gồm page
         const cacheKey = `chat:messages:${chatId}:page:${page}:limit:${limit}`;
         let cachedResult = await redisService.getChatMessages(cacheKey);
 
-        if (cachedResult && cachedResult.success) {
+        if (cachedResult && cachedResult.success && cachedResult.data) {
+            console.log(`[Cache Hit] Messages for chat ${chatId}, page ${page}`);
             return res.status(200).json({
                 success: true,
                 messages: cachedResult.data,
@@ -282,6 +315,8 @@ exports.getChatMessages = async (req, res) => {
                 }
             });
         }
+
+        console.log(`[Cache Miss] Loading messages from DB for chat ${chatId}, page ${page}`);
 
         // Nếu không có trong cache, truy vấn database với pagination
         const messages = await Message.find({ chat: chatId })
@@ -303,7 +338,20 @@ exports.getChatMessages = async (req, res) => {
         const reversedMessages = messages.reverse();
 
         // Lưu vào cache với TTL ngắn hơn cho pagination
-        await redisService.setChatMessages(cacheKey, reversedMessages, 300);
+        if (reversedMessages.length > 0) {
+            await redisService.setChatMessages(cacheKey, reversedMessages, 300);
+        }
+
+        // Kiểm tra xem có tin nhắn cũ hơn không để xác định hasMore
+        let hasMore = false;
+        if (messages.length === limit) {
+            const nextPageMessages = await Message.find({ chat: chatId })
+                .sort({ createdAt: -1 })
+                .skip(skip + limit)
+                .limit(1)
+                .lean();
+            hasMore = nextPageMessages.length > 0;
+        }
 
         res.status(200).json({
             success: true,
@@ -311,13 +359,15 @@ exports.getChatMessages = async (req, res) => {
             pagination: {
                 page,
                 limit,
-                hasMore: messages.length === limit
+                hasMore
             }
         });
     } catch (error) {
+        console.error('Error in getChatMessages:', error);
         res.status(500).json({ 
             success: false, 
-            message: error.message 
+            message: 'Internal server error',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };

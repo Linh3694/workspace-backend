@@ -383,27 +383,28 @@ class RedisService {
         }
     }
 
-    // Lưu tin nhắn của một chat
-    async setChatMessages(chatId, messages, expirationInSeconds = DEFAULT_TTL) {
-        if (!this.client) return;
+    // Lấy tin nhắn của một chat
+    async getChatMessages(cacheKey) {
+        if (!this.client) return { success: false, error: 'Redis not connected' };
         try {
-            const key = `chat:messages:${chatId}`;
-            await this.client.setEx(key, expirationInSeconds, JSON.stringify(messages));
+            const data = await this.client.get(cacheKey);
+            if (data) {
+                return { success: true, data: JSON.parse(data) };
+            }
+            return { success: false, error: 'No data found' };
         } catch (error) {
-            logger.error(`[Redis][setChatMessages] chatId=${chatId} error=${error.message}`);
+            logger.error(`[Redis][getChatMessages] cacheKey=${cacheKey} error=${error.message}`);
+            return { success: false, error };
         }
     }
 
-    // Lấy tin nhắn của một chat
-    async getChatMessages(chatId, start = 0, stop = -1) {
-        if (!this.client) return { success: false, error: 'Redis not connected' };
+    // Lưu tin nhắn của một chat với cache key cụ thể
+    async setChatMessages(cacheKey, messages, expirationInSeconds = DEFAULT_TTL) {
+        if (!this.client) return;
         try {
-            const key = `chat:messages:${chatId}`;
-            const data = await this.client.lRange(key, start, stop);
-            return { success: true, data: data.map(msg => JSON.parse(msg)) };
+            await this.client.setEx(cacheKey, expirationInSeconds, JSON.stringify(messages));
         } catch (error) {
-            logger.error(`[Redis][getChatMessages] chatId=${chatId} error=${error.message}`);
-            return { success: false, error };
+            logger.error(`[Redis][setChatMessages] cacheKey=${cacheKey} error=${error.message}`);
         }
     }
 
@@ -422,8 +423,17 @@ class RedisService {
     async deleteChatMessagesCache(chatId) {
         if (!this.client) return;
         try {
-            const key = `chat:messages:${chatId}`;
-            await this.client.del(key);
+            // Xóa tất cả cache keys liên quan đến chat này
+            const pattern = `chat:messages:${chatId}:*`;
+            const keys = await this.client.keys(pattern);
+            if (keys.length > 0) {
+                await this.client.del(keys);
+                logger.info(`[Redis] Deleted ${keys.length} message cache keys for chat: ${chatId}`);
+            }
+            
+            // Xóa cache cũ (backward compatibility)
+            const oldKey = `chat:messages:${chatId}`;
+            await this.client.del(oldKey);
         } catch (error) {
             logger.error(`[Redis][deleteChatMessagesCache] chatId=${chatId} error=${error.message}`);
         }
