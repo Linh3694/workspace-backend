@@ -46,10 +46,27 @@ class RedisService {
             return null;
         }
         try {
+            // First try regular JSON.stringify
             return JSON.stringify(data);
         } catch (error) {
-            logger.error(`[Redis][${methodName}] stringify error: ${error.message}`);
-            return null;
+            // If it fails (likely due to circular references), try with replacer
+            try {
+                const seen = new WeakSet();
+                const result = JSON.stringify(data, (key, val) => {
+                    if (val != null && typeof val === "object") {
+                        if (seen.has(val)) {
+                            return {};
+                        }
+                        seen.add(val);
+                    }
+                    return val;
+                });
+                logger.warn(`[Redis][${methodName}] stringify succeeded with circular reference handling`);
+                return result;
+            } catch (secondError) {
+                logger.error(`[Redis][${methodName}] stringify error even with circular reference handling: ${secondError.message}`);
+                return null;
+            }
         }
     }
 
@@ -61,10 +78,24 @@ class RedisService {
         
         if (typeof userId === 'string') {
             return userId;
-        } else if (userId && typeof userId.toString === 'function') {
-            return userId.toString();
-        } else {
-            throw new Error(`Invalid userId type: ${typeof userId}, value: ${userId} in ${methodName}`);
+        }
+        
+        // Handle MongoDB ObjectId specifically
+        if (userId && typeof userId === 'object' && userId._id) {
+            return String(userId._id);
+        }
+        
+        // Try to convert to string safely
+        try {
+            if (userId && typeof userId.toString === 'function') {
+                return userId.toString();
+            } else {
+                // Fallback to String() constructor
+                return String(userId);
+            }
+        } catch (error) {
+            logger.error(`[Redis][_safeUserIdToString] Error converting userId to string in ${methodName}: ${error.message}, userId type: ${typeof userId}, userId value: ${JSON.stringify(userId)}`);
+            throw new Error(`Cannot convert userId to string in ${methodName}: ${error.message}`);
         }
     }
 
@@ -301,11 +332,29 @@ class RedisService {
         }
         
         try {
+            // Log userId details for debugging
+            logger.info(`[Redis][setUserChats] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
+            
             const userIdStr = this._safeUserIdToString(userId, 'setUserChats');
             const key = `user:chats:${userIdStr}`;
-            await this.client.setEx(key, expirationInSeconds, JSON.stringify(chats));
+            
+            // Validate chats data before stringifying
+            if (!Array.isArray(chats)) {
+                logger.warn(`[Redis][setUserChats] chats is not an array, userId=${userIdStr}, chats type=${typeof chats}`);
+            }
+            
+            // Safely stringify chats data
+            const stringifiedChats = this._safeStringify(chats, 'setUserChats');
+            if (stringifiedChats === null) {
+                logger.error(`[Redis][setUserChats] Cannot stringify chats data for userId=${userIdStr}`);
+                return;
+            }
+            
+            await this.client.setEx(key, expirationInSeconds, stringifiedChats);
+            logger.info(`[Redis][setUserChats] Successfully cached chats for userId=${userIdStr}`);
         } catch (error) {
-            logger.error(`[Redis][setUserChats] userId=${userId} error=${error.message}`);
+            logger.error(`[Redis][setUserChats] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
+            logger.error(`[Redis][setUserChats] Full error stack:`, error);
         }
     }
 
@@ -320,12 +369,16 @@ class RedisService {
         }
         
         try {
+            logger.info(`[Redis][getUserChats] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
             const userIdStr = this._safeUserIdToString(userId, 'getUserChats');
             const key = `user:chats:${userIdStr}`;
             const data = await this.client.get(key);
-            return data ? JSON.parse(data) : null;
+            const result = data ? JSON.parse(data) : null;
+            logger.info(`[Redis][getUserChats] Retrieved cache for userId=${userIdStr}, hasData=${!!data}`);
+            return result;
         } catch (error) {
-            logger.error(`[Redis][getUserChats] userId=${userId} error=${error.message}`);
+            logger.error(`[Redis][getUserChats] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
+            logger.error(`[Redis][getUserChats] Full error stack:`, error);
             return null;
         }
     }
@@ -387,11 +440,14 @@ class RedisService {
         }
         
         try {
+            logger.info(`[Redis][deleteUserChatsCache] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
             const userIdStr = this._safeUserIdToString(userId, 'deleteUserChatsCache');
             const key = `user:chats:${userIdStr}`;
             await this.client.del(key);
+            logger.info(`[Redis][deleteUserChatsCache] Successfully deleted cache for userId=${userIdStr}`);
         } catch (error) {
-            logger.error(`[Redis][deleteUserChatsCache] userId=${userId} error=${error.message}`);
+            logger.error(`[Redis][deleteUserChatsCache] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
+            logger.error(`[Redis][deleteUserChatsCache] Full error stack:`, error);
         }
     }
 

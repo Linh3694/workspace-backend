@@ -53,6 +53,9 @@ exports.getUserChats = async (req, res) => {
             return res.status(401).json({ message: 'User not authenticated or user ID missing' });
         }
 
+        // Log userId details for debugging
+        console.log('getUserChats - userId type:', typeof userId, 'userId value:', userId);
+
         // Kiểm tra cache trước
         let chats = await redisService.getUserChats(userId);
 
@@ -72,9 +75,17 @@ exports.getUserChats = async (req, res) => {
                 })
                 .sort({ updatedAt: -1 });
 
+            // Log chats details for debugging
+            console.log('getUserChats - Found chats count:', chats?.length, 'chats type:', typeof chats);
+
             // Lưu vào cache - only if chats is valid
             if (chats && Array.isArray(chats)) {
-                await redisService.setUserChats(userId, chats);
+                try {
+                    await redisService.setUserChats(userId, chats);
+                } catch (redisError) {
+                    console.error('Error caching user chats:', redisError);
+                    // Don't throw the error, just log it and continue
+                }
             }
         }
 
