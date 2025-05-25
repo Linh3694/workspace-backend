@@ -34,13 +34,20 @@ jobs:
             ssh be-01 '
               cd /srv/app/workspace-backend
               
-              # Fetch và update code từ main branch
-              echo "Fetching latest changes..."
-              git fetch origin --prune
+              # Hiển thị remote URL hiện tại
+              echo "Current remote URL:"
+              git remote -v
+              
+              # Fetch latest changes từ main branch
+              echo "Fetching latest changes from main..."
+              git fetch origin main
               git checkout main
-              git pull origin main
-              git reset --hard origin/main
+              
+              # Reset hard về FETCH_HEAD (latest commit từ remote)
+              echo "Updating to latest commit..."
+              git reset --hard FETCH_HEAD
               git clean -fd
+              
               # Đảm bảo local branch tracking đúng remote
               git branch --set-upstream-to=origin/main main
               echo "Git sync completed successfully"
@@ -70,13 +77,20 @@ jobs:
             ssh be-02 '
               cd /srv/app/workspace-backend
               
-              # Fetch và update code từ main branch
-              echo "Fetching latest changes..."
-              git fetch origin --prune
+              # Hiển thị remote URL hiện tại
+              echo "Current remote URL:"
+              git remote -v
+              
+              # Fetch latest changes từ main branch
+              echo "Fetching latest changes from main..."
+              git fetch origin main
               git checkout main
-              git pull origin main
-              git reset --hard origin/main
+              
+              # Reset hard về FETCH_HEAD (latest commit từ remote)
+              echo "Updating to latest commit..."
+              git reset --hard FETCH_HEAD
               git clean -fd
+              
               # Đảm bảo local branch tracking đúng remote
               git branch --set-upstream-to=origin/main main
               echo "Git sync completed successfully"
