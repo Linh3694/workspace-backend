@@ -391,6 +391,115 @@ class RedisService {
         }
     }
 
+    // Alias method for compatibility with socketChat.js
+    async setUserOnlineStatus(userId, isOnline, lastSeen = Date.now()) {
+        return await this.setOnlineStatus(userId, isOnline, lastSeen);
+    }
+
+    // Get all online users
+    async getAllOnlineUsers() {
+        if (!this.client) return [];
+        try {
+            const pattern = 'user:online:*';
+            const keys = await this.client.keys(pattern);
+            if (keys.length === 0) return [];
+
+            const pipeline = this.client.multi();
+            keys.forEach(key => pipeline.get(key));
+            const results = await pipeline.exec();
+
+            const onlineUsers = [];
+            results.forEach((result, index) => {
+                if (result) {
+                    try {
+                        const data = JSON.parse(result);
+                        if (data.isOnline) {
+                            const userId = keys[index].replace('user:online:', '');
+                            onlineUsers.push(userId);
+                        }
+                    } catch (parseError) {
+                        logger.error(`[Redis][getAllOnlineUsers] Parse error for key ${keys[index]}: ${parseError.message}`);
+                    }
+                }
+            });
+
+            return onlineUsers;
+        } catch (error) {
+            logger.error(`[Redis][getAllOnlineUsers] error=${error.message}`);
+            return [];
+        }
+    }
+
+    // Get all offline users (users who have status but are offline)
+    async getAllOfflineUsers() {
+        if (!this.client) return [];
+        try {
+            const pattern = 'user:online:*';
+            const keys = await this.client.keys(pattern);
+            if (keys.length === 0) return [];
+
+            const pipeline = this.client.multi();
+            keys.forEach(key => pipeline.get(key));
+            const results = await pipeline.exec();
+
+            const offlineUsers = [];
+            results.forEach((result, index) => {
+                if (result) {
+                    try {
+                        const data = JSON.parse(result);
+                        if (!data.isOnline) {
+                            const userId = keys[index].replace('user:online:', '');
+                            offlineUsers.push(userId);
+                        }
+                    } catch (parseError) {
+                        logger.error(`[Redis][getAllOfflineUsers] Parse error for key ${keys[index]}: ${parseError.message}`);
+                    }
+                }
+            });
+
+            return offlineUsers;
+        } catch (error) {
+            logger.error(`[Redis][getAllOfflineUsers] error=${error.message}`);
+            return [];
+        }
+    }
+
+    // Set user socket ID for tracking
+    async setUserSocketId(userId, socketId, expirationInSeconds = 3600) {
+        if (!this.client) return { success: false, error: 'Redis not connected' };
+        try {
+            const key = `user:socket:${userId}`;
+            await this.client.setEx(key, expirationInSeconds, socketId);
+            return { success: true };
+        } catch (error) {
+            logger.error(`[Redis][setUserSocketId] userId=${userId} error=${error.message}`);
+            return { success: false, error };
+        }
+    }
+
+    // Get user socket ID
+    async getUserSocketId(userId) {
+        if (!this.client) return null;
+        try {
+            const key = `user:socket:${userId}`;
+            return await this.client.get(key);
+        } catch (error) {
+            logger.error(`[Redis][getUserSocketId] userId=${userId} error=${error.message}`);
+            return null;
+        }
+    }
+
+    // Delete user socket ID
+    async deleteUserSocketId(userId) {
+        if (!this.client) return;
+        try {
+            const key = `user:socket:${userId}`;
+            await this.client.del(key);
+        } catch (error) {
+            logger.error(`[Redis][deleteUserSocketId] userId=${userId} error=${error.message}`);
+        }
+    }
+
     // Thêm 1 message vào cuối list
     async pushChatMessage(chatId, message) {
         if (!this.client) return { success: false, error: 'Redis not connected' };

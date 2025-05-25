@@ -127,6 +127,7 @@ module.exports = async function (io) {
 
           // Lưu thời gian last seen khi tự động offline
           await redisService.setUserOnlineStatus(userId, false, Date.now());
+          await redisService.deleteUserSocketId(userId);
           await pubClient.publish('user:offline', JSON.stringify({ userId, lastSeen: Date.now() }));
 
           // Thông báo cho tất cả client
@@ -160,6 +161,7 @@ module.exports = async function (io) {
 
             // Đánh dấu online trên Redis và publish event
             await redisService.setUserOnlineStatus(currentUserId, true, Date.now());
+            await redisService.setUserSocketId(currentUserId, socket.id);
             await pubClient.publish('user:online', JSON.stringify({ userId: currentUserId }));
 
             logger.info(`[Socket][${socket.id}] User online: ${currentUserId}`);
@@ -290,6 +292,7 @@ module.exports = async function (io) {
             if (status && status.isOnline) {
               console.log(`Marking user ${userId} as offline from background`);
               await redisService.setUserOnlineStatus(userId, false, Date.now());
+              await redisService.deleteUserSocketId(userId);
               await pubClient.publish('user:offline', JSON.stringify({ userId, lastSeen: Date.now() }));
               io.emit("userOffline", { userId });
               io.emit("userLastSeen", { userId, lastSeen: new Date().toISOString() });
@@ -381,6 +384,7 @@ module.exports = async function (io) {
           // Lưu vào Redis và publish event
           socket.data.userId = userId;
           await redisService.setUserOnlineStatus(userId, true, Date.now());
+          await redisService.setUserSocketId(userId, socket.id);
           await pubClient.publish('user:online', JSON.stringify({ userId }));
 
           // Reset timeout khi có hoạt động
@@ -443,6 +447,7 @@ module.exports = async function (io) {
         const uid = socket.data.userId;
         if (uid) {
           await redisService.setUserOnlineStatus(uid, false, Date.now());
+          await redisService.deleteUserSocketId(uid);
           await pubClient.publish('user:offline', JSON.stringify({ userId: uid, lastSeen: Date.now() }));
           logger.info(`[Socket][${socket.id}] User offline: ${uid}`);
           io.emit("userOffline", { userId: uid });
@@ -544,6 +549,7 @@ module.exports = async function (io) {
 
           // Đánh dấu user offline
           await redisService.setUserOnlineStatus(userId, false, Date.now());
+          await redisService.deleteUserSocketId(userId);
           await pubClient.publish('user:offline', JSON.stringify({ userId, lastSeen: Date.now() }));
 
           // Thông báo cho tất cả client
