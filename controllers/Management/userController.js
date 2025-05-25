@@ -53,11 +53,16 @@ exports.getUsers = async (req, res) => {
     if (!users) {
       // Nếu không có trong cache, truy vấn database
       users = await User.find({}, "-password"); // Exclude password for security
-      // Lưu vào cache
-      await redisService.setAllUsers(users);
+      
+      // Chỉ lưu vào cache nếu users không phải là undefined/null và có dữ liệu
+      if (users && Array.isArray(users)) {
+        await redisService.setAllUsers(users);
+      }
     }
 
-    res.status(200).json(users);
+    // Đảm bảo luôn trả về một array, ngay cả khi users là null/undefined
+    const responseUsers = users || [];
+    res.status(200).json(responseUsers);
   } catch (error) {
     console.error("Error fetching users:", error.message);
     res.status(500).json({ message: "Error fetching users", error: error.message });

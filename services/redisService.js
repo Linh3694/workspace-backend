@@ -7,6 +7,12 @@ const ONLINE_TTL = process.env.REDIS_TTL_ONLINE ? Number(process.env.REDIS_TTL_O
 
 class RedisService {
     constructor() {
+        this.client = null;
+        this.isConnected = false;
+        this.connectionAttempts = 0;
+        this.maxConnectionAttempts = 5;
+        this.reconnectDelay = 5000; // 5 seconds
+
         if (process.env.NODE_ENV === 'production') {
             this.client = createClient({
                 socket: {
@@ -33,17 +39,36 @@ class RedisService {
         }
     }
 
+    // Helper method để stringify an toàn
+    _safeStringify(data, methodName = 'unknown') {
+        if (data === undefined || data === null) {
+            logger.warn(`[Redis][${methodName}] data is ${data}, cannot stringify`);
+            return null;
+        }
+        try {
+            return JSON.stringify(data);
+        } catch (error) {
+            logger.error(`[Redis][${methodName}] stringify error: ${error.message}`);
+            return null;
+        }
+    }
+
     // === USER METHODS ===
 
     // Lưu thông tin user
     async setUserData(userId, data, expirationInSeconds = DEFAULT_TTL) {
         if (!this.client) return { success: false, error: 'Redis not connected' };
         try {
+            const stringifiedData = this._safeStringify(data, 'setUserData');
+            if (stringifiedData === null) {
+                return { success: false, error: 'Cannot stringify user data' };
+            }
+            
             const key = `user:${userId}`;
             if (expirationInSeconds) {
-                await this.client.setEx(key, expirationInSeconds, JSON.stringify(data));
+                await this.client.setEx(key, expirationInSeconds, stringifiedData);
             } else {
-                await this.client.set(key, JSON.stringify(data));
+                await this.client.set(key, stringifiedData);
             }
             return { success: true };
         } catch (error) {
@@ -69,8 +94,13 @@ class RedisService {
     async setAllUsers(users, expirationInSeconds = DEFAULT_TTL) {
         if (!this.client) return;
         try {
+            const stringifiedUsers = this._safeStringify(users, 'setAllUsers');
+            if (stringifiedUsers === null) {
+                return;
+            }
+            
             const key = 'users:all';
-            await this.client.setEx(key, expirationInSeconds, JSON.stringify(users));
+            await this.client.setEx(key, expirationInSeconds, stringifiedUsers);
         } catch (error) {
             logger.error(`[Redis][setAllUsers] error=${error.message}`);
         }
@@ -333,12 +363,17 @@ class RedisService {
     async setOnlineStatus(userId, isOnline, lastSeen = Date.now(), expirationInSeconds = ONLINE_TTL) {
         if (!this.client) return { success: false, error: 'Redis not connected' };
         try {
+            const statusData = { isOnline, lastSeen };
+            const stringifiedData = this._safeStringify(statusData, 'setOnlineStatus');
+            if (stringifiedData === null) {
+                return { success: false, error: 'Cannot stringify status data' };
+            }
+            
             const key = `user:online:${userId}`;
-            const data = JSON.stringify({ isOnline, lastSeen });
             if (expirationInSeconds) {
-                await this.client.setEx(key, expirationInSeconds, data);
+                await this.client.setEx(key, expirationInSeconds, stringifiedData);
             } else {
-                await this.client.set(key, data);
+                await this.client.set(key, stringifiedData);
             }
             return { success: true };
         } catch (error) {
@@ -618,6 +653,78 @@ class RedisService {
             } catch (error) {
                 logger.error('[Redis] Error closing client:', error);
             }
+        }
+    }
+
+    // Kiểm tra và khôi phục kết nối Redis
+    async checkAndReconnect() {
+        if (!this.client) {
+            logger.warn('[Redis] Client not initialized, attempting to reconnect...');
+            await this.connect();
+            return;
+        }
+
+        try {
+            // Ping để kiểm tra kết nối
+            await this.client.ping();
+            this.isConnected = true;
+        } catch (error) {
+            logger.error(`[Redis] Connection lost: ${error.message}`);
+            this.isConnected = false;
+            
+            if (this.connectionAttempts < this.maxConnectionAttempts) {
+                this.connectionAttempts++;
+                logger.info(`[Redis] Attempting to reconnect (${this.connectionAttempts}/${this.maxConnectionAttempts})...`);
+                
+                setTimeout(async () => {
+                    try {
+                        await this.connect();
+                        this.connectionAttempts = 0;
+                        logger.info('[Redis] Reconnected successfully');
+                    } catch (reconnectError) {
+                        logger.error(`[Redis] Reconnection failed: ${reconnectError.message}`);
+                    }
+                }, this.reconnectDelay);
+            } else {
+                logger.error('[Redis] Max reconnection attempts reached');
+            }
+        }
+    }
+
+    // Improved connect method
+    async connect() {
+        try {
+            if (this.client) {
+                await this.client.disconnect();
+            }
+
+            // Recreate client
+            if (process.env.NODE_ENV === 'production') {
+                this.client = createClient({
+                    url: process.env.REDIS_URL,
+                    socket: {
+                        connectTimeout: 10000,
+                        lazyConnect: true,
+                        reconnectDelay: this.reconnectDelay
+                    }
+                });
+            } else {
+                this.client = createClient({
+                    socket: {
+                        connectTimeout: 10000,
+                        lazyConnect: true,
+                        reconnectDelay: this.reconnectDelay
+                    }
+                });
+            }
+
+            await this.client.connect();
+            this.isConnected = true;
+            logger.info('[Redis] Connected successfully');
+        } catch (error) {
+            this.isConnected = false;
+            logger.error(`[Redis] Connection failed: ${error.message}`);
+            throw error;
         }
     }
 }
