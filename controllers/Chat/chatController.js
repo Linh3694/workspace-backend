@@ -1005,22 +1005,38 @@ exports.markAllMessagesAsRead = async (req, res) => {
     }
 };
 
+// Thu hồi tin nhắn
 exports.revokeMessage = async (req, res) => {
     try {
         const { messageId } = req.params;
         const userId = req.user._id;
 
+        // Tìm tin nhắn
         const message = await Message.findById(messageId);
-        if (!message) return res.status(404).json({ message: 'Không tìm thấy tin nhắn' });
+        if (!message) {
+            return res.status(404).json({ message: 'Không tìm thấy tin nhắn' });
+        }
 
-        // Chỉ cho phép người gửi thu hồi
+        // Kiểm tra quyền thu hồi (chỉ người gửi mới có thể thu hồi)
         if (message.sender.toString() !== userId.toString()) {
             return res.status(403).json({ message: 'Bạn không có quyền thu hồi tin nhắn này' });
         }
 
+        // Kiểm tra thời gian thu hồi (có thể thu hồi trong vòng 24 giờ)
+        const messageAge = Date.now() - new Date(message.createdAt).getTime();
+        const maxRevokeTime = 24 * 60 * 60 * 1000; // 24 giờ
+        
+        if (messageAge > maxRevokeTime) {
+            return res.status(400).json({ message: 'Không thể thu hồi tin nhắn sau 24 giờ' });
+        }
+
+        // Đánh dấu tin nhắn là đã thu hồi
         message.isRevoked = true;
-        message.content = '[revoked]';
-        // Xóa các trường liên quan đến file/hình ảnh
+        message.revokedAt = new Date();
+        message.revokedBy = userId;
+        
+        // Xóa nội dung tin nhắn
+        message.content = '';
         message.fileUrl = undefined;
         message.fileUrls = undefined;
         message.fileName = undefined;
@@ -1029,20 +1045,22 @@ exports.revokeMessage = async (req, res) => {
         message.emojiType = undefined;
         message.emojiId = undefined;
         message.isEmoji = false;
-        
+
         await message.save();
 
-        // Xóa cache nếu có
+        // Xóa cache tin nhắn của chat
         await redisService.deleteChatMessagesCache(message.chat);
 
         // Emit socket event
         const io = req.app.get('io');
         io.to(message.chat.toString()).emit('messageRevoked', {
-            messageId: message._id
+            messageId: message._id,
+            chatId: message.chat
         });
 
-        res.status(200).json(message);
+        res.status(200).json({ message: 'Đã thu hồi tin nhắn thành công' });
     } catch (error) {
+        console.error('Error revoking message:', error);
         res.status(500).json({ message: error.message });
     }
 };
