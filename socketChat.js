@@ -94,7 +94,7 @@ subClient.on('connect', () => {
 
 const typingUsers = {};
 const userActivityTimeouts = {};
-const USER_OFFLINE_TIMEOUT = 60 * 1000; // 60 giây không hoạt động sẽ tự động offline
+const USER_OFFLINE_TIMEOUT = 20 * 1000; // Giảm từ 60 giây xuống 20 giây để responsive hơn
 
 // Hàm publish an toàn với xử lý lỗi
 const safePublish = async (channel, message) => {
@@ -280,7 +280,7 @@ module.exports = async function (io) {
         if (userId) {
           console.log(`User ${userId} went to background`);
 
-          // Rút ngắn thời gian timeout khi ở background (15 giây)
+          // Rút ngắn thời gian timeout khi ở background (8 giây)
           if (userActivityTimeouts[userId]) {
             clearTimeout(userActivityTimeouts[userId]);
           }
@@ -295,7 +295,7 @@ module.exports = async function (io) {
               io.emit("userLastSeen", { userId, lastSeen: new Date().toISOString() });
               delete userActivityTimeouts[userId];
             }
-          }, 15000); // Chỉ 15 giây khi ở background
+          }, 8000); // Giảm từ 15 giây xuống 8 giây khi ở background
         }
       });
 
@@ -378,25 +378,29 @@ module.exports = async function (io) {
         if (userId) {
           console.log(`User ${userId} is online in chat ${chatId}`);
 
-          // Lưu vào Redis
+          // Lưu vào Redis và publish event
+          socket.data.userId = userId;
           await redisService.setUserOnlineStatus(userId, true, Date.now());
           await pubClient.publish('user:online', JSON.stringify({ userId }));
 
           // Reset timeout khi có hoạt động
           setUserInactiveTimeout(userId);
 
+          // Broadcast event toàn cầu ngay lập tức
+          io.emit("userOnline", { userId });
+
           // Nếu là chat cụ thể, thông báo user online trong chat đó
           if (chatId && chatId !== 'global') {
             socket.to(chatId).emit("userStatus", { userId, status: "online" });
           }
 
-          // Broadcast event toàn cầu
-          io.emit("userOnline", { userId });
+          // Gửi lại trạng thái online cho chính user đó để confirm
+          socket.emit("userStatus", { userId, status: "online" });
         }
       });
 
       // Xử lý thông báo tin nhắn đã đọc
-      socket.on("messageRead", (data) => {
+      socket.on("messageRead", async (data) => {
         console.log(`User ${data.userId} đã đọc tin nhắn trong chat ${data.chatId}`);
 
         // Đảm bảo có đủ thông tin cần thiết
@@ -404,11 +408,18 @@ module.exports = async function (io) {
           return;
         }
 
-        // Thông báo tới tất cả người dùng trong phòng chat
+        // Thông báo tới tất cả người dùng trong phòng chat ngay lập tức
         socket.to(data.chatId).emit("messageRead", {
           userId: data.userId,
           chatId: data.chatId,
-          timestamp: new Date().toISOString()  // Thêm timestamp để client có thể sắp xếp
+          timestamp: data.timestamp || new Date().toISOString()
+        });
+
+        // Cũng emit cho chính user để confirm
+        socket.emit("messageRead", {
+          userId: data.userId,
+          chatId: data.chatId,
+          timestamp: data.timestamp || new Date().toISOString()
         });
 
         // Reset timeout khi có hoạt động
