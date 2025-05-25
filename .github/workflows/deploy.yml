@@ -37,12 +37,14 @@ jobs:
               # Kiểm tra xem đã có git repo chưa
               if [ ! -d .git ]; then
                 # Nếu chưa có git repo, clone mới
-                rm -rf * .*
+                rm -rf ./* 2>/dev/null || true
+                rm -rf ./.* 2>/dev/null || true
                 git clone https://github.com/Linh3694/workspace-backend.git .
               else
                 # Nếu đã có git repo, fetch và reset
                 git fetch origin
                 git reset --hard origin/main
+                git clean -fd
               fi
               
               # Cài đặt dependencies và chạy script
@@ -67,12 +69,14 @@ jobs:
               # Kiểm tra xem đã có git repo chưa
               if [ ! -d .git ]; then
                 # Nếu chưa có git repo, clone mới
-                rm -rf * .*
+                rm -rf ./* 2>/dev/null || true
+                rm -rf ./.* 2>/dev/null || true
                 git clone https://github.com/Linh3694/workspace-backend.git .
               else
                 # Nếu đã có git repo, fetch và reset
                 git fetch origin
                 git reset --hard origin/main
+                git clean -fd
               fi
               
               # Cài đặt dependencies và chạy script
