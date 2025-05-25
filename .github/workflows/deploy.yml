@@ -38,6 +38,7 @@ jobs:
               echo "Fetching latest changes..."
               git fetch origin --prune
               git checkout main
+              git pull origin main
               git reset --hard origin/main
               git clean -fd
               # Đảm bảo local branch tracking đúng remote
@@ -73,6 +74,7 @@ jobs:
               echo "Fetching latest changes..."
               git fetch origin --prune
               git checkout main
+              git pull origin main
               git reset --hard origin/main
               git clean -fd
               # Đảm bảo local branch tracking đúng remote
