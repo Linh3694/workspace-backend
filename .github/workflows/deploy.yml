@@ -34,22 +34,25 @@ jobs:
             ssh be-01 '
               cd /srv/app/workspace-backend
               
-              # Kiểm tra xem đã có git repo chưa
-              if [ ! -d .git ]; then
-                # Nếu chưa có git repo, clone mới
-                rm -rf ./* 2>/dev/null || true
-                rm -rf ./.* 2>/dev/null || true
-                git clone https://github.com/Linh3694/workspace-backend.git .
-              else
-                # Nếu đã có git repo, fetch và reset
-                git fetch origin
-                git reset --hard origin/main
-                git clean -fd
-              fi
+              # Fetch và update code từ main branch
+              echo "Fetching latest changes..."
+              git fetch origin --prune
+              git checkout main
+              git reset --hard origin/main
+              git clean -fd
+              # Đảm bảo local branch tracking đúng remote
+              git branch --set-upstream-to=origin/main main
+              echo "Git sync completed successfully"
+              
+              # Hiển thị thông tin git để debug
+              echo "Current git status:"
+              git status
+              echo "Latest commit:"
+              git log --oneline -1
               
               # Cài đặt dependencies và chạy script
               npm install --production
-              node scripts/addEmoji.js
+            
               
               # Reload ứng dụng
               pm2 reload all
@@ -66,22 +69,24 @@ jobs:
             ssh be-02 '
               cd /srv/app/workspace-backend
               
-              # Kiểm tra xem đã có git repo chưa
-              if [ ! -d .git ]; then
-                # Nếu chưa có git repo, clone mới
-                rm -rf ./* 2>/dev/null || true
-                rm -rf ./.* 2>/dev/null || true
-                git clone https://github.com/Linh3694/workspace-backend.git .
-              else
-                # Nếu đã có git repo, fetch và reset
-                git fetch origin
-                git reset --hard origin/main
-                git clean -fd
-              fi
+              # Fetch và update code từ main branch
+              echo "Fetching latest changes..."
+              git fetch origin --prune
+              git checkout main
+              git reset --hard origin/main
+              git clean -fd
+              # Đảm bảo local branch tracking đúng remote
+              git branch --set-upstream-to=origin/main main
+              echo "Git sync completed successfully"
+              
+              # Hiển thị thông tin git để debug
+              echo "Current git status:"
+              git status
+              echo "Latest commit:"
+              git log --oneline -1
               
               # Cài đặt dependencies và chạy script
               npm install --production
-              node scripts/addEmoji.js
               
               # Reload ứng dụng
               pm2 reload all
