@@ -556,3 +556,81 @@ exports.getHandoverReport = async (req, res) => {
   // Gửi file PDF
   res.sendFile(filePath);
 };
+
+// Get filter options for monitors
+exports.getMonitorFilterOptions = async (req, res) => {
+  try {
+    console.log('[Filter Options] Fetching monitor filter options');
+    
+    // Aggregate data from all monitors
+    const aggregationPipeline = [
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assigned',
+          foreignField: '_id',
+          as: 'assignedUsers'
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          statuses: { $addToSet: '$status' },
+          types: { $addToSet: '$type' },
+          manufacturers: { $addToSet: '$manufacturer' },
+          departments: { $addToSet: '$assignedUsers.department' },
+          years: { $addToSet: '$releaseYear' }
+        }
+      }
+    ];
+
+    const result = await Monitor.aggregate(aggregationPipeline);
+    
+    if (!result || result.length === 0) {
+      return res.status(200).json({
+        statuses: ['Active', 'Standby', 'Broken', 'PendingDocumentation'],
+        types: [],
+        manufacturers: [],
+        departments: [],
+        yearRange: [2015, new Date().getFullYear()]
+      });
+    }
+
+    const data = result[0];
+    
+    // Clean and filter data
+    const statuses = (data.statuses || []).filter(Boolean);
+    const types = (data.types || []).filter(Boolean);
+    const manufacturers = (data.manufacturers || []).filter(Boolean).sort();
+    const departments = data.departments ? 
+      [].concat(...data.departments).filter(Boolean).filter((dept, index, arr) => arr.indexOf(dept) === index).sort() : [];
+    const years = (data.years || []).filter(year => year && year > 1990);
+    
+    const yearRange = years.length > 0 ? 
+      [Math.min(...years), Math.max(...years)] : 
+      [2015, new Date().getFullYear()];
+
+    const filterOptions = {
+      statuses,
+      types,
+      manufacturers,
+      departments,
+      yearRange
+    };
+
+    console.log('[Filter Options] Returning:', filterOptions);
+    
+    res.status(200).json(filterOptions);
+  } catch (error) {
+    console.error('Error fetching monitor filter options:', error);
+    res.status(500).json({
+      message: 'Error fetching filter options',
+      error: error.message,
+      statuses: ['Active', 'Standby', 'Broken', 'PendingDocumentation'],
+      types: [],
+      manufacturers: [],
+      departments: [],
+      yearRange: [2015, new Date().getFullYear()]
+    });
+  }
+};

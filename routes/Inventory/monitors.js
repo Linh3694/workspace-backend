@@ -12,7 +12,8 @@ const {
   revokeMonitor,
   updateMonitorStatus,
   uploadHandoverReport,
-  getHandoverReport
+  getHandoverReport,
+  getMonitorFilterOptions
 } = require("../../controllers/Inventory/monitorController");
 
 const validateToken = require("../../middleware/validateToken");
@@ -21,6 +22,7 @@ const { upload, processFile } = require("../../middleware/uploadHandover");
 router.use(validateToken);
 
 // Khai báo các route, toàn bộ xử lý nằm trong controller
+router.get("/filter-options", getMonitorFilterOptions);
 router.get("/", getMonitors);
 router.get("/:id", getMonitorById);
 router.post("/", createMonitor);

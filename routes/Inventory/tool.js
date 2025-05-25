@@ -13,6 +13,7 @@ const {
   getHandoverReport,
   getToolById,
   updateToolSpecs, // Thêm phần import này
+  getToolFilterOptions
 } = require("../../controllers/Inventory/toolController");
 const validateToken = require("../../middleware/validateToken");
 const { upload, processFile } = require("../../middleware/uploadHandover");
@@ -20,6 +21,7 @@ const { upload, processFile } = require("../../middleware/uploadHandover");
 
 router.use(validateToken);
 
+router.get("/filter-options", getToolFilterOptions);
 router.get("/", getTools);
 router.get("/:id", getToolById);
 

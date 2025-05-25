@@ -13,7 +13,8 @@ const {
   getHandoverReport,
   getLaptopById,      // ✅ Thêm hàm mới từ controller
   updateLaptopSpecs,  
-  fixOldData
+  fixOldData,
+  getLaptopFilterOptions
 } = require("../../controllers/Inventory/laptopController");
 const Laptop = require("../../models/Laptop"); // Import model
 const validateToken = require("../../middleware/validateToken");
@@ -22,6 +23,7 @@ const { upload, processFile } = require("../../middleware/uploadHandover");
 router.use(validateToken);
 
 // Routes
+router.get("/filter-options", getLaptopFilterOptions);
 router.get("/", getLaptops);
 router.post("/", createLaptop);
 router.put("/:id", updateLaptop);

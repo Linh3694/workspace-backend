@@ -12,7 +12,8 @@ const {
   revokePrinter,
   updatePrinterStatus,
   uploadHandoverReport,
-  getHandoverReport
+  getHandoverReport,
+  getPrinterFilterOptions
 } = require("../../controllers/Inventory/printerController");
 
 const validateToken = require("../../middleware/validateToken");
@@ -22,6 +23,7 @@ const { upload, processFile } = require("../../middleware/uploadHandover");
 router.use(validateToken);
 
 // Khai báo các route, toàn bộ xử lý nằm trong controller
+router.get("/filter-options", getPrinterFilterOptions);
 router.get("/", getPrinters);
 router.get("/:id", getPrinterById);
 router.post("/", createPrinter);

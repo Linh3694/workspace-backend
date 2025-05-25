@@ -13,6 +13,7 @@ const {
   getHandoverReport,
   getProjectorById,
   updateProjectorSpecs, // Thêm phần import này
+  getProjectorFilterOptions
 } = require("../../controllers/Inventory/projectorController");
 const validateToken = require("../../middleware/validateToken");
 const { upload, processFile } = require("../../middleware/uploadHandover");
@@ -20,6 +21,7 @@ const { upload, processFile } = require("../../middleware/uploadHandover");
 
 router.use(validateToken);
 
+router.get("/filter-options", getProjectorFilterOptions);
 router.get("/", getProjectors);
 router.get("/:id", getProjectorById);
 router.post("/", createProjector);
