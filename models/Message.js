@@ -117,4 +117,18 @@ const messageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+messageSchema.pre('save', function (next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Thêm indexes để tối ưu performance
+messageSchema.index({ chat: 1, createdAt: -1 }); // Lấy tin nhắn theo chat và thời gian
+messageSchema.index({ chat: 1, createdAt: 1 }); // Ascending order cho pagination
+messageSchema.index({ sender: 1, createdAt: -1 }); // Tin nhắn theo người gửi
+messageSchema.index({ readBy: 1 }); // Trạng thái đã đọc
+messageSchema.index({ replyTo: 1 }); // Tin nhắn reply
+messageSchema.index({ isPinned: 1, chat: 1 }); // Tin nhắn ghim
+messageSchema.index({ "reactions.user": 1 }); // Reactions của user
+
 module.exports = mongoose.model("Message", messageSchema);

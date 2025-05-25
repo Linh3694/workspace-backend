@@ -71,6 +71,7 @@ router.post(
         avatar: user.avatar || "https://via.placeholder.com/150",
         department: user.department || "N/A",
         needProfileUpdate: user.needProfileUpdate || false,
+        jobTitle: user.jobTitle || "N/A",
       };
 
       // Lưu vào Redis nếu có thể, nhưng không block luồng chính

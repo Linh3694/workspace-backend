@@ -45,6 +45,8 @@ const chatSocket = require('./socketChat');
 const socketTicketChat = require('./socketTicketChat');
 const notificationRoutes = require("./routes/Notification/notificationRoutes");
 const emojiRoutes = require('./routes/Chat/emojiRoutes');
+const postRoutes = require('./routes/Newfeed/postRoutes');
+const NewfeedSocket = require('./utils/newfeedSocket');
 
 const app = express();
 // Tạo HTTP server và tích hợp Socket.IO
@@ -70,6 +72,10 @@ app.set("io", io); // expose socket.io instance to controllers
 // Khởi tạo các socket handlers
 socketTicketChat(io);
 chatSocket(io);
+
+// Initialize newfeed socket
+const newfeedSocket = new NewfeedSocket(io);
+app.set('newfeedSocket', newfeedSocket);
 
 // Kết nối MongoDB và Redis
 const connectDB = async () => {
@@ -144,6 +150,7 @@ app.use("/api/admission", admissionRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/emoji", emojiRoutes);
+app.use("/api/posts", postRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

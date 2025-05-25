@@ -3,6 +3,8 @@ const Message = require('../../models/Message');
 const User = require('../../models/Users');
 const notificationController = require('../Notification/notificationController');
 const redisService = require('../../services/redisService');
+const CustomEmoji = require('../../models/CustomEmoji');
+const mongoose = require('mongoose');
 
 // Tạo chat mới hoặc lấy chat hiện có
 exports.createOrGetChat = async (req, res) => {
@@ -69,9 +71,32 @@ exports.getUserChats = async (req, res) => {
     }
 };
 
-// Gửi tin nhắn
-const CustomEmoji = require('../../models/CustomEmoji');
-const mongoose = require('mongoose');
+// Gửi tin nhắn với message queuing và delivery tracking
+const messageQueue = new Map();
+const deliveryStatus = new Map();
+
+// Helper function để track delivery status
+const trackMessageDelivery = (messageId, participants) => {
+    deliveryStatus.set(messageId, {
+        sent: Date.now(),
+        delivered: new Set(),
+        read: new Set(),
+        participants: participants.map(p => p.toString())
+    });
+};
+
+// Helper function để update delivery status
+const updateDeliveryStatus = (messageId, userId, status) => {
+    const delivery = deliveryStatus.get(messageId);
+    if (delivery) {
+        if (status === 'delivered') {
+            delivery.delivered.add(userId);
+        } else if (status === 'read') {
+            delivery.read.add(userId);
+        }
+    }
+};
+
 exports.sendMessage = async (req, res) => {
     try {
         const {
@@ -79,62 +104,47 @@ exports.sendMessage = async (req, res) => {
             content,
             type = 'text',
             isEmoji = false,
-            emojiId,
-            emojiType,
-            emojiName
+            emojiId = null,
+            emojiType = null,
+            emojiName = null,
+            emojiUrl = null,
+            tempId = null // Client-side temporary ID để tránh duplicate
         } = req.body;
         const senderId = req.user._id;
 
-        // Validate required fields for emoji messages
-        if (isEmoji && (!emojiId || !emojiType || !emojiName)) {
-            return res.status(400).json({ 
-                message: 'Missing required emoji fields',
-                required: { emojiId, emojiType, emojiName }
-            });
-        }
-        // If emoji, fetch its URL and resolve actual ID (lookup by _id or code)
-        let emojiUrl;
-        let actualEmojiId;
-        if (isEmoji) {
-            console.log('emojiId nhận được:', emojiId);
-            let emojiRecord;
-            if (mongoose.Types.ObjectId.isValid(emojiId)) {
-                emojiRecord = await CustomEmoji.findById(emojiId);
-            } else {
-                emojiRecord = await CustomEmoji.findOne({ code: emojiId });
-            }
-            if (!emojiRecord) {
-                console.error('Emoji not found. emojiId:', emojiId);
-                return res.status(404).json({ message: 'Emoji not found' });
-            }
-            emojiUrl = emojiRecord.url;
-            actualEmojiId = emojiRecord._id;
+        // Kiểm tra duplicate message bằng tempId
+        if (tempId && messageQueue.has(tempId)) {
+            return res.status(200).json(messageQueue.get(tempId));
         }
 
-        // Tạo tin nhắn mới
-        const messageData = {
-            chat: chatId,
-            sender: senderId,
-            content,
-            type,
-            readBy: [senderId]
-        };
-
-        if (isEmoji) {
-            messageData.isEmoji   = true;
-            messageData.emojiId   = actualEmojiId;
-            messageData.emojiType = emojiType;
-            messageData.emojiName = emojiName;
-            messageData.emojiUrl  = emojiUrl;
+        // Validate input
+        if (!content || !content.trim()) {
+            return res.status(400).json({ message: 'Nội dung tin nhắn không được để trống' });
         }
 
-        const message = await Message.create(messageData);
-
-        // Lấy thông tin chat để gửi thông báo
+        // Kiểm tra chat tồn tại và user có quyền
         const chat = await Chat.findById(chatId);
         if (!chat) {
             return res.status(404).json({ message: 'Chat not found' });
         }
+
+        if (!chat.participants.includes(senderId)) {
+            return res.status(403).json({ message: 'Không có quyền gửi tin nhắn trong chat này' });
+        }
+
+        // Tạo tin nhắn mới
+        const message = await Message.create({
+            chat: chatId,
+            sender: senderId,
+            content: content.trim(),
+            type,
+            readBy: [senderId],
+            isEmoji,
+            emojiId,
+            emojiType,
+            emojiName,
+            emojiUrl
+        });
 
         // Cập nhật lastMessage trong chat
         await Chat.findByIdAndUpdate(chatId, {
@@ -142,68 +152,136 @@ exports.sendMessage = async (req, res) => {
             updatedAt: Date.now()
         });
 
+        // Cache message nếu có tempId
+        if (tempId) {
+            messageQueue.set(tempId, message);
+            // Cleanup sau 5 phút
+            setTimeout(() => messageQueue.delete(tempId), 5 * 60 * 1000);
+        }
+
         // Populate thông tin người gửi
         const populatedMessage = await Message.findById(message._id)
             .populate('sender', 'fullname avatarUrl email');
 
-        // Emit socket event
+        // Track delivery status
+        trackMessageDelivery(message._id, chat.participants);
+
+        // Emit socket event với retry mechanism
         const io = req.app.get('io');
-        io.to(chatId).emit('receiveMessage', populatedMessage);
+        const emitWithRetry = (event, data, retries = 3) => {
+            try {
+                io.to(chatId).emit(event, data);
+            } catch (error) {
+                if (retries > 0) {
+                    setTimeout(() => emitWithRetry(event, data, retries - 1), 1000);
+                } else {
+                    logger.error(`Failed to emit ${event} after retries:`, error);
+                }
+            }
+        };
+
+        emitWithRetry('receiveMessage', populatedMessage);
 
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email')
             .populate('lastMessage');
 
-        updatedChat.participants.forEach(p =>
-            io.to(p._id.toString()).emit('newChat', updatedChat)
+        // Emit chat update với delivery confirmation
+        updatedChat.participants.forEach(p => {
+            if (p._id.toString() !== senderId.toString()) {
+                io.to(p._id.toString()).emit('newChat', updatedChat);
+                // Track delivery
+                updateDeliveryStatus(message._id, p._id.toString(), 'delivered');
+            }
+        });
+
+        // Invalidate caches hiệu quả
+        await redisService.invalidateChatCaches(
+            chatId, 
+            chat.participants.map(p => p.toString())
         );
 
-        // Gửi thông báo push cho người nhận
-        if (chat) {
+        // Gửi thông báo push cho người nhận (async)
+        setImmediate(() => {
             notificationController.sendNewChatMessageNotification(
                 message,
                 req.user.fullname,
                 chat
             );
-        }
+        });
 
-        res.status(201).json(populatedMessage);
+        res.status(201).json({
+            ...populatedMessage.toObject(),
+            deliveryStatus: 'sent',
+            tempId
+        });
     } catch (error) {
         console.error('Error sending message:', error);
         res.status(500).json({ message: error.message });
     }
 };
 
-// Lấy tin nhắn của một chat
+// Lấy tin nhắn của một chat với pagination
 exports.getChatMessages = async (req, res) => {
     try {
         const { chatId } = req.params;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20; // Giới hạn 20 tin nhắn mỗi lần
+        const skip = (page - 1) * limit;
 
-        // Kiểm tra cache trước
-        let messages = await redisService.getChatMessages(chatId);
+        // Kiểm tra cache trước với key bao gồm page
+        const cacheKey = `chat:messages:${chatId}:page:${page}:limit:${limit}`;
+        let cachedResult = await redisService.getChatMessages(cacheKey);
 
-        if (!messages) {
-            // Nếu không có trong cache, truy vấn database
-            messages = await Message.find({ chat: chatId })
-                .populate('sender', 'fullname avatarUrl email')
-                .populate('originalSender', 'fullname avatarUrl email')
-                .populate({
-                    path: 'replyTo',
-                    populate: {
-                        path: 'sender',
-                        select: 'fullname avatarUrl email'
-                    }
-                })
-                .sort({ createdAt: 1 });
-
-            // Lưu vào cache
-            await redisService.setChatMessages(chatId, messages);
+        if (cachedResult && cachedResult.success) {
+            return res.status(200).json({
+                success: true,
+                messages: cachedResult.data,
+                pagination: {
+                    page,
+                    limit,
+                    hasMore: cachedResult.data.length === limit
+                }
+            });
         }
 
-        res.status(200).json(messages);
+        // Nếu không có trong cache, truy vấn database với pagination
+        const messages = await Message.find({ chat: chatId })
+            .populate('sender', 'fullname avatarUrl email')
+            .populate('originalSender', 'fullname avatarUrl email')
+            .populate({
+                path: 'replyTo',
+                populate: {
+                    path: 'sender',
+                    select: 'fullname avatarUrl email'
+                }
+            })
+            .sort({ createdAt: -1 }) // Sắp xếp mới nhất trước
+            .skip(skip)
+            .limit(limit)
+            .lean(); // Sử dụng lean() để tăng performance
+
+        // Đảo ngược thứ tự để hiển thị đúng (cũ nhất trước)
+        const reversedMessages = messages.reverse();
+
+        // Lưu vào cache với TTL ngắn hơn cho pagination
+        await redisService.setChatMessages(cacheKey, reversedMessages, 300); // 5 phút
+
+        res.status(200).json({
+            success: true,
+            messages: reversedMessages,
+            pagination: {
+                page,
+                limit,
+                hasMore: messages.length === limit
+            }
+        });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
     }
 };
 

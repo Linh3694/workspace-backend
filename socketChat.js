@@ -4,6 +4,50 @@ const logger = require('./logger');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { createClient } = require('redis');
 
+// Rate limiting cho socket events
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW = 1000; // 1 giây
+const MAX_EVENTS_PER_WINDOW = 10; // Tối đa 10 events/giây
+
+// Typing timeout management
+const typingTimeouts = new Map();
+const TYPING_TIMEOUT = 3000; // 3 giây
+
+// Helper function để check rate limit
+const checkRateLimit = (socketId, eventType) => {
+    const key = `${socketId}:${eventType}`;
+    const now = Date.now();
+    
+    if (!rateLimitMap.has(key)) {
+        rateLimitMap.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+        return true;
+    }
+    
+    const limit = rateLimitMap.get(key);
+    if (now > limit.resetTime) {
+        limit.count = 1;
+        limit.resetTime = now + RATE_LIMIT_WINDOW;
+        return true;
+    }
+    
+    if (limit.count >= MAX_EVENTS_PER_WINDOW) {
+        return false;
+    }
+    
+    limit.count++;
+    return true;
+};
+
+// Cleanup rate limit map periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, limit] of rateLimitMap.entries()) {
+        if (now > limit.resetTime) {
+            rateLimitMap.delete(key);
+        }
+    }
+}, RATE_LIMIT_WINDOW);
+
 // Redis Pub/Sub cho adapter
 const pubClient = createClient({
   socket: {

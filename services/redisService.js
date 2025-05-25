@@ -149,15 +149,77 @@ class RedisService {
 
     // === CHAT METHODS === 
 
-    // Lưu thông tin chat
+    // Cache warming cho chat data
+    async warmChatCache(chatId) {
+        if (!this.client) return { success: false, error: 'Redis not connected' };
+        try {
+            const Chat = require('../models/Chat');
+            const chat = await Chat.findById(chatId)
+                .populate('participants', 'fullname avatarUrl email department')
+                .populate('lastMessage')
+                .lean();
+            
+            if (chat) {
+                await this.setChatData(chatId, chat, 3600); // 1 giờ
+                logger.info(`[Redis] Warmed cache for chat: ${chatId}`);
+            }
+            return { success: true };
+        } catch (error) {
+            logger.error(`[Redis][warmChatCache] chatId=${chatId} error=${error.message}`);
+            return { success: false, error };
+        }
+    }
+
+    // Batch cache invalidation cho chat
+    async invalidateChatCaches(chatId, participantIds = []) {
+        if (!this.client) return;
+        try {
+            const pipeline = this.client.multi();
+            
+            // Xóa cache chat chính
+            pipeline.del(`chat:${chatId}`);
+            pipeline.del(`chat:messages:${chatId}`);
+            
+            // Xóa cache pagination
+            for (let page = 1; page <= 10; page++) {
+                pipeline.del(`chat:messages:${chatId}:page:${page}:limit:20`);
+            }
+            
+            // Xóa cache user chats cho tất cả participants
+            participantIds.forEach(userId => {
+                pipeline.del(`user:chats:${userId}`);
+            });
+            
+            await pipeline.exec();
+            logger.info(`[Redis] Invalidated caches for chat: ${chatId}`);
+        } catch (error) {
+            logger.error(`[Redis][invalidateChatCaches] chatId=${chatId} error=${error.message}`);
+        }
+    }
+
+    // Lưu thông tin chat với TTL thông minh
     async setChatData(chatId, data, expirationInSeconds = DEFAULT_TTL) {
         if (!this.client) return { success: false, error: 'Redis not connected' };
         try {
             const key = `chat:${chatId}`;
-            await this.client.hSet(key, data); // data là object {field: value, ...}
-            if (expirationInSeconds) {
-                await this.client.expire(key, expirationInSeconds);
+            
+            // TTL thông minh dựa trên hoạt động của chat
+            let ttl = expirationInSeconds || DEFAULT_TTL;
+            if (data.lastMessage && data.updatedAt) {
+                const lastActivity = new Date(data.updatedAt);
+                const hoursSinceLastActivity = (Date.now() - lastActivity.getTime()) / (1000 * 60 * 60);
+                
+                // Chat hoạt động gần đây có TTL dài hơn
+                if (hoursSinceLastActivity < 1) {
+                    ttl = 7200; // 2 giờ
+                } else if (hoursSinceLastActivity < 24) {
+                    ttl = 3600; // 1 giờ
+                } else {
+                    ttl = 1800; // 30 phút
+                }
             }
+            
+            await this.client.setEx(key, ttl, JSON.stringify(data));
             return { success: true };
         } catch (error) {
             logger.error(`[Redis][setChatData] chatId=${chatId} error=${error.message}`);

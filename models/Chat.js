@@ -34,4 +34,10 @@ chatSchema.pre('save', function (next) {
   next();
 });
 
+// Thêm indexes để tối ưu performance
+chatSchema.index({ participants: 1 }); // Tìm chat theo participants
+chatSchema.index({ participants: 1, lastMessage: 1 }); // Lấy chat có tin nhắn
+chatSchema.index({ updatedAt: -1 }); // Sắp xếp theo thời gian cập nhật
+chatSchema.index({ "participants": 1, "updatedAt": -1 }); // Compound index cho getUserChats
+
 module.exports = mongoose.model("Chat", chatSchema);
