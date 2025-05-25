@@ -22,6 +22,47 @@ router.post('/message', authenticate, chatController.sendMessage);
 // Lấy tin nhắn của một chat
 router.get('/messages/:chatId', authenticate, chatController.getChatMessages);
 
+// Endpoint đơn giản để kiểm tra tin nhắn
+router.get('/check-messages/:chatId', authenticate, async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        console.log(`[check-messages] Checking messages for chat: ${chatId}`);
+        
+        // Đếm tổng số tin nhắn
+        const totalCount = await Message.countDocuments({ chat: chatId });
+        console.log(`[check-messages] Total messages count: ${totalCount}`);
+        
+        // Lấy 5 tin nhắn gần nhất
+        const recentMessages = await Message.find({ chat: chatId })
+            .populate('sender', 'fullname')
+            .sort({ createdAt: -1 })
+            .limit(5);
+        
+        console.log(`[check-messages] Recent messages:`, recentMessages.map(m => ({
+            id: m._id,
+            content: m.content,
+            sender: m.sender?.fullname,
+            createdAt: m.createdAt
+        })));
+        
+        res.status(200).json({
+            chatId,
+            totalCount,
+            recentMessages: recentMessages.map(m => ({
+                id: m._id,
+                content: m.content,
+                sender: m.sender?.fullname,
+                createdAt: m.createdAt
+            }))
+        });
+    } catch (error) {
+        console.error('[check-messages] Error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+
+
 // Đánh dấu tin nhắn đã đọc
 router.put('/message/:messageId/read', authenticate, chatController.markMessageAsRead);
 
@@ -108,7 +149,7 @@ router.get('/:chatId/pinned-messages', authenticate, chatController.getPinnedMes
 router.post('/message/forward', authenticate, chatController.forwardMessage);
 
 // Đánh dấu tất cả tin nhắn trong chat là đã đọc (chỉ cho các tin nhắn mình là người nhận)
-router.put('/chats/read-all/:chatId', authenticate, chatController.markAllMessagesAsRead);
+router.put('/read-all/:chatId', authenticate, chatController.markAllMessagesAsRead);
 
 // API thu hồi tin nhắn
 router.delete('/message/:messageId/revoke', authenticate, chatController.revokeMessage);
