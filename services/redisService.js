@@ -53,6 +53,21 @@ class RedisService {
         }
     }
 
+    // Helper method để convert userId to string an toàn
+    _safeUserIdToString(userId, methodName = 'unknown') {
+        if (!userId) {
+            throw new Error(`userId is undefined or null in ${methodName}`);
+        }
+        
+        if (typeof userId === 'string') {
+            return userId;
+        } else if (userId && typeof userId.toString === 'function') {
+            return userId.toString();
+        } else {
+            throw new Error(`Invalid userId type: ${typeof userId}, value: ${userId} in ${methodName}`);
+        }
+    }
+
     // === USER METHODS ===
 
     // Lưu thông tin user
@@ -286,8 +301,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'setUserChats');
             const key = `user:chats:${userIdStr}`;
             await this.client.setEx(key, expirationInSeconds, JSON.stringify(chats));
         } catch (error) {
@@ -306,8 +320,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'getUserChats');
             const key = `user:chats:${userIdStr}`;
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
@@ -374,8 +387,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'deleteUserChatsCache');
             const key = `user:chats:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
@@ -408,8 +420,7 @@ class RedisService {
                 return { success: false, error: 'Cannot stringify status data' };
             }
             
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'setOnlineStatus');
             const key = `user:online:${userIdStr}`;
             if (expirationInSeconds) {
                 await this.client.setEx(key, expirationInSeconds, stringifiedData);
@@ -434,8 +445,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'getUserOnlineStatus');
             const key = `user:online:${userIdStr}`;
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
@@ -476,8 +486,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'deleteUserOnlineStatus');
             const key = `user:online:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
@@ -574,8 +583,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'setUserSocketId');
             const key = `user:socket:${userIdStr}`;
             await this.client.setEx(key, expirationInSeconds, socketId);
             return { success: true };
@@ -596,8 +604,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'getUserSocketId');
             const key = `user:socket:${userIdStr}`;
             return await this.client.get(key);
         } catch (error) {
@@ -617,8 +624,7 @@ class RedisService {
         }
         
         try {
-            // Ensure userId is a string
-            const userIdStr = userId.toString();
+            const userIdStr = this._safeUserIdToString(userId, 'deleteUserSocketId');
             const key = `user:socket:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
