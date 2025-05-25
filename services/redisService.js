@@ -273,8 +273,22 @@ class RedisService {
     // Lưu danh sách chat của user
     async setUserChats(userId, chats, expirationInSeconds = DEFAULT_TTL) {
         if (!this.client) return;
+        
+        // Validate userId and chats before proceeding
+        if (!userId) {
+            logger.error(`[Redis][setUserChats] userId is undefined or null`);
+            return;
+        }
+        
+        if (!chats) {
+            logger.error(`[Redis][setUserChats] userId=${userId} chats is undefined or null`);
+            return;
+        }
+        
         try {
-            const key = `user:chats:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:chats:${userIdStr}`;
             await this.client.setEx(key, expirationInSeconds, JSON.stringify(chats));
         } catch (error) {
             logger.error(`[Redis][setUserChats] userId=${userId} error=${error.message}`);
@@ -284,8 +298,17 @@ class RedisService {
     // Lấy danh sách chat của user
     async getUserChats(userId) {
         if (!this.client) return null;
+        
+        // Validate userId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][getUserChats] userId is undefined or null`);
+            return null;
+        }
+        
         try {
-            const key = `user:chats:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:chats:${userIdStr}`;
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
@@ -343,8 +366,17 @@ class RedisService {
     // Xóa cache danh sách chat của user
     async deleteUserChatsCache(userId) {
         if (!this.client) return;
+        
+        // Validate userId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][deleteUserChatsCache] userId is undefined or null`);
+            return;
+        }
+        
         try {
-            const key = `user:chats:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:chats:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
             logger.error(`[Redis][deleteUserChatsCache] userId=${userId} error=${error.message}`);
@@ -362,6 +394,13 @@ class RedisService {
      */
     async setOnlineStatus(userId, isOnline, lastSeen = Date.now(), expirationInSeconds = ONLINE_TTL) {
         if (!this.client) return { success: false, error: 'Redis not connected' };
+        
+        // Validate userId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][setOnlineStatus] userId is undefined or null`);
+            return { success: false, error: 'userId is undefined or null' };
+        }
+        
         try {
             const statusData = { isOnline, lastSeen };
             const stringifiedData = this._safeStringify(statusData, 'setOnlineStatus');
@@ -369,7 +408,9 @@ class RedisService {
                 return { success: false, error: 'Cannot stringify status data' };
             }
             
-            const key = `user:online:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:online:${userIdStr}`;
             if (expirationInSeconds) {
                 await this.client.setEx(key, expirationInSeconds, stringifiedData);
             } else {
@@ -385,8 +426,17 @@ class RedisService {
     // Get user's online status
     async getUserOnlineStatus(userId) {
         if (!this.client) return null;
+        
+        // Validate userId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][getUserOnlineStatus] userId is undefined or null`);
+            return null;
+        }
+        
         try {
-            const key = `user:online:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:online:${userIdStr}`;
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
@@ -418,8 +468,17 @@ class RedisService {
     // Delete user's online status
     async deleteUserOnlineStatus(userId) {
         if (!this.client) return;
+        
+        // Validate userId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][deleteUserOnlineStatus] userId is undefined or null`);
+            return;
+        }
+        
         try {
-            const key = `user:online:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:online:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
             logger.error(`[Redis][deleteUserOnlineStatus] userId=${userId} error=${error.message}`);
@@ -502,8 +561,22 @@ class RedisService {
     // Set user socket ID for tracking
     async setUserSocketId(userId, socketId, expirationInSeconds = 3600) {
         if (!this.client) return { success: false, error: 'Redis not connected' };
+        
+        // Validate userId and socketId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][setUserSocketId] userId is undefined or null`);
+            return { success: false, error: 'userId is undefined or null' };
+        }
+        
+        if (!socketId) {
+            logger.error(`[Redis][setUserSocketId] userId=${userId} socketId is undefined or null`);
+            return { success: false, error: 'socketId is undefined or null' };
+        }
+        
         try {
-            const key = `user:socket:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:socket:${userIdStr}`;
             await this.client.setEx(key, expirationInSeconds, socketId);
             return { success: true };
         } catch (error) {
@@ -515,8 +588,17 @@ class RedisService {
     // Get user socket ID
     async getUserSocketId(userId) {
         if (!this.client) return null;
+        
+        // Validate userId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][getUserSocketId] userId is undefined or null`);
+            return null;
+        }
+        
         try {
-            const key = `user:socket:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:socket:${userIdStr}`;
             return await this.client.get(key);
         } catch (error) {
             logger.error(`[Redis][getUserSocketId] userId=${userId} error=${error.message}`);
@@ -527,8 +609,17 @@ class RedisService {
     // Delete user socket ID
     async deleteUserSocketId(userId) {
         if (!this.client) return;
+        
+        // Validate userId before proceeding
+        if (!userId) {
+            logger.error(`[Redis][deleteUserSocketId] userId is undefined or null`);
+            return;
+        }
+        
         try {
-            const key = `user:socket:${userId}`;
+            // Ensure userId is a string
+            const userIdStr = userId.toString();
+            const key = `user:socket:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
             logger.error(`[Redis][deleteUserSocketId] userId=${userId} error=${error.message}`);

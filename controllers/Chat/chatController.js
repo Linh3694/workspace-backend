@@ -46,7 +46,12 @@ exports.createOrGetChat = async (req, res) => {
 // Lấy danh sách chat của user
 exports.getUserChats = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const userId = req.user?._id;
+
+        // Validate user ID
+        if (!userId) {
+            return res.status(401).json({ message: 'User not authenticated or user ID missing' });
+        }
 
         // Kiểm tra cache trước
         let chats = await redisService.getUserChats(userId);
@@ -67,12 +72,15 @@ exports.getUserChats = async (req, res) => {
                 })
                 .sort({ updatedAt: -1 });
 
-            // Lưu vào cache
-            await redisService.setUserChats(userId, chats);
+            // Lưu vào cache - only if chats is valid
+            if (chats && Array.isArray(chats)) {
+                await redisService.setUserChats(userId, chats);
+            }
         }
 
-        res.status(200).json(chats);
+        res.status(200).json(chats || []);
     } catch (error) {
+        console.error('Error in getUserChats:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -101,6 +109,11 @@ const updateDeliveryStatus = (messageId, userId, status) => {
             delivery.read.add(userId);
         }
     }
+};
+
+// Helper function to safely get participant ID as string
+const getParticipantId = (participant) => {
+    return participant && participant._id ? participant._id.toString() : null;
 };
 
 exports.sendMessage = async (req, res) => {
@@ -201,17 +214,18 @@ exports.sendMessage = async (req, res) => {
 
         // Emit chat update với delivery confirmation
         updatedChat.participants.forEach(p => {
-            if (p._id.toString() !== senderId.toString()) {
-                io.to(p._id.toString()).emit('newChat', updatedChat);
+            const participantId = getParticipantId(p);
+            if (participantId && participantId !== senderId.toString()) {
+                io.to(participantId).emit('newChat', updatedChat);
                 // Track delivery
-                updateDeliveryStatus(message._id, p._id.toString(), 'delivered');
+                updateDeliveryStatus(message._id, participantId, 'delivered');
             }
         });
 
         // Invalidate caches hiệu quả
         await redisService.invalidateChatCaches(
             chatId, 
-            chat.participants.map(p => p.toString())
+            chat.participants.filter(p => p).map(p => p.toString())
         );
 
         // Gửi thông báo push cho người nhận (async)
@@ -383,14 +397,20 @@ exports.uploadChatAttachment = async (req, res) => {
                 }
             });
 
-        updatedChat.participants.forEach(p =>
-            io.to(p._id.toString()).emit('newChat', updatedChat)
-        );
+        updatedChat.participants.forEach(p => {
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                io.to(participantId).emit('newChat', updatedChat);
+            }
+        });
 
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chatId);
         updatedChat.participants.forEach(async (p) => {
-            await redisService.deleteUserChatsCache(p._id.toString());
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                await redisService.deleteUserChatsCache(participantId);
+            }
         });
 
         // Gửi thông báo push cho người nhận
@@ -460,14 +480,20 @@ exports.uploadMultipleImages = async (req, res) => {
                 }
             });
 
-        updatedChat.participants.forEach(p =>
-            io.to(p._id.toString()).emit('newChat', updatedChat)
-        );
+        updatedChat.participants.forEach(p => {
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                io.to(participantId).emit('newChat', updatedChat);
+            }
+        });
 
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chatId);
         updatedChat.participants.forEach(async (p) => {
-            await redisService.deleteUserChatsCache(p._id.toString());
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                await redisService.deleteUserChatsCache(participantId);
+            }
         });
 
         // Gửi thông báo push cho người nhận
@@ -622,7 +648,10 @@ exports.replyToMessage = async (req, res) => {
         const chat = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email');
         chat.participants.forEach(async (p) => {
-            await redisService.deleteUserChatsCache(p._id.toString());
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                await redisService.deleteUserChatsCache(participantId);
+            }
         });
 
         // Emit socket event
@@ -712,7 +741,10 @@ exports.pinMessage = async (req, res) => {
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chat._id);
         chat.participants.forEach(async (p) => {
-            await redisService.deleteUserChatsCache(p.toString());
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                await redisService.deleteUserChatsCache(participantId);
+            }
         });
 
         // Populate tin nhắn đã ghim
@@ -773,7 +805,10 @@ exports.unpinMessage = async (req, res) => {
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chat._id);
         chat.participants.forEach(async (p) => {
-            await redisService.deleteUserChatsCache(p.toString());
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                await redisService.deleteUserChatsCache(participantId);
+            }
         });
 
         // Emit socket event
@@ -842,14 +877,14 @@ exports.getRecentUsers = async (req, res) => {
         // Lọc ra danh sách người dùng (không bao gồm user hiện tại)
         const recentUsers = recentChats.reduce((users, chat) => {
             const otherParticipants = chat.participants.filter(
-                p => p._id.toString() !== currentUserId.toString()
+                p => p && p._id && p._id.toString() !== currentUserId.toString()
             );
             return [...users, ...otherParticipants];
         }, []);
 
         // Loại bỏ các user trùng lặp
         const uniqueUsers = Array.from(new Map(
-            recentUsers.map(user => [user._id.toString(), user])
+            recentUsers.filter(user => user && user._id).map(user => [user._id.toString(), user])
         ).values());
 
         res.status(200).json({ users: uniqueUsers });
@@ -921,7 +956,10 @@ exports.forwardMessage = async (req, res) => {
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chat._id);
         chat.participants.forEach(async (p) => {
-            await redisService.deleteUserChatsCache(p.toString());
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                await redisService.deleteUserChatsCache(participantId);
+            }
         });
 
         // Emit socket event
@@ -939,9 +977,12 @@ exports.forwardMessage = async (req, res) => {
                 }
             });
 
-        updatedChat.participants.forEach(p =>
-            io.to(p._id.toString()).emit('newChat', updatedChat)
-        );
+        updatedChat.participants.forEach(p => {
+            const participantId = getParticipantId(p);
+            if (participantId) {
+                io.to(participantId).emit('newChat', updatedChat);
+            }
+        });
 
         // Gửi thông báo push cho người nhận
         notificationController.sendNewChatMessageNotification(
@@ -980,7 +1021,10 @@ exports.markAllMessagesAsRead = async (req, res) => {
         const chatForCache = await Chat.findById(chatId).populate('participants');
         if (chatForCache) {
             chatForCache.participants.forEach(async (p) => {
-                await redisService.deleteUserChatsCache(p._id.toString());
+                const participantId = getParticipantId(p);
+                if (participantId) {
+                    await redisService.deleteUserChatsCache(participantId);
+                }
             });
         }
 
@@ -991,11 +1035,14 @@ exports.markAllMessagesAsRead = async (req, res) => {
         const chat = await Chat.findById(chatId).populate('participants');
         if (chat) {
             chat.participants.forEach(participant => {
-                io.to(participant._id.toString()).emit('messageRead', {
-                    userId,
-                    chatId,
-                    timestamp: new Date().toISOString()
-                });
+                const participantId = getParticipantId(participant);
+                if (participantId) {
+                    io.to(participantId).emit('messageRead', {
+                        userId,
+                        chatId,
+                        timestamp: new Date().toISOString()
+                    });
+                }
             });
         }
 
