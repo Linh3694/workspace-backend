@@ -52,10 +52,18 @@ router.put('/read-all/:chatId', authenticate, async (req, res) => {
 
         // Emit socket event thông báo tin nhắn đã được đọc
         const io = req.app.get('io');
-        io.to(chatId).emit('messageRead', {
-            userId: userId,
-            chatId: chatId
-        });
+        
+        // Emit cho tất cả participants trong chat
+        const chat = await Chat.findById(chatId).populate('participants');
+        if (chat) {
+            chat.participants.forEach(participant => {
+                io.to(participant._id.toString()).emit('messageRead', {
+                    userId: userId,
+                    chatId: chatId,
+                    timestamp: new Date().toISOString()
+                });
+            });
+        }
 
         res.status(200).json({ message: `Đã đánh dấu đọc ${unreadMessages.length} tin nhắn` });
     } catch (error) {

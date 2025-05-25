@@ -58,7 +58,13 @@ exports.getUserChats = async (req, res) => {
                 lastMessage: { $exists: true, $ne: null }
             })
                 .populate('participants', 'fullname avatarUrl email department')
-                .populate('lastMessage')
+                .populate({
+                    path: 'lastMessage',
+                    populate: {
+                        path: 'sender',
+                        select: 'fullname avatarUrl email'
+                    }
+                })
                 .sort({ updatedAt: -1 });
 
             // Lưu vào cache
@@ -185,7 +191,13 @@ exports.sendMessage = async (req, res) => {
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email')
-            .populate('lastMessage');
+            .populate({
+                path: 'lastMessage',
+                populate: {
+                    path: 'sender',
+                    select: 'fullname avatarUrl email'
+                }
+            });
 
         // Emit chat update với delivery confirmation
         updatedChat.participants.forEach(p => {
@@ -363,7 +375,13 @@ exports.uploadChatAttachment = async (req, res) => {
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email')
-            .populate('lastMessage');
+            .populate({
+                path: 'lastMessage',
+                populate: {
+                    path: 'sender',
+                    select: 'fullname avatarUrl email'
+                }
+            });
 
         updatedChat.participants.forEach(p =>
             io.to(p._id.toString()).emit('newChat', updatedChat)
@@ -434,7 +452,13 @@ exports.uploadMultipleImages = async (req, res) => {
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email')
-            .populate('lastMessage');
+            .populate({
+                path: 'lastMessage',
+                populate: {
+                    path: 'sender',
+                    select: 'fullname avatarUrl email'
+                }
+            });
 
         updatedChat.participants.forEach(p =>
             io.to(p._id.toString()).emit('newChat', updatedChat)
@@ -907,7 +931,13 @@ exports.forwardMessage = async (req, res) => {
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chat._id)
             .populate('participants', 'fullname avatarUrl email')
-            .populate('lastMessage');
+            .populate({
+                path: 'lastMessage',
+                populate: {
+                    path: 'sender',
+                    select: 'fullname avatarUrl email'
+                }
+            });
 
         updatedChat.participants.forEach(p =>
             io.to(p._id.toString()).emit('newChat', updatedChat)
@@ -945,14 +975,29 @@ exports.markAllMessagesAsRead = async (req, res) => {
 
         // Xóa cache tin nhắn của chat
         await redisService.deleteChatMessagesCache(chatId);
+        
+        // Xóa cache danh sách chat của tất cả participants
+        const chatForCache = await Chat.findById(chatId).populate('participants');
+        if (chatForCache) {
+            chatForCache.participants.forEach(async (p) => {
+                await redisService.deleteUserChatsCache(p._id.toString());
+            });
+        }
 
         // Emit socket event cho các client khác
         const io = req.app.get('io');
-        io.to(chatId).emit('messageRead', {
-            userId,
-            chatId,
-            timestamp: new Date().toISOString()
-        });
+        
+        // Emit cho tất cả participants trong chat
+        const chat = await Chat.findById(chatId).populate('participants');
+        if (chat) {
+            chat.participants.forEach(participant => {
+                io.to(participant._id.toString()).emit('messageRead', {
+                    userId,
+                    chatId,
+                    timestamp: new Date().toISOString()
+                });
+            });
+        }
 
         res.status(200).json({ success: true, modifiedCount: result.modifiedCount });
     } catch (error) {
