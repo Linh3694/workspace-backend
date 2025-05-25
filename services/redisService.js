@@ -72,29 +72,29 @@ class RedisService {
 
     // Helper method để convert userId to string an toàn
     _safeUserIdToString(userId, methodName = 'unknown') {
-        if (!userId) {
+        if (userId == null) {
             throw new Error(`userId is undefined or null in ${methodName}`);
         }
-        
+        // If it's already a string
         if (typeof userId === 'string') {
             return userId;
         }
-        
-        // Handle MongoDB ObjectId specifically
-        if (userId && typeof userId === 'object' && userId._id) {
+        // Mongoose ObjectId instance (has toHexString)
+        if (typeof userId === 'object' && typeof userId.toHexString === 'function') {
+            return userId.toHexString();
+        }
+        // MongoDB document or other object with _id property
+        if (typeof userId === 'object' && '_id' in userId) {
             return String(userId._id);
         }
-        
-        // Try to convert to string safely
+        // Fallback: generic toString or String()
         try {
-            if (userId && typeof userId.toString === 'function') {
+            if (userId != null && typeof userId.toString === 'function') {
                 return userId.toString();
-            } else {
-                // Fallback to String() constructor
-                return String(userId);
             }
+            return String(userId);
         } catch (error) {
-            logger.error(`[Redis][_safeUserIdToString] Error converting userId to string in ${methodName}: ${error.message}, userId type: ${typeof userId}, userId value: ${JSON.stringify(userId)}`);
+            logger.error(`[Redis][_safeUserIdToString] Error converting userId to string in ${methodName}: ${error.message}, type: ${typeof userId}`);
             throw new Error(`Cannot convert userId to string in ${methodName}: ${error.message}`);
         }
     }
