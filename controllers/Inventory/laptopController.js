@@ -5,13 +5,43 @@ const User = require("../../models/Users");
 const Room = require("../../models/Room")
 const mongoose = require("mongoose");
 const upload = require("../../middleware/uploadHandover"); // Middleware Multer
+const redisService = require("../../services/redisService");
 
-
-// Lấy danh sách laptop
+// Lấy danh sách laptop với pagination
 exports.getLaptops = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Kiểm tra cache trước
+    const cachedData = await redisService.getDevicePage('laptop', page, limit);
+    if (cachedData) {
+      console.log(`[Cache] Returning cached laptops page ${page}`);
+      return res.status(200).json({
+        populatedLaptops: cachedData.devices,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(cachedData.total / limit),
+          totalItems: cachedData.total,
+          itemsPerPage: limit,
+          hasNext: page < Math.ceil(cachedData.total / limit),
+          hasPrev: page > 1
+        }
+      });
+    }
+
+    // Nếu không có cache, fetch từ DB
+    console.log(`[DB] Fetching laptops page ${page} from database`);
+    
+    // Đếm tổng số documents
+    const totalItems = await Laptop.countDocuments();
+    
+    // Lấy data với pagination
     const laptops = await Laptop.find()
-      .sort({ createdAt: -1 })  // sắp xếp giảm dần theo createdAt
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .populate("assigned", "fullname jobTitle department avatarUrl")
       .populate("room", "name location status")
       .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
@@ -19,7 +49,7 @@ exports.getLaptops = async (req, res) => {
       .populate("assignmentHistory.revokedBy", "fullname email")
       .lean();
 
-    // Nếu vẫn muốn reshape (thêm field `location` dạng string), bạn làm như cũ:
+    // Reshape data như cũ
     const populatedLaptops = laptops.map((laptop) => ({
       ...laptop,
       room: laptop.room
@@ -33,9 +63,21 @@ exports.getLaptops = async (req, res) => {
         : { name: "Không xác định", location: ["Không xác định"] },
     }));
 
-    // Trả về *toàn bộ* mà không kèm totalPages/currentPage
+    // Lưu vào cache (5 phút)
+    await redisService.setDevicePage('laptop', page, limit, populatedLaptops, totalItems, 300);
+
+    const totalPages = Math.ceil(totalItems / limit);
+
     return res.status(200).json({
       populatedLaptops,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
     });
   } catch (error) {
     console.error("Error fetching laptops:", error.message);
@@ -124,6 +166,10 @@ exports.createLaptop = async (req, res) => {
     });
 
     await laptop.save();
+    
+    // Xóa cache do có dữ liệu mới
+    await redisService.deleteDeviceCache('laptop');
+    
     res.status(201).json(laptop);
   } catch (error) {
     console.error("Error creating laptop:", error.message);
@@ -202,6 +248,9 @@ exports.updateLaptop = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy laptop" });
     }
 
+    // Xóa cache do có thay đổi dữ liệu
+    await redisService.deleteDeviceCache('laptop');
+
     res.json(laptop);
   } catch (error) {
     console.error("Error updating laptop:", error.message);
@@ -215,6 +264,10 @@ exports.updateLaptop = async (req, res) => {
 exports.deleteLaptop = async (req, res) => {
   try {
     await Laptop.findByIdAndDelete(req.params.id);
+    
+    // Xóa cache do có dữ liệu bị xóa
+    await redisService.deleteDeviceCache('laptop');
+    
     res.json({ message: "Laptop deleted" });
   } catch (error) {
     res.status(400).json({ message: "Error deleting laptop", error });

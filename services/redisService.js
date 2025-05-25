@@ -421,6 +421,83 @@ class RedisService {
         }
     }
 
+    // === DEVICE CACHING METHODS ===
+
+    /**
+     * Lưu danh sách thiết bị theo loại và trang vào cache
+     * @param {string} deviceType - laptop, monitor, printer, projector, tool
+     * @param {number} page - số trang
+     * @param {number} limit - số thiết bị mỗi trang
+     * @param {Array} devices - danh sách thiết bị
+     * @param {number} total - tổng số thiết bị
+     * @param {number} expirationInSeconds - thời gian cache (default 5 phút)
+     */
+    async setDevicePage(deviceType, page, limit, devices, total, expirationInSeconds = 300) {
+        if (!this.client) return { success: false, error: 'Redis not connected' };
+        try {
+            const key = `devices:${deviceType}:page:${page}:limit:${limit}`;
+            const data = JSON.stringify({ devices, total, page, limit, cached_at: Date.now() });
+            await this.client.setEx(key, expirationInSeconds, data);
+            return { success: true };
+        } catch (error) {
+            logger.error(`[Redis][setDevicePage] deviceType=${deviceType} page=${page} error=${error.message}`);
+            return { success: false, error };
+        }
+    }
+
+    /**
+     * Lấy danh sách thiết bị đã cache theo loại và trang
+     * @param {string} deviceType - laptop, monitor, printer, projector, tool
+     * @param {number} page - số trang
+     * @param {number} limit - số thiết bị mỗi trang
+     */
+    async getDevicePage(deviceType, page, limit) {
+        if (!this.client) return null;
+        try {
+            const key = `devices:${deviceType}:page:${page}:limit:${limit}`;
+            const data = await this.client.get(key);
+            return data ? JSON.parse(data) : null;
+        } catch (error) {
+            logger.error(`[Redis][getDevicePage] deviceType=${deviceType} page=${page} error=${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Xóa tất cả cache của một loại thiết bị
+     * @param {string} deviceType - laptop, monitor, printer, projector, tool
+     */
+    async deleteDeviceCache(deviceType) {
+        if (!this.client) return;
+        try {
+            const pattern = `devices:${deviceType}:*`;
+            const keys = await this.client.keys(pattern);
+            if (keys.length > 0) {
+                await this.client.del(keys);
+                logger.info(`[Redis] Deleted ${keys.length} cache keys for device type: ${deviceType}`);
+            }
+        } catch (error) {
+            logger.error(`[Redis][deleteDeviceCache] deviceType=${deviceType} error=${error.message}`);
+        }
+    }
+
+    /**
+     * Xóa tất cả cache thiết bị
+     */
+    async deleteAllDeviceCache() {
+        if (!this.client) return;
+        try {
+            const pattern = 'devices:*';
+            const keys = await this.client.keys(pattern);
+            if (keys.length > 0) {
+                await this.client.del(keys);
+                logger.info(`[Redis] Deleted ${keys.length} device cache keys`);
+            }
+        } catch (error) {
+            logger.error(`[Redis][deleteAllDeviceCache] error=${error.message}`);
+        }
+    }
+
     /**
      * Đóng kết nối Redis an toàn khi ứng dụng tắt
      */

@@ -242,14 +242,23 @@ exports.getChatMessages = async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
 
-        console.log(`[getChatMessages] chatId: ${chatId}, page: ${page}, limit: ${limit}, skip: ${skip}`);
+        // Kiểm tra cache trước với key bao gồm page
+        const cacheKey = `chat:messages:${chatId}:page:${page}:limit:${limit}`;
+        let cachedResult = await redisService.getChatMessages(cacheKey);
 
-        // Tạm thời bỏ qua cache để debug
-        // const cacheKey = `chat:messages:${chatId}:page:${page}:limit:${limit}`;
-        // let cachedResult = await redisService.getChatMessages(cacheKey);
+        if (cachedResult && cachedResult.success) {
+            return res.status(200).json({
+                success: true,
+                messages: cachedResult.data,
+                pagination: {
+                    page,
+                    limit,
+                    hasMore: cachedResult.data.length === limit
+                }
+            });
+        }
 
-        // Truy vấn database trực tiếp
-        console.log(`[getChatMessages] Querying database for chat: ${chatId}`);
+        // Nếu không có trong cache, truy vấn database với pagination
         const messages = await Message.find({ chat: chatId })
             .populate('sender', 'fullname avatarUrl email')
             .populate('originalSender', 'fullname avatarUrl email')
@@ -265,15 +274,13 @@ exports.getChatMessages = async (req, res) => {
             .limit(limit)
             .lean();
 
-        console.log(`[getChatMessages] Found ${messages.length} messages from database`);
-
         // Đảo ngược thứ tự để hiển thị đúng (cũ nhất trước)
         const reversedMessages = messages.reverse();
 
-        // Tạm thời không lưu cache
-        // await redisService.setChatMessages(cacheKey, reversedMessages, 300);
+        // Lưu vào cache với TTL ngắn hơn cho pagination
+        await redisService.setChatMessages(cacheKey, reversedMessages, 300);
 
-        const response = {
+        res.status(200).json({
             success: true,
             messages: reversedMessages,
             pagination: {
@@ -281,12 +288,8 @@ exports.getChatMessages = async (req, res) => {
                 limit,
                 hasMore: messages.length === limit
             }
-        };
-
-        console.log(`[getChatMessages] Sending response with ${reversedMessages.length} messages`);
-        res.status(200).json(response);
+        });
     } catch (error) {
-        console.error(`[getChatMessages] Error:`, error);
         res.status(500).json({ 
             success: false, 
             message: error.message 

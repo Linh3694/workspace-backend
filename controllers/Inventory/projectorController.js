@@ -5,13 +5,44 @@ const User = require("../../models/Users");
 const Room = require("../../models/Room")
 const mongoose = require("mongoose");
 const upload = require("../../middleware/uploadHandover"); // Middleware Multer
+const redisService = require("../../services/redisService");
 
 
-// Lấy danh sách projector
+// Lấy danh sách projector với pagination
 exports.getProjectors = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Kiểm tra cache trước
+    const cachedData = await redisService.getDevicePage('projector', page, limit);
+    if (cachedData) {
+      console.log(`[Cache] Returning cached projectors page ${page}`);
+      return res.status(200).json({
+        populatedProjectors: cachedData.devices,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(cachedData.total / limit),
+          totalItems: cachedData.total,
+          itemsPerPage: limit,
+          hasNext: page < Math.ceil(cachedData.total / limit),
+          hasPrev: page > 1
+        }
+      });
+    }
+
+    // Nếu không có cache, fetch từ DB
+    console.log(`[DB] Fetching projectors page ${page} from database`);
+    
+    // Đếm tổng số documents
+    const totalItems = await Projector.countDocuments();
+    
+    // Lấy data với pagination
     const projectors = await Projector.find()
-      .sort({ createdAt: -1 })  // sắp xếp giảm dần theo createdAt
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .populate("assigned", "fullname jobTitle department avatarUrl")
       .populate("room", "name location status")
       .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
@@ -19,7 +50,7 @@ exports.getProjectors = async (req, res) => {
       .populate("assignmentHistory.revokedBy", "fullname email")
       .lean();
 
-    // Nếu vẫn muốn reshape (thêm field `location` dạng string), bạn làm như cũ:
+    // Reshape data như cũ
     const populatedProjectors = projectors.map((projector) => ({
       ...projector,
       room: projector.room
@@ -33,9 +64,21 @@ exports.getProjectors = async (req, res) => {
         : { name: "Không xác định", location: ["Không xác định"] },
     }));
 
-    // Trả về *toàn bộ* mà không kèm totalPages/currentPage
+    // Lưu vào cache (5 phút)
+    await redisService.setDevicePage('projector', page, limit, populatedProjectors, totalItems, 300);
+
+    const totalPages = Math.ceil(totalItems / limit);
+
     return res.status(200).json({
       populatedProjectors,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
     });
   } catch (error) {
     console.error("Error fetching projectors:", error.message);
@@ -124,6 +167,10 @@ exports.createProjector = async (req, res) => {
     });
 
     await projector.save();
+    
+    // Xóa cache do có dữ liệu mới
+    await redisService.deleteDeviceCache('projector');
+    
     res.status(201).json(projector);
   } catch (error) {
     console.error("Error creating projector:", error.message);

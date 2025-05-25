@@ -4,12 +4,43 @@ const Room = require("../../models/Room");
 const mongoose = require("mongoose");
 const path = require("path");
 const fs = require("fs");
+const redisService = require("../../services/redisService");
 
-// Lấy danh sách printer
+// Lấy danh sách printer với pagination
 exports.getPrinters = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Kiểm tra cache trước
+    const cachedData = await redisService.getDevicePage('printer', page, limit);
+    if (cachedData) {
+      console.log(`[Cache] Returning cached printers page ${page}`);
+      return res.status(200).json({
+        populatedPrinters: cachedData.devices,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(cachedData.total / limit),
+          totalItems: cachedData.total,
+          itemsPerPage: limit,
+          hasNext: page < Math.ceil(cachedData.total / limit),
+          hasPrev: page > 1
+        }
+      });
+    }
+
+    // Nếu không có cache, fetch từ DB
+    console.log(`[DB] Fetching printers page ${page} from database`);
+    
+    // Đếm tổng số documents
+    const totalItems = await Printer.countDocuments();
+    
+    // Lấy data với pagination
     const printers = await Printer.find()
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .populate("assigned", "fullname jobTitle department avatarUrl")
       .populate("room", "name location status")
       .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
@@ -17,6 +48,7 @@ exports.getPrinters = async (req, res) => {
       .populate("assignmentHistory.revokedBy", "fullname email")
       .lean();
 
+    // Reshape data như cũ
     const populatedPrinters = printers.map((printer) => ({
       ...printer,
       room: printer.room
@@ -30,7 +62,22 @@ exports.getPrinters = async (req, res) => {
         : { name: "Không xác định", location: ["Không xác định"] },
     }));
 
-    return res.status(200).json({ populatedPrinters });
+    // Lưu vào cache (5 phút)
+    await redisService.setDevicePage('printer', page, limit, populatedPrinters, totalItems, 300);
+
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return res.status(200).json({ 
+      populatedPrinters,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
+    });
   } catch (error) {
     console.error("Error fetching printers:", error.message);
     return res.status(500).json({
@@ -104,6 +151,10 @@ exports.createPrinter = async (req, res) => {
     });
 
     await printer.save();
+    
+    // Xóa cache do có dữ liệu mới
+    await redisService.deleteDeviceCache('printer');
+    
     res.status(201).json(printer);
   } catch (error) {
     console.error("Error creating printer:", error.message);
@@ -144,6 +195,10 @@ exports.updatePrinter = async (req, res) => {
     if (!printer) {
       return res.status(404).json({ message: "Không tìm thấy printer" });
     }
+    
+    // Xóa cache do có thay đổi dữ liệu
+    await redisService.deleteDeviceCache('printer');
+    
     res.json(printer);
   } catch (error) {
     console.error("Error updating printer:", error.message);
@@ -155,6 +210,10 @@ exports.updatePrinter = async (req, res) => {
 exports.deletePrinter = async (req, res) => {
   try {
     await Printer.findByIdAndDelete(req.params.id);
+    
+    // Xóa cache do có dữ liệu bị xóa
+    await redisService.deleteDeviceCache('printer');
+    
     res.json({ message: "Printer deleted" });
   } catch (error) {
     res.status(400).json({ message: "Error deleting printer", error });

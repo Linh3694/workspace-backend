@@ -4,12 +4,43 @@ const Room = require("../../models/Room");
 const mongoose = require("mongoose");
 const path = require("path");
 const fs = require("fs");
+const redisService = require("../../services/redisService");
 
-// Lấy danh sách monitor
+// Lấy danh sách monitor với pagination
 exports.getMonitors = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Kiểm tra cache trước
+    const cachedData = await redisService.getDevicePage('monitor', page, limit);
+    if (cachedData) {
+      console.log(`[Cache] Returning cached monitors page ${page}`);
+      return res.status(200).json({
+        populatedMonitors: cachedData.devices,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(cachedData.total / limit),
+          totalItems: cachedData.total,
+          itemsPerPage: limit,
+          hasNext: page < Math.ceil(cachedData.total / limit),
+          hasPrev: page > 1
+        }
+      });
+    }
+
+    // Nếu không có cache, fetch từ DB
+    console.log(`[DB] Fetching monitors page ${page} from database`);
+    
+    // Đếm tổng số documents
+    const totalItems = await Monitor.countDocuments();
+    
+    // Lấy data với pagination
     const monitors = await Monitor.find()
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .populate("assigned", "fullname jobTitle department avatarUrl")
       .populate("room", "name location status")
       .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
@@ -17,6 +48,7 @@ exports.getMonitors = async (req, res) => {
       .populate("assignmentHistory.revokedBy", "fullname email")
       .lean();
 
+    // Reshape data như cũ
     const populatedMonitors = monitors.map((monitor) => ({
       ...monitor,
       room: monitor.room
@@ -30,8 +62,21 @@ exports.getMonitors = async (req, res) => {
         : { name: "Không xác định", location: ["Không xác định"] },
     }));
 
+    // Lưu vào cache (5 phút)
+    await redisService.setDevicePage('monitor', page, limit, populatedMonitors, totalItems, 300);
+
+    const totalPages = Math.ceil(totalItems / limit);
+
     return res.status(200).json({
       populatedMonitors,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
     });
   } catch (error) {
     console.error("Error fetching monitors:", error.message);
@@ -103,6 +148,10 @@ exports.createMonitor = async (req, res) => {
     });
 
     await monitor.save();
+    
+    // Xóa cache do có dữ liệu mới
+    await redisService.deleteDeviceCache('monitor');
+    
     res.status(201).json(monitor);
   } catch (error) {
     console.error("Error creating monitor:", error.message);
@@ -142,6 +191,10 @@ exports.updateMonitor = async (req, res) => {
     if (!monitor) {
       return res.status(404).json({ message: "Không tìm thấy monitor" });
     }
+    
+    // Xóa cache do có thay đổi dữ liệu
+    await redisService.deleteDeviceCache('monitor');
+    
     res.json(monitor);
   } catch (error) {
     console.error("Error updating monitor:", error.message);
@@ -153,6 +206,10 @@ exports.updateMonitor = async (req, res) => {
 exports.deleteMonitor = async (req, res) => {
   try {
     await Monitor.findByIdAndDelete(req.params.id);
+    
+    // Xóa cache do có dữ liệu bị xóa
+    await redisService.deleteDeviceCache('monitor');
+    
     res.json({ message: "Monitor deleted" });
   } catch (error) {
     res.status(400).json({ message: "Error deleting monitor", error });
