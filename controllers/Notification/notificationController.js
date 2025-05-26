@@ -650,4 +650,140 @@ exports.sendNewChatMessageNotification = async (message, senderName, chat) => {
     } catch (error) {
         console.error('Lỗi khi gửi thông báo tin nhắn chat mới:', error);
     }
+};
+
+/**
+ * Gửi thông báo khi có người tag trong bài viết
+ */
+exports.sendTaggedInPostNotification = async (post, authorName, taggedUserIds) => {
+    try {
+        if (!taggedUserIds || taggedUserIds.length === 0) {
+            return;
+        }
+
+        // Tìm thông tin người được tag
+        const taggedUsers = await User.find({ _id: { $in: taggedUserIds } });
+
+        if (taggedUsers.length === 0) {
+            console.log('Không tìm thấy người dùng được tag');
+            return;
+        }
+
+        // Tạo nội dung thông báo
+        const title = `${authorName} đã tag bạn trong một bài viết`;
+        const body = post.content.length > 50
+            ? `${post.content.substring(0, 50)}...`
+            : post.content;
+
+        const data = {
+            postId: post._id.toString(),
+            authorId: post.author._id.toString(),
+            type: 'tagged_in_post'
+        };
+
+        // Lưu thông báo vào cơ sở dữ liệu
+        await saveNotificationToDatabase(taggedUserIds, title, body, data, "post");
+
+        // Lấy danh sách token thiết bị
+        const userTokens = taggedUsers
+            .filter(user => user.deviceToken)
+            .map(user => user.deviceToken);
+
+        if (userTokens.length === 0) {
+            console.log('Không có người được tag nào đăng ký thiết bị nhận thông báo');
+            return;
+        }
+
+        // Gửi thông báo đẩy
+        await sendPushNotifications(userTokens, title, body, data);
+        console.log(`Đã gửi thông báo tag trong bài viết đến ${userTokens.length} người dùng`);
+    } catch (error) {
+        console.error('Lỗi khi gửi thông báo tag trong bài viết:', error);
+    }
+};
+
+/**
+ * Gửi thông báo khi có người reaction bài viết
+ */
+exports.sendPostReactionNotification = async (post, reactorName, reactionType) => {
+    try {
+        // Tìm thông tin tác giả bài viết
+        const postAuthor = await User.findById(post.author._id || post.author);
+
+        if (!postAuthor) {
+            console.log('Không tìm thấy tác giả bài viết');
+            return;
+        }
+
+        // Kiểm tra thiết bị token
+        if (!postAuthor.deviceToken) {
+            console.log('Tác giả bài viết không đăng ký thiết bị nhận thông báo');
+            return;
+        }
+
+        // Tạo nội dung thông báo
+        const title = `${reactorName} đã ${reactionType} bài viết của bạn`;
+        const body = post.content.length > 50
+            ? `${post.content.substring(0, 50)}...`
+            : post.content;
+
+        const data = {
+            postId: post._id.toString(),
+            reactorName: reactorName,
+            reactionType: reactionType,
+            type: 'post_reaction'
+        };
+
+        // Lưu thông báo vào cơ sở dữ liệu
+        await saveNotificationToDatabase([postAuthor._id], title, body, data, "post");
+
+        // Gửi thông báo đẩy
+        await sendPushNotifications([postAuthor.deviceToken], title, body, data);
+        console.log(`Đã gửi thông báo reaction bài viết đến ${postAuthor.fullname}`);
+    } catch (error) {
+        console.error('Lỗi khi gửi thông báo reaction bài viết:', error);
+    }
+};
+
+/**
+ * Gửi thông báo khi có người comment bài viết
+ */
+exports.sendPostCommentNotification = async (post, commenterName, commentContent) => {
+    try {
+        // Tìm thông tin tác giả bài viết
+        const postAuthor = await User.findById(post.author._id || post.author);
+
+        if (!postAuthor) {
+            console.log('Không tìm thấy tác giả bài viết');
+            return;
+        }
+
+        // Kiểm tra thiết bị token
+        if (!postAuthor.deviceToken) {
+            console.log('Tác giả bài viết không đăng ký thiết bị nhận thông báo');
+            return;
+        }
+
+        // Tạo nội dung thông báo
+        const title = `${commenterName} đã bình luận bài viết của bạn`;
+        const body = commentContent.length > 50
+            ? `${commentContent.substring(0, 50)}...`
+            : commentContent;
+
+        const data = {
+            postId: post._id.toString(),
+            commenterName: commenterName,
+            commentContent: commentContent,
+            type: 'post_comment'
+        };
+
+        // Lưu thông báo vào cơ sở dữ liệu
+        await saveNotificationToDatabase([postAuthor._id], title, body, data, "post");
+
+        // Gửi thông báo đẩy
+        await sendPushNotifications([postAuthor.deviceToken], title, body, data);
+        console.log(`Đã gửi thông báo comment bài viết đến ${postAuthor.fullname}`);
+    } catch (error) {
+        console.error('Lỗi khi gửi thông báo comment bài viết:', error);
+    }
 }; 
