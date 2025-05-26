@@ -204,12 +204,27 @@ exports.getAttendanceStats = async (req, res) => {
 exports.getEmployeeAttendance = async (req, res) => {
     try {
         const { employeeCode } = req.params;
-        const { startDate, endDate, includeRawData = false } = req.query;
+        const { startDate, endDate, date, includeRawData = false } = req.query;
 
         // Build filter
         const filter = { employeeCode };
 
-        if (startDate && endDate) {
+        // Xử lý query theo ngày cụ thể (date) hoặc khoảng thời gian (startDate/endDate)
+        if (date) {
+            // Query theo ngày cụ thể (YYYY-MM-DD)
+            const queryDate = new Date(date);
+            queryDate.setHours(0, 0, 0, 0); // Set về đầu ngày UTC
+            
+            const nextDay = new Date(queryDate);
+            nextDay.setDate(nextDay.getDate() + 1); // Ngày tiếp theo
+            
+            filter.date = {
+                $gte: queryDate,
+                $lt: nextDay
+            };
+            
+            console.log(`Querying attendance for date: ${date}, filter:`, filter.date);
+        } else if (startDate && endDate) {
             filter.date = {
                 $gte: new Date(startDate),
                 $lte: new Date(endDate)
