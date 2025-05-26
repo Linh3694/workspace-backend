@@ -57,7 +57,7 @@ class HikvisionAttendanceClient:
             'Accept': '*/*',
             'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8,vi;q=0.7',
             'Cache-Control': 'max-age=0',
-            'Connection': 'keep-alive',
+            'Connection': 'close',
             'Content-Type': 'application/json',
             'If-Modified-Since': '0',
             'X-Requested-With': 'XMLHttpRequest'
@@ -74,18 +74,21 @@ class HikvisionAttendanceClient:
         # Thống kê lỗi để phát hiện pattern
         self.error_count = 0
         self.last_successful_time = None
+        self.refresh_count = 0
+        self.max_refresh_attempts = 2  # Giới hạn số lần refresh session liên tiếp
         
         logger.info(f"Khởi tạo client cho thiết bị {self.device_ip}")
+        logger.debug(f"Username: {self.username[:3]}***")  # Log partial username for debug
 
     def _create_session(self) -> requests.Session:
         """Tạo session với retry strategy được cải thiện"""
         session = requests.Session()
         
-        # Cấu hình retry strategy
+        # Cấu hình retry strategy - giảm aggressive để tránh stuck
         retry_strategy = Retry(
-            total=5,                    # Tổng số lần retry
-            backoff_factor=2,           # Exponential backoff: 2, 4, 8, 16, 32 seconds
-            status_forcelist=[401, 408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524],
+            total=3,                    # Giảm từ 5 xuống 3 lần retry
+            backoff_factor=1,           # Giảm từ 2 xuống 1: 1s, 2s, 3s thay vì 2s, 4s, 8s
+            status_forcelist=[408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524],  # Loại bỏ 401 khỏi auto-retry
             allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"],
             raise_on_status=False       # Không raise exception cho status codes
         )
@@ -101,7 +104,7 @@ class HikvisionAttendanceClient:
         session.mount("https://", adapter)
         
         # Cấu hình session
-        session.auth = self.auth
+        # session.auth = self.auth  # Removed: set per-request with auth= param
         session.headers.update(self.headers)
         session.verify = False
         
@@ -113,26 +116,81 @@ class HikvisionAttendanceClient:
 
     def _refresh_session(self):
         """Làm mới session khi gặp lỗi authentication"""
-        logger.info(f"Làm mới session cho thiết bị {self.device_ip}")
-        self.session.close()
+        self.refresh_count += 1
+        logger.info(f"Làm mới session cho thiết bị {self.device_ip} (lần {self.refresh_count})")
+        
+        # Kiểm tra giới hạn refresh attempts - giảm từ 3 xuống 2
+        if self.refresh_count > 2:
+            raise Exception(f"Đã refresh session quá 2 lần - có thể thiết bị bị lock hoặc credential sai")
+        
+        try:
+            self.session.close()
+        except:
+            pass  # Ignore errors when closing session
+        
+        # Chờ một chút trước khi tạo session mới
+        time.sleep(1)
+        
         self.session = self._create_session()
-        # Thêm delay để thiết bị reset session
-        time.sleep(5)
+        
+        # Test connection ngay sau khi tạo session mới với timeout ngắn
+        logger.info("Testing connection sau khi refresh session...")
+        test_success = False
+        try:
+            test_success = self._test_connection()
+        except Exception as e:
+            logger.warning(f"Test connection thất bại: {e}")
+            
+        if test_success:
+            logger.info("Session refresh thành công")
+            self.refresh_count = 0  # Reset counter khi thành công
+        else:
+            logger.warning(f"Session refresh thất bại (lần {self.refresh_count}/2)")
+            if self.refresh_count >= 2:
+                logger.error("Không thể refresh session - có thể thiết bị bị lock hoặc credential sai")
+        
+        # Delay ngắn
+        time.sleep(1)
 
     def _test_connection(self) -> bool:
-        """Test kết nối đến thiết bị"""
+        """Test kết nối đến thiết bị với timeout ngắn"""
         try:
             test_url = f"{self.base_url}/ISAPI/System/deviceInfo"
-            response = self.session.get(test_url, timeout=self.timeout)
+            # Sử dụng timeout ngắn hơn cho test connection để tránh stuck
+            short_timeout = (3, 5)  # 3s connect, 5s read - giảm timeout
+            response = self.session.get(
+                test_url,
+                timeout=short_timeout,
+                auth=HTTPDigestAuth(self.username, self.password)
+            )
             if response.status_code == 200:
                 logger.info(f"Kết nối đến {self.device_ip} thành công")
                 return True
             else:
                 logger.warning(f"Test connection failed với status {response.status_code}")
                 return False
+        except requests.exceptions.Timeout as e:
+            logger.warning(f"Test connection timeout: {e}")
+            return False
         except Exception as e:
             logger.warning(f"Test connection failed: {e}")
             return False
+
+    def _simple_request(self, url: str, data: dict) -> requests.Response:
+        """Thực hiện request đơn giản không có retry phức tạp - fallback method"""
+        try:
+            response = requests.post(
+                url,
+                json=data,
+                auth=self.auth,
+                headers=self.headers,
+                timeout=(5, 15),  # Short timeout
+                verify=False
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Simple request failed: {e}")
+            raise
 
     def _load_config(self, config_file: str) -> Dict[str, str]:
         """Load cấu hình từ file"""
@@ -228,7 +286,7 @@ class HikvisionAttendanceClient:
         start_time, end_time = self._get_time_range(start_date, end_date)
         attendance_data = []
         search_result_position = 0
-        max_results = 5  # Giảm xuống để tránh timeout
+        max_results = 100  # Giảm xuống để tránh timeout
         consecutive_errors = 0
         max_consecutive_errors = 3
 
@@ -260,30 +318,31 @@ class HikvisionAttendanceClient:
 
                 logger.debug(f"Request batch {search_result_position//max_results + 1}: {search_result_position}-{search_result_position + max_results}")
                 
-                # Enhanced retry logic
-                max_retries = 5
+                # Đơn giản hóa retry logic để tránh infinite loop
+                max_retries = 3
                 success = False
+                should_break = False  # Flag để break khỏi main loop
                 
                 for attempt in range(max_retries):
                     try:
                         response = self.session.post(
-                            url, 
-                            json=data, 
-                            timeout=self.timeout
+                            url,
+                            json=data,
+                            timeout=self.timeout,
+                            auth=HTTPDigestAuth(self.username, self.password)
                         )
                         
-                        # Xử lý đặc biệt cho lỗi 401
+                        # Xử lý đặc biệt cho lỗi 401 - DỪNG SAU 2 LẦN THỬ
                         if response.status_code == 401:
                             if attempt == 0:
-                                logger.warning(f"401 Unauthorized lần đầu, refresh session...")
+                                logger.warning(f"401 Unauthorized lần 1, refresh session...")
                                 self._refresh_session()
                                 continue
-                            elif attempt < max_retries - 1:
-                                logger.warning(f"401 Unauthorized lần {attempt + 1}, thử lại sau {2 ** attempt}s...")
-                                time.sleep(2 ** attempt)
-                                continue
                             else:
-                                raise requests.exceptions.HTTPError(f"401 Unauthorized sau {max_retries} lần thử")
+                                logger.error(f"401 Unauthorized liên tục sau {attempt + 1} lần thử - DỪNG SYNC")
+                                logger.error("Có thể: 1) Thiết bị bị lock 2) Credential sai 3) Session conflict")
+                                should_break = True
+                                break
                         
                         response.raise_for_status()
                         success = True
@@ -292,30 +351,38 @@ class HikvisionAttendanceClient:
                         
                     except requests.exceptions.Timeout as e:
                         if attempt < max_retries - 1:
-                            wait_time = min(5 * (2 ** attempt), 30)  # Cap tối đa 30s
+                            wait_time = 5 + (attempt * 2)  # 5s, 7s, 9s
                             logger.warning(f"Timeout lần {attempt + 1}, thử lại sau {wait_time}s...")
                             time.sleep(wait_time)
                             continue
                         else:
-                            raise
+                            logger.error(f"Timeout sau {max_retries} lần thử")
+                            consecutive_errors += 1
+                            break
+                            
                     except requests.exceptions.ConnectionError as e:
                         if attempt < max_retries - 1:
-                            wait_time = min(3 * (2 ** attempt), 15)  # Cap tối đa 15s
+                            wait_time = 3 + (attempt * 2)  # 3s, 5s, 7s
                             logger.warning(f"Connection error lần {attempt + 1}, thử lại sau {wait_time}s...")
                             time.sleep(wait_time)
-                            # Refresh session sau connection error
-                            if attempt == 1:
-                                self._refresh_session()
                             continue
                         else:
-                            raise
-                    except requests.exceptions.RequestException as e:
+                            logger.error(f"Connection error sau {max_retries} lần thử")
+                            consecutive_errors += 1
+                            break
+                            
+                    except Exception as e:
+                        logger.error(f"Lỗi không xác định lần {attempt + 1}: {e}")
                         if attempt < max_retries - 1:
-                            logger.warning(f"Request error lần {attempt + 1}: {e}, thử lại sau {2 ** attempt}s...")
-                            time.sleep(2 ** attempt)
+                            time.sleep(2 + attempt)
                             continue
                         else:
-                            raise
+                            consecutive_errors += 1
+                            break
+
+                # Kiểm tra nếu cần break khỏi main loop
+                if should_break:
+                    raise Exception("Dừng sync do lỗi 401 liên tục")
 
                 if not success:
                     consecutive_errors += 1

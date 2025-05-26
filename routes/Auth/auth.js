@@ -72,6 +72,7 @@ router.post(
         department: user.department || "N/A",
         needProfileUpdate: user.needProfileUpdate || false,
         jobTitle: user.jobTitle || "N/A",
+        employeeCode: user.employeeCode || "N/A",
       };
 
       // Lưu vào Redis nếu có thể, nhưng không block luồng chính

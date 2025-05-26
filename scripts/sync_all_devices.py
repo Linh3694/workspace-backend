@@ -402,6 +402,8 @@ def main():
     parser.add_argument('--device-timeout-minutes', type=int, default=20, help='Timeout cho mỗi thiết bị (phút)')
     parser.add_argument('--output', help='File để lưu kết quả JSON')
     parser.add_argument('--verbose', '-v', action='store_true', help='Bật chế độ verbose')
+    parser.add_argument('--loop', action='store_true', help='Chạy liên tục từng máy một')
+    parser.add_argument('--loop-interval-minutes', type=int, default=60, help='Khoảng nghỉ giữa các vòng (phút)')
     
     args = parser.parse_args()
     
@@ -411,28 +413,43 @@ def main():
     try:
         # Khởi tạo syncer
         syncer = MultiDeviceSyncer(args.config_dir, args.backend_url, args.max_workers)
-        
-        # Thực hiện đồng bộ
-        if args.devices:
-            result = syncer.sync_specific_devices(args.devices, args.start_date, args.end_date, args.device_timeout_minutes)
+
+        # Chạy tuần tự theo yêu cầu --loop
+        if args.loop:
+            logger.info("🔁 Bắt đầu vòng lặp đồng bộ liên tục từng máy một")
+            config_list = args.devices and args.devices or None
+            while True:
+                if config_list:
+                    result = syncer.sync_specific_devices(config_list, args.start_date, args.end_date, args.device_timeout_minutes)
+                else:
+                    # Chạy từng máy một bằng cách thiết lập max_workers=1 cho sequential
+                    syncer.max_workers = 1
+                    result = syncer.sync_all_devices(args.start_date, args.end_date, args.device_timeout_minutes)
+                if args.output:
+                    with open(args.output, 'w', encoding='utf-8') as f:
+                        json.dump(result, f, indent=2, ensure_ascii=False)
+                    logger.info(f"Đã lưu kết quả vào {args.output}")
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                logger.info(f"⏰ Đợi {args.loop_interval_minutes} phút trước khi chạy vòng tiếp theo...")
+                time.sleep(args.loop_interval_minutes * 60)
         else:
-            result = syncer.sync_all_devices(args.start_date, args.end_date, args.device_timeout_minutes)
-        
-        # Lưu kết quả vào file nếu cần
-        if args.output:
-            with open(args.output, 'w', encoding='utf-8') as f:
-                json.dump(result, f, indent=2, ensure_ascii=False)
-            logger.info(f"Đã lưu kết quả vào {args.output}")
-        
-        # In kết quả
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        
-        # Exit code
-        if result.get('failed_devices', 0) == 0:
-            sys.exit(0)
-        else:
-            sys.exit(1)
-            
+            # Thực hiện đồng bộ một lần
+            if args.devices:
+                result = syncer.sync_specific_devices(args.devices, args.start_date, args.end_date, args.device_timeout_minutes)
+            else:
+                result = syncer.sync_all_devices(args.start_date, args.end_date, args.device_timeout_minutes)
+
+            if args.output:
+                with open(args.output, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                logger.info(f"Đã lưu kết quả vào {args.output}")
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+
+            # Exit code
+            if result.get('failed_devices', 0) == 0:
+                sys.exit(0)
+            else:
+                sys.exit(1)
     except Exception as e:
         logger.error(f"Lỗi: {e}")
         print(json.dumps({
