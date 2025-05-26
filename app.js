@@ -46,6 +46,7 @@ const socketTicketChat = require('./socketTicketChat');
 const notificationRoutes = require("./routes/Notification/notificationRoutes");
 const emojiRoutes = require('./routes/Chat/emojiRoutes');
 const postRoutes = require('./routes/Newfeed/postRoutes');
+const timeAttendanceRoutes = require('./routes/timeAttendanceRoutes');
 const NewfeedSocket = require('./utils/newfeedSocket');
 
 const app = express();
@@ -151,6 +152,7 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/emoji", emojiRoutes);
 app.use("/api/posts", postRoutes);
+app.use("/api/attendance", timeAttendanceRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

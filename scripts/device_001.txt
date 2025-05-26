@@ -1,0 +1,19 @@
+# Cấu hình máy chấm công HIKVISION
+# Copy file này và đổi tên thành config thực tế (ví dụ: device_001.txt)
+
+# Thông tin kết nối thiết bị
+DEVICE_IP=10.1.4.13
+USERNAME=admin
+PASSWORD=Wellspring#2024
+
+# Thông tin tracker (tùy chọn)
+TRACKER_ID=device_001
+
+# Khoảng thời gian đồng bộ (tùy chọn)
+# Nếu không có thì sẽ dùng hôm qua đến hôm nay
+# START_TIME=2025-05-25
+# END_TIME=2025-05-26
+
+# Ghi chú về thiết bị
+# DEVICE_NAME=Cổng chính
+# LOCATION=Tầng 1 
