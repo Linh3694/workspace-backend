@@ -9,6 +9,7 @@ const CustomEmoji = require('../../models/CustomEmoji');
 
 // Tạo hoặc lấy chat với người dùng khác
 router.post('/create', authenticate, chatController.createOrGetChat);
+router.post('/createOrGet', authenticate, chatController.createOrGetChat);
 
 // Lấy danh sách chat của user
 router.get('/list', authenticate, chatController.getUserChats);

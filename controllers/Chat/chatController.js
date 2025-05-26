@@ -56,14 +56,13 @@ exports.getUserChats = async (req, res) => {
         // Log userId details for debugging
         console.log('getUserChats - userId type:', typeof userId, 'userId value:', userId);
 
-        // Kiểm tra cache trước
-        let chats = await redisService.getUserChats(userId);
+        // Kiểm tra cache trước - sử dụng key mới để tránh conflict với cache cũ
+        let chats = await redisService.getUserChats(`${userId}_v2`);
 
         if (!chats) {
             // Nếu không có trong cache, truy vấn database
             chats = await Chat.find({
-                participants: userId,
-                lastMessage: { $exists: true, $ne: null }
+                participants: userId
             })
                 .populate('participants', 'fullname avatarUrl email department')
                 .populate({
@@ -81,7 +80,7 @@ exports.getUserChats = async (req, res) => {
             // Lưu vào cache - only if chats is valid
             if (chats && Array.isArray(chats)) {
                 try {
-                    await redisService.setUserChats(userId, chats);
+                    await redisService.setUserChats(`${userId}_v2`, chats);
                 } catch (redisError) {
                     console.error('Error caching user chats:', redisError);
                     // Don't throw the error, just log it and continue
@@ -125,6 +124,18 @@ const updateDeliveryStatus = (messageId, userId, status) => {
 // Helper function to safely get participant ID as string
 const getParticipantId = (participant) => {
     return participant && participant._id ? participant._id.toString() : null;
+};
+
+// Helper function để invalidate cache của user với version mới
+const invalidateUserChatCache = async (userId) => {
+    if (!userId) return;
+    try {
+        // Xóa cả cache cũ và cache mới
+        await redisService.deleteUserChatsCache(userId);
+        await redisService.deleteUserChatsCache(`${userId}_v2`);
+    } catch (error) {
+        console.error('Error invalidating user chat cache:', error);
+    }
 };
 
 exports.sendMessage = async (req, res) => {
@@ -238,6 +249,11 @@ exports.sendMessage = async (req, res) => {
             chatId, 
             chat.participants.filter(p => p).map(p => p.toString())
         );
+
+        // Invalidate user chat caches với version mới
+        for (const participantId of chat.participants) {
+            await invalidateUserChatCache(participantId.toString());
+        }
 
         // Gửi thông báo push cho người nhận (async)
         setImmediate(() => {
@@ -470,7 +486,7 @@ exports.uploadChatAttachment = async (req, res) => {
         updatedChat.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
-                await redisService.deleteUserChatsCache(participantId);
+                await invalidateUserChatCache(participantId);
             }
         });
 
@@ -553,7 +569,7 @@ exports.uploadMultipleImages = async (req, res) => {
         updatedChat.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
-                await redisService.deleteUserChatsCache(participantId);
+                await invalidateUserChatCache(participantId);
             }
         });
 
@@ -711,7 +727,7 @@ exports.replyToMessage = async (req, res) => {
         chat.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
-                await redisService.deleteUserChatsCache(participantId);
+                await invalidateUserChatCache(participantId);
             }
         });
 
@@ -804,7 +820,7 @@ exports.pinMessage = async (req, res) => {
         chat.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
-                await redisService.deleteUserChatsCache(participantId);
+                await invalidateUserChatCache(participantId);
             }
         });
 
@@ -868,7 +884,7 @@ exports.unpinMessage = async (req, res) => {
         chat.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
-                await redisService.deleteUserChatsCache(participantId);
+                await invalidateUserChatCache(participantId);
             }
         });
 
@@ -1019,7 +1035,7 @@ exports.forwardMessage = async (req, res) => {
         chat.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
-                await redisService.deleteUserChatsCache(participantId);
+                await invalidateUserChatCache(participantId);
             }
         });
 
@@ -1084,7 +1100,7 @@ exports.markAllMessagesAsRead = async (req, res) => {
             chatForCache.participants.forEach(async (p) => {
                 const participantId = getParticipantId(p);
                 if (participantId) {
-                    await redisService.deleteUserChatsCache(participantId);
+                    await invalidateUserChatCache(participantId);
                 }
             });
         }
