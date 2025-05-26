@@ -26,8 +26,20 @@ exports.uploadAttendanceBatch = async (req, res) => {
                     continue;
                 }
 
-                // Parse datetime
-                const timestamp = new Date(dateTime);
+                // Parse datetime with proper timezone handling
+                let timestamp;
+                
+                // If dateTime doesn't have timezone info, assume it's Vietnam local time (GMT+7)
+                if (typeof dateTime === 'string' && !dateTime.includes('Z') && !dateTime.includes('+')) {
+                    // Convert Vietnam local time to UTC by subtracting 7 hours
+                    const localDate = new Date(dateTime);
+                    timestamp = new Date(localDate.getTime() - (7 * 60 * 60 * 1000));
+                    console.log(`Converting local time ${dateTime} to UTC: ${timestamp.toISOString()}`);
+                } else {
+                    // dateTime already has timezone info
+                    timestamp = new Date(dateTime);
+                }
+                
                 if (isNaN(timestamp.getTime())) {
                     errors.push({ record, error: "Format datetime không hợp lệ" });
                     continue;
