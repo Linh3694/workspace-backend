@@ -614,8 +614,8 @@ exports.uploadHandoverReport = async (req, res) => {
     // => "BBBG-Nguyen_Hai_Linh-2025-03-10.pdf"
 
     // Đổi tên file trên ổ cứng 
-    const oldPath = path.join(__dirname, "../uploads/Handovers", originalFileName);
-    const newPath = path.join(__dirname, "../uploads/Handovers", sanitizedName);
+    const oldPath = path.join(__dirname, "../../uploads/Handovers", originalFileName);
+    const newPath = path.join(__dirname, "../../uploads/Handovers", sanitizedName);
     fs.renameSync(oldPath, newPath);
 
     const laptop = await Laptop.findById(laptopId);
@@ -662,7 +662,7 @@ exports.uploadHandoverReport = async (req, res) => {
 // Endpoint để trả file PDF
 exports.getHandoverReport = async (req, res) => {
   const { filename } = req.params;
-  const filePath = path.join(__dirname, "../uploads/Handovers", filename);
+  const filePath = path.join(__dirname, "../../uploads/Handovers", filename);
 
   // Kiểm tra file có tồn tại không
   if (!fs.existsSync(filePath)) {
@@ -786,13 +786,13 @@ exports.fixOldData = async (req, res) => {
 
         // Xét xem record đó có document hay chưa
         if (!openRecord.document) {
-          // Thiếu biên bản => “PendingDocumentation”
+          // Thiếu biên bản => "PendingDocumentation"
           if (laptop.status !== "PendingDocumentation") {
             laptop.status = "PendingDocumentation";
             needSave = true;
           }
         } else {
-          // Có document => “Active”
+          // Có document => "Active"
           if (laptop.status !== "Active") {
             laptop.status = "Active";
             needSave = true;

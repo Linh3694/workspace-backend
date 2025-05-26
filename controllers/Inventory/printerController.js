@@ -554,7 +554,7 @@ exports.uploadHandoverReport = async (req, res) => {
 // Endpoint để trả file PDF
 exports.getHandoverReport = async (req, res) => {
   const { filename } = req.params;
-  const filePath = path.join(__dirname, "../uploads/Handovers", filename);
+  const filePath = path.join(__dirname, "../../uploads/Handovers", filename);
 
   // Kiểm tra file có tồn tại không
   if (!fs.existsSync(filePath)) {
