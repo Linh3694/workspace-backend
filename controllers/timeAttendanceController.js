@@ -31,10 +31,10 @@ exports.uploadAttendanceBatch = async (req, res) => {
                 
                 // If dateTime doesn't have timezone info, assume it's Vietnam local time (GMT+7)
                 if (typeof dateTime === 'string' && !dateTime.includes('Z') && !dateTime.includes('+')) {
-                    // Convert Vietnam local time to UTC by subtracting 7 hours
-                    const localDate = new Date(dateTime);
-                    timestamp = new Date(localDate.getTime() - (7 * 60 * 60 * 1000));
-                    console.log(`Converting local time ${dateTime} to UTC: ${timestamp.toISOString()}`);
+                    // Dữ liệu từ máy chấm công là thời gian VN, lưu trực tiếp như UTC
+                    // Để frontend có thể hiển thị đúng thời gian gốc
+                    timestamp = new Date(dateTime + 'Z'); // Thêm Z để đánh dấu là UTC
+                    console.log(`Storing VN time ${dateTime} as UTC: ${timestamp.toISOString()}`);
                 } else {
                     // dateTime already has timezone info
                     timestamp = new Date(dateTime);
