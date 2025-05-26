@@ -69,15 +69,25 @@ exports.createTicket = async (req, res) => {
 exports.getTickets = async (req, res) => {
   console.log("🔵 Kiểm tra req.user:", req.user); // ✅ Kiểm tra user có tồn tại không
 
-  const { status, priority } = req.query;
+  const { status, priority, userTickets } = req.query;
   const userId = req.user._id; // Lấy ID user từ token
+
+  console.log("Query parameters:", { status, priority, userTickets });
+
   try {
     let query = {};
-    if (req.user.role === "superadmin") {
-      query = {};
+
+    // Nếu có parameter userTickets, chỉ lấy ticket của user đó
+    if (userTickets) {
+      query = { $or: [{ creator: userTickets }, { assignedTo: userTickets }] };
     } else {
-      // Các role khác: xem ticket mà họ tạo ra hoặc được gán cho họ
-      query = { $or: [{ creator: userId }, { assignedTo: userId }] };
+    // Nếu không có userTickets, kiểm tra role
+      if (req.user.role === "superadmin") {
+        query = {}; // Lấy tất cả ticket
+      } else {
+        // Các role khác: xem ticket mà họ tạo ra hoặc được gán cho họ
+        query = { $or: [{ creator: userId }, { assignedTo: userId }] };
+      }
     }
 
     if (status === "assignedOrProcessing") {
@@ -88,11 +98,17 @@ exports.getTickets = async (req, res) => {
     }
     if (priority) query.priority = priority;
 
+    console.log("Final query:", query);
+
     const tickets = await Ticket.find(query)
       .sort({ createdAt: -1 }) // Sắp xếp giảm dần theo createdAt
       .populate("creator assignedTo");
+
+    console.log("Found tickets:", tickets.length);
+
     res.status(200).json({ success: true, tickets });
   } catch (error) {
+    console.error("Error in getTickets:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
