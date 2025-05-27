@@ -12,23 +12,35 @@ exports.getActivities = async (req, res) => {
 
 exports.addActivity = async (req, res) => {
   const { entityType, entityId, type, description, details, date, updatedBy } = req.body;
+
+  // Validation
   if (!entityType || !entityId) {
     return res.status(400).json({ message: 'entityType và entityId là bắt buộc' });
   }
+
+  if (!type || !['repair', 'update'].includes(type)) {
+    return res.status(400).json({ message: 'type phải là repair hoặc update' });
+  }
+
+  if (!description || description.trim() === '') {
+    return res.status(400).json({ message: 'description là bắt buộc' });
+  }
+
   try {
     const newActivity = new Activity({
       entityType,
       entityId,
       type,
-      description,
-      details,
+      description: description.trim(),
+      details: details ? details.trim() : '',
       date: date || new Date(),
-      updatedBy,
+      updatedBy: updatedBy || 'Hệ thống',
     });
     await newActivity.save();
     res.status(201).json(newActivity);
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi khi thêm hoạt động', error });
+    console.error('Error adding activity:', error);
+    res.status(500).json({ message: 'Lỗi khi thêm hoạt động', error: error.message });
   }
 };
 

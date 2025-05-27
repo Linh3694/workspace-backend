@@ -2,6 +2,65 @@
 
 Hệ thống tích hợp máy chấm công HIKVISION với Staff Portal Backend, tự động lấy dữ liệu chấm công và lưu trữ với logic chỉ giữ lại thời gian vào/ra đầu tiên và cuối cùng mỗi ngày.
 
+## 🚀 Hướng Dẫn Cài Đặt và Chạy Script
+
+### 1. Tạo và Kích Hoạt Môi Trường Ảo
+
+```bash
+# Di chuyển vào thư mục scripts
+cd workspace-backend/scripts
+
+# Tạo môi trường ảo mới
+python -m venv venv
+
+# Kích hoạt môi trường ảo
+# Trên Windows:
+venv\Scripts\activate
+# Trên macOS/Linux:
+source venv/bin/activate
+```
+
+### 2. Cài Đặt Dependencies
+
+```bash
+# Đảm bảo pip được cập nhật
+pip install --upgrade pip
+
+# Cài đặt các thư viện cần thiết
+pip install -r requirements.txt
+```
+
+### 3. Kiểm Tra Cài Đặt
+
+```bash
+# Kiểm tra phiên bản Python
+python --version
+
+# Kiểm tra các package đã cài đặt
+pip list
+```
+
+### 4. Chạy Script
+
+```bash
+# Đảm bảo môi trường ảo đã được kích hoạt (sẽ thấy (venv) ở đầu dòng lệnh)
+# Chạy script đồng bộ
+python sync_all_devices.py --config-dir ./configs --backend-url http://localhost:3000
+```
+
+### 5. Thoát Môi Trường Ảo
+
+```bash
+# Khi hoàn thành, thoát môi trường ảo
+deactivate
+```
+
+### Lưu Ý Quan Trọng:
+- Luôn kích hoạt môi trường ảo trước khi chạy script
+- Nếu gặp lỗi "command not found", hãy kiểm tra lại việc kích hoạt môi trường ảo
+- Đảm bảo đã cài đặt đầy đủ dependencies trước khi chạy script
+- Nếu cập nhật requirements.txt, chạy lại `pip install -r requirements.txt`
+
 ## 🏗️ Kiến Trúc Hệ Thống
 
 ```
