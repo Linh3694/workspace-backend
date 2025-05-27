@@ -86,16 +86,30 @@ timeAttendanceSchema.index({ employeeCode: 1, date: 1 }, { unique: true });
 // Index để tìm kiếm nhanh theo ngày
 timeAttendanceSchema.index({ date: -1 });
 
-// Instance method để cập nhật thời gian chấm công với deduplication
+// Instance method để cập nhật thời gian chấm công với deduplication cải thiện
 timeAttendanceSchema.methods.updateAttendanceTime = function (timestamp, deviceId) {
     const checkTime = new Date(timestamp);
     const deviceIdToUse = deviceId || this.deviceId;
 
-    // Deduplication: kiểm tra xem đã có record với cùng timestamp và deviceId chưa
-    const existingRawData = this.rawData.find(item =>
-        Math.abs(new Date(item.timestamp).getTime() - checkTime.getTime()) < 60000 && // Trong vòng 1 phút
-        item.deviceId === deviceIdToUse
-    );
+    // CẢI THIỆN: Deduplication nghiêm ngặt hơn
+    // Kiểm tra exact timestamp match (trong vòng 10 giây) để tránh duplicate hoàn toàn
+    const existingRawData = this.rawData.find(item => {
+        const timeDiff = Math.abs(new Date(item.timestamp).getTime() - checkTime.getTime());
+        const sameDevice = item.deviceId === deviceIdToUse;
+
+        // Log để debug
+        if (timeDiff < 10000) { // Trong vòng 10 giây
+            console.log(`🔍 Potential duplicate check:`, {
+                existing: item.timestamp,
+                new: checkTime.toISOString(),
+                timeDiff: `${timeDiff}ms`,
+                sameDevice,
+                willSkip: timeDiff < 10000 && sameDevice
+            });
+        }
+
+        return timeDiff < 10000 && sameDevice; // Nghiêm ngặt: 10 giây thay vì 1 phút
+    });
 
     if (!existingRawData) {
         // Thêm vào raw data nếu chưa có
@@ -108,22 +122,25 @@ timeAttendanceSchema.methods.updateAttendanceTime = function (timestamp, deviceI
         // Tăng số lần chấm công
         this.totalCheckIns += 1;
 
-        console.log(`✓ Added new attendance record: ${this.employeeCode} at ${checkTime.toISOString()}`);
+        console.log(`✅ Added new attendance record: ${this.employeeCode} at ${checkTime.toISOString()} from device ${deviceIdToUse}`);
     } else {
-        console.log(`⚠ Skipped duplicate attendance: ${this.employeeCode} at ${checkTime.toISOString()}`);
+        console.log(`⚠️ SKIPPED duplicate attendance: ${this.employeeCode} at ${checkTime.toISOString()} from device ${deviceIdToUse}`);
+        console.log(`   → Already exists: ${existingRawData.timestamp}`);
     }
 
     // Cleanup rawData cũ hơn 7 ngày
     this.cleanupOldRawData();
 
-    // Cập nhật check-in time (lần đầu tiên)
+    // Cập nhật check-in time (lần đầu tiên trong ngày)
     if (!this.checkInTime || checkTime < this.checkInTime) {
         this.checkInTime = checkTime;
+        console.log(`🕐 Updated check-in time: ${checkTime.toISOString()}`);
     }
 
-    // Cập nhật check-out time (lần cuối cùng)
+    // Cập nhật check-out time (lần cuối cùng trong ngày)
     if (!this.checkOutTime || checkTime > this.checkOutTime) {
         this.checkOutTime = checkTime;
+        console.log(`🕐 Updated check-out time: ${checkTime.toISOString()}`);
     }
 
     return this;
@@ -143,6 +160,74 @@ timeAttendanceSchema.methods.cleanupOldRawData = function () {
     if (cleanedCount > 0) {
         console.log(`🧹 Cleaned up ${cleanedCount} old rawData records for ${this.employeeCode}`);
     }
+
+    return this;
+};
+
+// Instance method để cleanup duplicates trong rawData hiện có
+timeAttendanceSchema.methods.removeDuplicateRawData = function () {
+    const originalCount = this.rawData.length;
+
+    if (originalCount === 0) return this;
+
+    // Tạo Map để track unique entries theo timestamp + deviceId
+    const uniqueMap = new Map();
+    const uniqueRawData = [];
+
+    this.rawData.forEach(item => {
+        const timestamp = new Date(item.timestamp).getTime();
+        const deviceId = item.deviceId;
+        const key = `${timestamp}-${deviceId}`;
+
+        if (!uniqueMap.has(key)) {
+            uniqueMap.set(key, true);
+            uniqueRawData.push(item);
+        } else {
+            console.log(`🗑️ Removing duplicate: ${item.timestamp} from device ${deviceId}`);
+        }
+    });
+
+    this.rawData = uniqueRawData;
+
+    // Recalculate totalCheckIns
+    const oldTotalCheckIns = this.totalCheckIns;
+    this.totalCheckIns = this.rawData.length;
+
+    const removedCount = originalCount - this.rawData.length;
+    if (removedCount > 0) {
+        console.log(`🧹 Removed ${removedCount} duplicate rawData records for ${this.employeeCode}`);
+        console.log(`📊 Updated totalCheckIns: ${oldTotalCheckIns} → ${this.totalCheckIns}`);
+
+        // Recalculate check-in and check-out times based on remaining data
+        this.recalculateCheckTimes();
+    }
+
+    return this;
+};
+
+// Instance method để tính lại check-in và check-out times từ rawData
+timeAttendanceSchema.methods.recalculateCheckTimes = function () {
+    if (this.rawData.length === 0) {
+        this.checkInTime = null;
+        this.checkOutTime = null;
+        console.log(`❌ No rawData left, cleared check times for ${this.employeeCode}`);
+        return this;
+    }
+
+    // Sắp xếp rawData theo timestamp
+    const sortedRawData = this.rawData.sort((a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    const oldCheckIn = this.checkInTime;
+    const oldCheckOut = this.checkOutTime;
+
+    this.checkInTime = new Date(sortedRawData[0].timestamp);
+    this.checkOutTime = new Date(sortedRawData[sortedRawData.length - 1].timestamp);
+
+    console.log(`🔄 Recalculated check times for ${this.employeeCode}:`);
+    console.log(`   Check-in: ${oldCheckIn?.toISOString()} → ${this.checkInTime.toISOString()}`);
+    console.log(`   Check-out: ${oldCheckOut?.toISOString()} → ${this.checkOutTime.toISOString()}`);
 
     return this;
 };
@@ -247,6 +332,55 @@ timeAttendanceSchema.statics.cleanupAllOldRawData = async function () {
         return result;
     } catch (error) {
         console.error('Error during bulk rawData cleanup:', error);
+        throw error;
+    }
+};
+
+// Static method để cleanup duplicates cho tất cả records
+timeAttendanceSchema.statics.cleanupAllDuplicateRawData = async function () {
+    try {
+        console.log('🧹 Starting bulk duplicate cleanup...');
+
+        // Lấy tất cả records có rawData
+        const records = await this.find({
+            rawData: { $exists: true, $ne: [] }
+        }).limit(1000); // Process in batches
+
+        let totalProcessed = 0;
+        let totalDuplicatesRemoved = 0;
+        let totalRecordsModified = 0;
+
+        for (const record of records) {
+            const originalCount = record.rawData.length;
+
+            // Remove duplicates
+            record.removeDuplicateRawData();
+
+            const newCount = record.rawData.length;
+            const duplicatesRemoved = originalCount - newCount;
+
+            if (duplicatesRemoved > 0) {
+                await record.save();
+                totalRecordsModified++;
+                totalDuplicatesRemoved += duplicatesRemoved;
+
+                console.log(`✅ ${record.employeeCode} (${record.date.toISOString().split('T')[0]}): ${originalCount} → ${newCount} (-${duplicatesRemoved})`);
+            }
+
+            totalProcessed++;
+        }
+
+        const summary = {
+            totalProcessed,
+            totalRecordsModified,
+            totalDuplicatesRemoved
+        };
+
+        console.log('🎯 Bulk duplicate cleanup summary:', summary);
+        return summary;
+
+    } catch (error) {
+        console.error('❌ Error during bulk duplicate cleanup:', error);
         throw error;
     }
 };

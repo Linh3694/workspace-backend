@@ -433,4 +433,32 @@ exports.cleanupOldRawData = async (req, res) => {
             error: error.message
         });
     }
+};
+
+// Cleanup duplicate rawData records
+exports.cleanupDuplicateRawData = async (req, res) => {
+    try {
+        console.log("🧹 Bắt đầu cleanup duplicate rawData...");
+
+        const result = await TimeAttendance.cleanupAllDuplicateRawData();
+
+        res.status(200).json({
+            status: "success",
+            message: `Đã cleanup duplicate rawData thành công`,
+            data: {
+                totalProcessed: result.totalProcessed,
+                totalRecordsModified: result.totalRecordsModified,
+                totalDuplicatesRemoved: result.totalDuplicatesRemoved
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error("Lỗi cleanup duplicate rawData:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Lỗi server khi cleanup duplicate rawData",
+            error: error.message
+        });
+    }
 }; 

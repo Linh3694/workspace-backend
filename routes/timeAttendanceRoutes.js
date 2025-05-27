@@ -73,6 +73,12 @@ router.post("/sync-users", timeAttendanceController.syncWithUsers);
  */
 router.post("/cleanup-raw-data", timeAttendanceController.cleanupOldRawData);
 
+/**
+ * POST /api/attendance/cleanup-duplicates
+ * Cleanup duplicate rawData records để tránh hiển thị trùng lặp
+ */
+router.post("/cleanup-duplicates", timeAttendanceController.cleanupDuplicateRawData);
+
 // Health check endpoint
 router.get("/health", (req, res) => {
     res.status(200).json({
