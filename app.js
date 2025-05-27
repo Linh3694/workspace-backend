@@ -167,4 +167,8 @@ server.listen(PORT, () => {
 
 require("./cronEmail");
 
+// Khởi động scheduled jobs
+const AttendanceCleanupJob = require('./jobs/attendanceCleanupJob');
+AttendanceCleanupJob.start();
+
 module.exports = app;

@@ -26,22 +26,12 @@ exports.uploadAttendanceBatch = async (req, res) => {
                     continue;
                 }
 
-                // Parse datetime with proper timezone handling
+                // Parse datetime với timezone handling thống nhất
                 let timestamp;
-                
-                // If dateTime doesn't have timezone info, assume it's Vietnam local time (GMT+7)
-                if (typeof dateTime === 'string' && !dateTime.includes('Z') && !dateTime.includes('+')) {
-                    // Dữ liệu từ máy chấm công là thời gian VN, lưu trực tiếp như UTC
-                    // Để frontend có thể hiển thị đúng thời gian gốc
-                    timestamp = new Date(dateTime + 'Z'); // Thêm Z để đánh dấu là UTC
-                    console.log(`Storing VN time ${dateTime} as UTC: ${timestamp.toISOString()}`);
-                } else {
-                    // dateTime already has timezone info
-                    timestamp = new Date(dateTime);
-                }
-                
-                if (isNaN(timestamp.getTime())) {
-                    errors.push({ record, error: "Format datetime không hợp lệ" });
+                try {
+                    timestamp = TimeAttendance.parseAttendanceTimestamp(dateTime);
+                } catch (parseError) {
+                    errors.push({ record, error: `Format datetime không hợp lệ: ${parseError.message}` });
                     continue;
                 }
 
@@ -416,6 +406,30 @@ exports.syncWithUsers = async (req, res) => {
         res.status(500).json({
             status: "error",
             message: "Lỗi server khi đồng bộ với Users",
+            error: error.message
+        });
+    }
+};
+
+// Cleanup rawData cũ hơn 7 ngày
+exports.cleanupOldRawData = async (req, res) => {
+    try {
+        console.log("🧹 Bắt đầu cleanup rawData cũ...");
+
+        const result = await TimeAttendance.cleanupAllOldRawData();
+
+        res.status(200).json({
+            status: "success",
+            message: `Đã cleanup rawData cũ thành công`,
+            modifiedRecords: result.modifiedCount,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error("Lỗi cleanup rawData:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Lỗi server khi cleanup rawData",
             error: error.message
         });
     }

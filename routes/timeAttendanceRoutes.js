@@ -67,6 +67,12 @@ router.delete("/records", timeAttendanceController.deleteAttendanceRecords);
  */
 router.post("/sync-users", timeAttendanceController.syncWithUsers);
 
+/**
+ * POST /api/attendance/cleanup-raw-data
+ * Cleanup rawData cũ hơn 7 ngày để tiết kiệm storage
+ */
+router.post("/cleanup-raw-data", timeAttendanceController.cleanupOldRawData);
+
 // Health check endpoint
 router.get("/health", (req, res) => {
     res.status(200).json({
