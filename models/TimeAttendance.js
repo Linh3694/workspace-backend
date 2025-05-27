@@ -344,7 +344,7 @@ timeAttendanceSchema.statics.cleanupAllDuplicateRawData = async function () {
         // Lấy tất cả records có rawData
         const records = await this.find({
             rawData: { $exists: true, $ne: [] }
-        }).limit(1000); // Process in batches
+        }).limit(2000); // Process in larger batches
 
         let totalProcessed = 0;
         let totalDuplicatesRemoved = 0;

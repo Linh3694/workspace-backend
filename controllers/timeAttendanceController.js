@@ -440,7 +440,37 @@ exports.cleanupDuplicateRawData = async (req, res) => {
     try {
         console.log("🧹 Bắt đầu cleanup duplicate rawData...");
 
-        const result = await TimeAttendance.cleanupAllDuplicateRawData();
+        const { employeeCode, date } = req.query;
+
+        let result;
+        if (employeeCode && date) {
+            // Cleanup specific record
+            console.log(`🎯 Targeting specific record: ${employeeCode} on ${date}`);
+
+            const record = await TimeAttendance.findOne({
+                employeeCode,
+                date: new Date(date)
+            });
+
+            if (record) {
+                const originalCount = record.rawData.length;
+                record.removeDuplicateRawData();
+                await record.save();
+
+                result = {
+                    totalProcessed: 1,
+                    totalRecordsModified: originalCount !== record.rawData.length ? 1 : 0,
+                    totalDuplicatesRemoved: originalCount - record.rawData.length
+                };
+
+                console.log(`✅ Specific cleanup: ${originalCount} → ${record.rawData.length}`);
+            } else {
+                result = { totalProcessed: 0, totalRecordsModified: 0, totalDuplicatesRemoved: 0 };
+            }
+        } else {
+            // Bulk cleanup
+            result = await TimeAttendance.cleanupAllDuplicateRawData();
+        }
 
         res.status(200).json({
             status: "success",
