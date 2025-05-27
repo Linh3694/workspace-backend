@@ -469,15 +469,23 @@ exports.sendMessage = async (req, res) => {
         select: "fullname avatarUrl email",
       });
 
-    // Emit socket event to broadcast new message
-    req.app.get("io").to(ticketId).emit("receiveMessage", {
-      _id: updatedTicket.messages[updatedTicket.messages.length - 1]._id,
-      text: updatedTicket.messages[updatedTicket.messages.length - 1].text,
-      sender: updatedTicket.messages[updatedTicket.messages.length - 1].sender,
-      timestamp: updatedTicket.messages[updatedTicket.messages.length - 1].timestamp,
-      type: updatedTicket.messages[updatedTicket.messages.length - 1].type,
+    // Emit socket event to broadcast new message với tối ưu
+    const lastMessage = updatedTicket.messages[updatedTicket.messages.length - 1];
+    const io = req.app.get("io");
+
+    // Broadcast enhanced message data
+    const messageData = {
+      _id: lastMessage._id,
+      text: lastMessage.text,
+      sender: lastMessage.sender,
+      timestamp: lastMessage.timestamp,
+      type: lastMessage.type,
+      ticketId: ticketId,
       tempId: req.body.tempId || null,
-    });
+    };
+
+    // Emit to all clients in ticket room
+    io.to(ticketId).emit("newMessage", messageData);
 
     // Gửi thông báo có tin nhắn mới - không gửi cho người gửi
     await notificationController.sendTicketUpdateNotification(ticket, 'comment_added', req.user._id);

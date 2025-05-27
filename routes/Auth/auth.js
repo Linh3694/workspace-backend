@@ -68,7 +68,7 @@ router.post(
         fullname: user.fullname || "N/A",
         email: user.email || "N/A",
         role: user.role || "user",
-        avatar: user.avatar || "https://via.placeholder.com/150",
+        avatar: user.avatarUrl,
         department: user.department || "N/A",
         needProfileUpdate: user.needProfileUpdate || false,
         jobTitle: user.jobTitle || "N/A",
