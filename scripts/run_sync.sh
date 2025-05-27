@@ -1,11 +1,14 @@
 #!/bin/bash
-# Script để chạy đồng bộ chấm công với virtual environment
 
-# Chuyển đến thư mục scripts
-cd "$(dirname "$0")"
+# Script để chạy hikcon.py với virtual environment
+# Đường dẫn tuyệt đối đến thư mục script
+SCRIPT_DIR="/Users/linh/staff-portal-web-only/staff-portal/workspace-backend/scripts"
 
-# Kích hoạt virtual environment
-source attendance_env/bin/activate
+# Chuyển đến thư mục script
+cd "$SCRIPT_DIR"
 
-# Chạy lệnh được truyền vào
-exec "$@" 
+# Kích hoạt virtual environment và chạy script
+source venv/bin/activate && python hikcon.py
+
+# Log kết quả với timestamp
+echo "$(date): Sync completed" >> sync.log 
