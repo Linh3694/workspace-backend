@@ -178,8 +178,8 @@ module.exports = async function (io) {
 
       // Join vào phòng chat
       socket.on("joinChat", (chatId) => {
+        console.log(`🏠 Socket ${socket.id} joining chat room: ${chatId}`);
         socket.join(chatId);
-        console.log(`Socket ${socket.id} joined chat room ${chatId}`);
 
         // Reset timeout khi có hoạt động
         if (socket.data.userId) {
@@ -341,7 +341,7 @@ module.exports = async function (io) {
       // Typing indicator
       socket.on("typing", ({ chatId, userId }) => {
         if (userId && chatId) {
-          console.log(`User ${userId} is typing in chat ${chatId}`);
+          console.log(`🟢 [TYPING] User ${userId} is typing in chat ${chatId}, emitting to room`);
 
           // Set trạng thái typing và timeout
           if (!typingUsers[chatId]) {
@@ -351,28 +351,34 @@ module.exports = async function (io) {
           // Lưu trạng thái typing
           typingUsers[chatId][userId] = true;
 
-          // Broadcast typing event to the chat room
-          socket.to(chatId).emit("userTyping", { userId });
+          // Broadcast typing event to the chat room with chatId
+          socket.to(chatId).emit("userTyping", { userId, chatId });
+          console.log(`📤 [TYPING] Emitted userTyping to room ${chatId} for user ${userId}`);
 
           // Reset timeout khi có hoạt động
           setUserInactiveTimeout(userId);
+        } else {
+          console.log(`❌ [TYPING] Missing userId or chatId:`, { userId, chatId });
         }
       });
 
       socket.on("stopTyping", ({ chatId, userId }) => {
         if (userId && chatId) {
-          console.log(`User ${userId} stopped typing in chat ${chatId}`);
+          console.log(`🔴 [STOP TYPING] User ${userId} stopped typing in chat ${chatId}`);
 
           // Xóa trạng thái typing nếu tồn tại
           if (typingUsers[chatId] && typingUsers[chatId][userId]) {
             delete typingUsers[chatId][userId];
           }
 
-          // Broadcast stop typing event to the chat room
-          socket.to(chatId).emit("userStopTyping", { userId });
+          // Broadcast stop typing event to the chat room with chatId
+          socket.to(chatId).emit("userStopTyping", { userId, chatId });
+          console.log(`📤 [STOP TYPING] Emitted userStopTyping to room ${chatId} for user ${userId}`);
 
           // Reset timeout khi có hoạt động
           setUserInactiveTimeout(userId);
+        } else {
+          console.log(`❌ [STOP TYPING] Missing userId or chatId:`, { userId, chatId });
         }
       });
 
@@ -463,7 +469,7 @@ module.exports = async function (io) {
           Object.keys(typingUsers).forEach(chatId => {
             if (typingUsers[chatId] && typingUsers[chatId][uid]) {
               delete typingUsers[chatId][uid];
-              io.to(chatId).emit("userStopTyping", { userId: uid });
+              io.to(chatId).emit("userStopTyping", { userId: uid, chatId });
             }
           });
 
