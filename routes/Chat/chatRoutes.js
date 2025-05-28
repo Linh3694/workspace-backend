@@ -23,58 +23,11 @@ router.post('/message', authenticate, chatController.sendMessage);
 // Lấy tin nhắn của một chat
 router.get('/messages/:chatId', authenticate, chatController.getChatMessages);
 
-
-
-
-
 // Đánh dấu tin nhắn đã đọc
 router.put('/message/:messageId/read', authenticate, chatController.markMessageAsRead);
 
-// Đánh dấu tất cả tin nhắn trong một chat là đã đọc
-router.put('/read-all/:chatId', authenticate, async (req, res) => {
-    try {
-        const { chatId } = req.params;
-        const userId = req.user._id;
-
-        // Tìm tất cả tin nhắn chưa đọc trong chat
-        const unreadMessages = await Message.find({
-            chat: chatId,
-            sender: { $ne: userId },
-            readBy: { $nin: [userId] }
-        });
-
-        if (unreadMessages.length === 0) {
-            return res.status(200).json({ message: 'Không có tin nhắn cần đánh dấu đã đọc' });
-        }
-
-        // Đánh dấu tất cả tin nhắn là đã đọc
-        const updatePromises = unreadMessages.map(async (message) => {
-            message.readBy.push(userId);
-            return message.save();
-        });
-
-        await Promise.all(updatePromises);
-
-        // Emit socket event thông báo tin nhắn đã được đọc
-        const io = req.app.get('io');
-        
-        // Emit cho tất cả participants trong chat
-        const chat = await Chat.findById(chatId).populate('participants');
-        if (chat) {
-            chat.participants.forEach(participant => {
-                io.to(participant._id.toString()).emit('messageRead', {
-                    userId: userId,
-                    chatId: chatId,
-                    timestamp: new Date().toISOString()
-                });
-            });
-        }
-
-        res.status(200).json({ message: `Đã đánh dấu đọc ${unreadMessages.length} tin nhắn` });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-});
+// Đánh dấu tất cả tin nhắn trong chat là đã đọc (chỉ cho các tin nhắn mình là người nhận)
+router.put('/read-all/:chatId', authenticate, chatController.markAllMessagesAsRead);
 
 // Upload file/ảnh cho chat
 router.post('/upload-attachment', authenticate, uploadChat.single('file'), chatController.uploadChatAttachment);
@@ -111,9 +64,6 @@ router.get('/:chatId/pinned-messages', authenticate, chatController.getPinnedMes
 
 // API chuyển tiếp tin nhắn
 router.post('/message/forward', authenticate, chatController.forwardMessage);
-
-// Đánh dấu tất cả tin nhắn trong chat là đã đọc (chỉ cho các tin nhắn mình là người nhận)
-router.put('/read-all/:chatId', authenticate, chatController.markAllMessagesAsRead);
 
 // API thu hồi tin nhắn
 router.delete('/message/:messageId/revoke', authenticate, chatController.revokeMessage);
