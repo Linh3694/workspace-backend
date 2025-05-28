@@ -1135,14 +1135,36 @@ exports.revokeMessage = async (req, res) => {
         const { messageId } = req.params;
         const userId = req.user._id;
 
+        console.log('🔍 [REVOKE] Debug info:', {
+            messageId,
+            userId: userId.toString(),
+            userType: typeof userId,
+            userIdObject: userId
+        });
+
         // Tìm tin nhắn
         const message = await Message.findById(messageId);
         if (!message) {
             return res.status(404).json({ message: 'Không tìm thấy tin nhắn' });
         }
 
+        console.log('🔍 [REVOKE] Message info:', {
+            messageSender: message.sender.toString(),
+            senderType: typeof message.sender,
+            senderObject: message.sender,
+            isEqual: message.sender.toString() === userId.toString()
+        });
+
         // Kiểm tra quyền thu hồi (chỉ người gửi mới có thể thu hồi)
-        if (message.sender.toString() !== userId.toString()) {
+        const messageSenderId = message.sender.toString();
+        const currentUserId = userId.toString();
+        
+        if (messageSenderId !== currentUserId) {
+            console.log('❌ [REVOKE] Permission denied:', {
+                messageSender: messageSenderId,
+                currentUser: currentUserId,
+                comparison: `${messageSenderId} !== ${currentUserId}`
+            });
             return res.status(403).json({ message: 'Bạn không có quyền thu hồi tin nhắn này' });
         }
 
@@ -1153,6 +1175,8 @@ exports.revokeMessage = async (req, res) => {
         if (messageAge > maxRevokeTime) {
             return res.status(400).json({ message: 'Không thể thu hồi tin nhắn sau 24 giờ' });
         }
+
+        console.log('✅ [REVOKE] Permission granted, proceeding with revoke');
 
         // Đánh dấu tin nhắn là đã thu hồi
         message.isRevoked = true;
