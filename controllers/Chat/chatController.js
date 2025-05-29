@@ -64,7 +64,10 @@ exports.getUserChats = async (req, res) => {
             chats = await Chat.find({
                 participants: userId
             })
+                .select('name description avatar isGroup creator admins participants lastMessage settings createdAt updatedAt')
                 .populate('participants', 'fullname avatarUrl email department')
+                .populate('creator', 'fullname avatarUrl email')
+                .populate('admins', 'fullname avatarUrl email')
                 .populate({
                     path: 'lastMessage',
                     populate: {

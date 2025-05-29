@@ -465,183 +465,145 @@ module.exports = async function (io) {
             return;
           }
 
-          if (!chat.participants.includes(socket.data.userId)) {
+          const isMember = chat.participants.includes(socket.data.userId);
+          if (!isMember) {
             socket.emit('error', { message: 'Bạn không phải thành viên của nhóm này' });
             return;
           }
 
           socket.join(chatId);
-          logger.info(`[Socket][${socket.id}] Joined group chat: ${chatId}`);
-
-          // Notify other members that user is online in this group
+          console.log(`👥 User ${socket.data.userId} joined group chat ${chatId}`);
+          
+          // Notify other members
           socket.to(chatId).emit("userJoinedGroup", {
             userId: socket.data.userId,
-            chatId: chatId,
+            chatId,
             timestamp: new Date().toISOString()
           });
 
-          // Reset timeout khi có hoạt động
-          setUserInactiveTimeout(socket.data.userId);
-
         } catch (error) {
-          logger.error(`[Socket][${socket.id}] Error joining group chat:`, error);
-          socket.emit('error', { message: 'Lỗi khi tham gia nhóm chat' });
+          console.error('Error joining group chat:', error);
+          socket.emit('error', { message: 'Lỗi khi tham gia group chat' });
         }
       });
 
       // Leave group chat room
       socket.on("leaveGroupChat", (data) => {
-        try {
-          const { chatId } = data;
-          if (!chatId) return;
+        const { chatId } = data;
+        if (!chatId) return;
 
-          socket.leave(chatId);
-          
-          // Notify other members that user left the group
-          socket.to(chatId).emit("userLeftGroup", {
-            userId: socket.data.userId,
-            chatId: chatId,
-            timestamp: new Date().toISOString()
-          });
-
-          logger.info(`[Socket][${socket.id}] Left group chat: ${chatId}`);
-
-          // Reset timeout khi có hoạt động
-          if (socket.data.userId) {
-            setUserInactiveTimeout(socket.data.userId);
-          }
-
-        } catch (error) {
-          logger.error(`[Socket][${socket.id}] Error leaving group chat:`, error);
-        }
+        socket.leave(chatId);
+        console.log(`👥 User ${socket.data.userId} left group chat ${chatId}`);
+        
+        // Notify other members
+        socket.to(chatId).emit("userLeftGroup", {
+          userId: socket.data.userId,
+          chatId,
+          timestamp: new Date().toISOString()
+        });
       });
 
-      // Group typing indicators (supports multiple users typing)
+      // Group typing indicator
       socket.on("groupTyping", (data) => {
-        try {
-          const { chatId, isTyping } = data;
-          if (!chatId || !socket.data.userId) return;
+        const { chatId, isTyping } = data;
+        if (!chatId || !socket.data.userId) return;
 
-          if (isTyping) {
-            // Add user to typing list for this group
-            socket.to(chatId).emit("userTypingInGroup", {
-              userId: socket.data.userId,
-              chatId: chatId,
-              timestamp: new Date().toISOString()
-            });
-          } else {
-            // Remove user from typing list
-            socket.to(chatId).emit("userStopTypingInGroup", {
-              userId: socket.data.userId,
-              chatId: chatId,
-              timestamp: new Date().toISOString()
-            });
-          }
-
-          // Reset timeout khi có hoạt động
-          setUserInactiveTimeout(socket.data.userId);
-
-        } catch (error) {
-          logger.error(`[Socket][${socket.id}] Error handling group typing:`, error);
-        }
-      });
-
-      // Group message read receipts
-      socket.on("groupMessageRead", async (data) => {
-        try {
-          const { chatId, messageId } = data;
-          if (!chatId || !messageId || !socket.data.userId) return;
-
-          // Broadcast read receipt to all group members
-          socket.to(chatId).emit("groupMessageRead", {
+        if (isTyping) {
+          socket.to(chatId).emit("userTypingInGroup", {
             userId: socket.data.userId,
-            chatId: chatId,
-            messageId: messageId,
+            chatId,
             timestamp: new Date().toISOString()
           });
-
-          // Also emit to self for confirmation
-          socket.emit("groupMessageRead", {
+        } else {
+          socket.to(chatId).emit("userStopTypingInGroup", {
             userId: socket.data.userId,
-            chatId: chatId,
-            messageId: messageId,
+            chatId,
             timestamp: new Date().toISOString()
           });
-
-          // Reset timeout khi có hoạt động
-          setUserInactiveTimeout(socket.data.userId);
-
-        } catch (error) {
-          logger.error(`[Socket][${socket.id}] Error handling group message read:`, error);
         }
       });
 
-      // Group member status updates (when members are added/removed)
-      socket.on("groupMemberUpdate", (data) => {
-        try {
-          const { chatId, action, targetUserId } = data; // action: 'added' | 'removed' | 'left'
-          if (!chatId || !action || !socket.data.userId) return;
+      // Group message read status
+      socket.on("groupMessageRead", (data) => {
+        const { chatId, messageId } = data;
+        if (!chatId || !messageId || !socket.data.userId) return;
 
-          // Broadcast member update to all group members
-          socket.to(chatId).emit("groupMemberUpdate", {
-            chatId: chatId,
-            action: action,
-            targetUserId: targetUserId,
-            actionBy: socket.data.userId,
-            timestamp: new Date().toISOString()
-          });
-
-          // Reset timeout khi có hoạt động
-          setUserInactiveTimeout(socket.data.userId);
-
-        } catch (error) {
-          logger.error(`[Socket][${socket.id}] Error handling group member update:`, error);
-        }
+        socket.to(chatId).emit("groupMessageRead", {
+          userId: socket.data.userId,
+          chatId,
+          messageId,
+          timestamp: new Date().toISOString()
+        });
       });
 
-      // Group info updates (name, description, avatar changes)
-      socket.on("groupInfoUpdate", (data) => {
-        try {
-          const { chatId, changes } = data; // changes: { name?, description?, avatar? }
-          if (!chatId || !changes || !socket.data.userId) return;
+      // Group member management events
+      socket.on("groupMemberAdded", (data) => {
+        const { chatId, newMemberIds, addedBy } = data;
+        if (!chatId || !newMemberIds || !socket.data.userId) return;
 
-          // Broadcast info update to all group members
-          socket.to(chatId).emit("groupInfoUpdate", {
-            chatId: chatId,
-            changes: changes,
-            updatedBy: socket.data.userId,
+        // Emit to all group members
+        socket.to(chatId).emit("groupMembersAdded", {
+          chatId,
+          newMembers: newMemberIds,
+          addedBy: socket.data.userId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Emit to new members
+        newMemberIds.forEach(memberId => {
+          socket.to(memberId).emit("addedToGroup", {
+            chatId,
+            addedBy: socket.data.userId,
             timestamp: new Date().toISOString()
           });
-
-          // Reset timeout khi có hoạt động
-          setUserInactiveTimeout(socket.data.userId);
-
-        } catch (error) {
-          logger.error(`[Socket][${socket.id}] Error handling group info update:`, error);
-        }
+        });
       });
 
-      // Group admin updates
-      socket.on("groupAdminUpdate", (data) => {
-        try {
-          const { chatId, action, targetUserId } = data; // action: 'promoted' | 'demoted'
-          if (!chatId || !action || !targetUserId || !socket.data.userId) return;
+      socket.on("groupMemberRemoved", (data) => {
+        const { chatId, removedUserId, removedBy } = data;
+        if (!chatId || !removedUserId || !socket.data.userId) return;
 
-          // Broadcast admin update to all group members
-          socket.to(chatId).emit("groupAdminUpdate", {
-            chatId: chatId,
-            action: action,
-            targetUserId: targetUserId,
-            actionBy: socket.data.userId,
-            timestamp: new Date().toISOString()
-          });
+        // Emit to group members
+        socket.to(chatId).emit("groupMemberRemoved", {
+          chatId,
+          removedUserId,
+          removedBy: socket.data.userId,
+          timestamp: new Date().toISOString()
+        });
 
-          // Reset timeout khi có hoạt động
-          setUserInactiveTimeout(socket.data.userId);
+        // Emit to removed user
+        socket.to(removedUserId).emit("removedFromGroup", {
+          chatId,
+          removedBy: socket.data.userId,
+          timestamp: new Date().toISOString()
+        });
+      });
 
-        } catch (error) {
-          logger.error(`[Socket][${socket.id}] Error handling group admin update:`, error);
-        }
+      // Group info updates
+      socket.on("groupInfoUpdated", (data) => {
+        const { chatId, changes } = data;
+        if (!chatId || !changes || !socket.data.userId) return;
+
+        socket.to(chatId).emit("groupInfoUpdated", {
+          chatId,
+          changes,
+          updatedBy: socket.data.userId,
+          timestamp: new Date().toISOString()
+        });
+      });
+
+      // Group admin management
+      socket.on("groupAdminUpdated", (data) => {
+        const { chatId, targetUserId, action } = data; // action: 'promoted' | 'demoted'
+        if (!chatId || !targetUserId || !action || !socket.data.userId) return;
+
+        socket.to(chatId).emit("groupAdminUpdated", {
+          chatId,
+          targetUserId,
+          action,
+          actionBy: socket.data.userId,
+          timestamp: new Date().toISOString()
+        });
       });
 
       // ====================== END GROUP CHAT EVENTS ======================

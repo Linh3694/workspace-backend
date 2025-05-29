@@ -5,13 +5,12 @@ const chatSchema = new mongoose.Schema(
     // Thêm các field cho group chat
     name: {
       type: String,
-      required: function() {
-        return this.isGroup === true;
-      },
+      trim: true,
       maxlength: 100
     },
     description: {
       type: String,
+      trim: true,
       maxlength: 500
     },
     isGroup: {
@@ -19,7 +18,8 @@ const chatSchema = new mongoose.Schema(
       default: false
     },
     avatar: {
-      type: String // URL của ảnh group
+      type: String,
+      trim: true
     },
     creator: {
       type: mongoose.Schema.Types.ObjectId,
