@@ -161,8 +161,8 @@ exports.sendMessage = async (req, res) => {
             return res.status(200).json(messageQueue.get(tempId));
         }
 
-        // Validate input
-        if (!content || !content.trim()) {
+        // Validate input - cho phép content rỗng nếu là emoji
+        if ((!content || !content.trim()) && !isEmoji) {
             return res.status(400).json({ message: 'Nội dung tin nhắn không được để trống' });
         }
 
