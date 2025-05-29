@@ -7,10 +7,41 @@ const uploadChat = require('../../middleware/uploadChat');
 const Chat = require('../../models/Chat');
 const CustomEmoji = require('../../models/CustomEmoji');
 
+// === CHAT 1-1 ROUTES ===
 // Tạo hoặc lấy chat với người dùng khác
 router.post('/create', authenticate, chatController.createOrGetChat);
 router.post('/createOrGet', authenticate, chatController.createOrGetChat);
 
+// === GROUP CHAT ROUTES ===
+// Tạo group chat mới
+router.post('/group/create', authenticate, chatController.createGroupChat);
+
+// Thêm thành viên vào group
+router.post('/group/:chatId/add-member', authenticate, chatController.addGroupMember);
+
+// Xóa thành viên khỏi group
+router.delete('/group/:chatId/remove-member/:userId', authenticate, chatController.removeGroupMember);
+
+// Rời khỏi group
+router.post('/group/:chatId/leave', authenticate, chatController.leaveGroup);
+
+// Cập nhật thông tin group (tên, mô tả, avatar)
+router.put('/group/:chatId/info', authenticate, uploadChat.single('avatar'), chatController.updateGroupInfo);
+
+// Thêm/xóa admin
+router.post('/group/:chatId/add-admin/:userId', authenticate, chatController.addGroupAdmin);
+router.delete('/group/:chatId/remove-admin/:userId', authenticate, chatController.removeGroupAdmin);
+
+// Cập nhật settings group
+router.put('/group/:chatId/settings', authenticate, chatController.updateGroupSettings);
+
+// Lấy danh sách thành viên group
+router.get('/group/:chatId/members', authenticate, chatController.getGroupMembers);
+
+// Tìm kiếm group chat
+router.get('/group/search', authenticate, chatController.searchGroups);
+
+// === EXISTING ROUTES ===
 // Lấy danh sách chat của user
 router.get('/list', authenticate, chatController.getUserChats);
 
@@ -76,6 +107,8 @@ router.get('/:chatId', authenticate, async (req, res) => {
         // Tìm chat và populate thông tin người tham gia
         const chat = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email')
+            .populate('creator', 'fullname avatarUrl email')
+            .populate('admins', 'fullname avatarUrl email')
             .populate('lastMessage');
 
         if (!chat) {

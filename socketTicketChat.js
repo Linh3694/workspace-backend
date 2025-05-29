@@ -3,19 +3,74 @@ const jwt = require("jsonwebtoken");
 
 // Socket.IO events cho ticket chat với tối ưu hiệu năng
 module.exports = (io) => {
-  const processedTempIds = new Map(); // Sử dụng Map thay vì Set để có TTL
-  const userSockets = new Map(); // Track user sockets
-  const typingUsers = new Map(); // Track typing users per ticket
+  // Tối ưu: Sử dụng LRU Cache với size limit
+  class LRUCache {
+    constructor(maxSize = 1000) {
+      this.maxSize = maxSize;
+      this.cache = new Map();
+    }
 
-  // Cleanup processed temp IDs sau 5 phút
-  setInterval(() => {
+    set(key, value) {
+      if (this.cache.has(key)) {
+        this.cache.delete(key);
+      } else if (this.cache.size >= this.maxSize) {
+        const firstKey = this.cache.keys().next().value;
+        this.cache.delete(firstKey);
+      }
+      this.cache.set(key, value);
+    }
+
+    has(key) {
+      return this.cache.has(key);
+    }
+
+    delete(key) {
+      return this.cache.delete(key);
+    }
+
+    cleanup() {
+      const now = Date.now();
+      const expiredKeys = [];
+      
+      for (const [key, timestamp] of this.cache.entries()) {
+        if (now - timestamp > 5 * 60 * 1000) { // 5 minutes
+          expiredKeys.push(key);
+        }
+      }
+      
+      expiredKeys.forEach(key => this.cache.delete(key));
+      return expiredKeys.length;
+    }
+  }
+
+  const processedTempIds = new LRUCache(2000); // Max 2000 temp IDs
+  const userSockets = new Map();
+  const typingUsers = new Map();
+
+  // Tối ưu cleanup: chạy mỗi 30s và có batch cleanup
+  const cleanupInterval = setInterval(() => {
+    const cleanedCount = processedTempIds.cleanup();
+    
+    // Cleanup typing users expired
     const now = Date.now();
-    for (const [tempId, timestamp] of processedTempIds.entries()) {
-      if (now - timestamp > 5 * 60 * 1000) { // 5 minutes
-        processedTempIds.delete(tempId);
+    let expiredTyping = 0;
+    for (const [key, timeout] of typingUsers.entries()) {
+      if (timeout && timeout._idleStart && (now - timeout._idleStart > 10000)) {
+        clearTimeout(timeout);
+        typingUsers.delete(key);
+        expiredTyping++;
       }
     }
-  }, 60000); // Check every minute
+    
+    if (cleanedCount > 0 || expiredTyping > 0) {
+      console.log(`🧹 Cleanup: ${cleanedCount} tempIds, ${expiredTyping} typing indicators`);
+    }
+  }, 30000); // Check every 30 seconds
+
+  // Cleanup on module unload
+  process.on('SIGINT', () => {
+    clearInterval(cleanupInterval);
+  });
 
   io.on("connection", (socket) => {
     console.log("🔗 Socket connected:", socket.id);
@@ -196,20 +251,78 @@ module.exports = (io) => {
           return;
         }
 
-        // Rate limiting: max 10 messages per minute per user
-        const rateLimitKey = `rate_limit_${currentUserId}`;
-        if (!socket.data.messageCount) socket.data.messageCount = {};
-        if (!socket.data.messageCount[rateLimitKey]) socket.data.messageCount[rateLimitKey] = [];
+        // Enhanced rate limiting với sliding window
+        class RateLimiter {
+          constructor() {
+            this.userRequests = new Map();
+          }
 
-        const now = Date.now();
-        socket.data.messageCount[rateLimitKey] = socket.data.messageCount[rateLimitKey]
-          .filter(timestamp => now - timestamp < 60000); // Last minute
+          checkLimit(userId, userRole = 'user') {
+            const now = Date.now();
+            const windowMs = 60000; // 1 minute
+            
+            // Different limits for different roles
+            const limits = {
+              'superadmin': 50,
+              'admin': 30, 
+              'technical': 20,
+              'user': 10
+            };
+            
+            const limit = limits[userRole] || limits['user'];
+            
+            if (!this.userRequests.has(userId)) {
+              this.userRequests.set(userId, []);
+            }
+            
+            const requests = this.userRequests.get(userId);
+            
+            // Remove old requests (sliding window)
+            const validRequests = requests.filter(timestamp => now - timestamp < windowMs);
+            this.userRequests.set(userId, validRequests);
+            
+            // Check if under limit
+            if (validRequests.length >= limit) {
+              return { allowed: false, resetTime: Math.min(...validRequests) + windowMs };
+            }
+            
+            // Add current request
+            validRequests.push(now);
+            return { allowed: true, remaining: limit - validRequests.length };
+          }
 
-        if (socket.data.messageCount[rateLimitKey].length >= 10) {
-          socket.emit('error', { message: 'Bạn đang gửi tin nhắn quá nhanh. Vui lòng chờ một chút.' });
+          cleanup() {
+            const now = Date.now();
+            let cleanedUsers = 0;
+            
+            for (const [userId, requests] of this.userRequests.entries()) {
+              const validRequests = requests.filter(timestamp => now - timestamp < 60000);
+              if (validRequests.length === 0) {
+                this.userRequests.delete(userId);
+                cleanedUsers++;
+              } else {
+                this.userRequests.set(userId, validRequests);
+              }
+            }
+            
+            return cleanedUsers;
+          }
+        }
+
+        const rateLimiter = new RateLimiter();
+
+        // Rate limiting: max messages per minute based on user role
+        const rateCheck = rateLimiter.checkLimit(currentUserId, socket.data.userRole);
+        
+        if (!rateCheck.allowed) {
+          const waitTime = Math.ceil((rateCheck.resetTime - Date.now()) / 1000);
+          socket.emit('error', { 
+            message: `Bạn đang gửi tin nhắn quá nhanh. Vui lòng chờ ${waitTime}s.`,
+            type: 'rate_limit',
+            resetTime: rateCheck.resetTime
+          });
           return;
         }
-        socket.data.messageCount[rateLimitKey].push(now);
 
         // Validate ticket permission
         const ticketDoc = await Ticket.findById(data.ticketId).populate("creator assignedTo");
@@ -254,18 +367,26 @@ module.exports = (io) => {
           ticketId: data.ticketId
         };
 
-        // Send confirmation to sender with tempId
+        console.log(`📡 Broadcasting message to ticket room ${data.ticketId}:`, {
+          messageId: messageToSend._id,
+          sender: messageToSend.sender.fullname,
+          roomMembers: io.sockets.adapter.rooms.get(data.ticketId)?.size || 0
+        });
+
+        // ✅ QUAN TRỌNG: Broadcast tới TẤT CẢ users trong room (bao gồm cả sender)
+        // Để đảm bảo sender cũng nhận được message với _id từ database
+        io.to(data.ticketId).emit("newMessage", messageToSend);
+
+        // Optional: Send confirmation to sender with tempId if needed
         if (data.tempId) {
-          socket.emit("newMessage", {
-            ...messageToSend,
+          socket.emit("messageConfirmed", {
             tempId: data.tempId,
+            realMessageId: savedMessage._id,
+            timestamp: savedMessage.timestamp
           });
         }
 
-        // Broadcast to other users in the room
-        socket.to(data.ticketId).emit("newMessage", messageToSend);
-
-        console.log(`📨 Message sent in ticket ${data.ticketId} by user ${currentUserId}`);
+        console.log(`📨 Message broadcast completed for ticket ${data.ticketId} by user ${currentUserId}`);
 
       } catch (err) {
         console.error("❌ Error storing message:", err);
