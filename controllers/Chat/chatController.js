@@ -1183,8 +1183,8 @@ exports.revokeMessage = async (req, res) => {
         message.revokedAt = new Date();
         message.revokedBy = userId;
         
-        // Xóa nội dung tin nhắn
-        message.content = '';
+        // Xóa nội dung tin nhắn - set placeholder thay vì chuỗi rỗng
+        message.content = '[Tin nhắn đã được thu hồi]';
         message.fileUrl = undefined;
         message.fileUrls = undefined;
         message.fileName = undefined;
