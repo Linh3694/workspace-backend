@@ -721,6 +721,9 @@ exports.getTicketGroupChat = async (req, res) => {
       .populate('admins', 'fullname avatarUrl email');
 
     if (!groupChat) {
+      // Group chat ID tồn tại nhưng record không có - cleanup
+      console.log(`⚠️ Ticket ${ticket.ticketCode} có groupChatId nhưng chat không tồn tại, đang cleanup`);
+      await Ticket.findByIdAndUpdate(ticketId, { $unset: { groupChatId: 1 } });
       return res.status(404).json({ success: false, message: "Group chat không tồn tại" });
     }
 
@@ -845,11 +848,25 @@ exports.createTicketGroupChat = async (req, res) => {
       return res.status(403).json({ success: false, message: "Bạn không có quyền tạo group chat cho ticket này" });
     }
 
-    // Kiểm tra xem đã có group chat chưa
+    // Kiểm tra xem đã có group chat chưa (kiểm tra cả trong DB và thực tế)
     if (ticket.groupChatId) {
       const existingChat = await Chat.findById(ticket.groupChatId);
       if (existingChat) {
-        return res.status(400).json({ success: false, message: "Ticket này đã có group chat" });
+        // Populate để trả về full data
+        const populatedChat = await Chat.findById(existingChat._id)
+          .populate('participants', 'fullname avatarUrl email department')
+          .populate('creator', 'fullname avatarUrl email')
+          .populate('admins', 'fullname avatarUrl email');
+        
+        return res.status(200).json({ 
+          success: true, 
+          message: "Group chat đã tồn tại",
+          groupChat: populatedChat 
+        });
+      } else {
+        // Group chat ID tồn tại nhưng record không có - xóa ID và tạo mới
+        console.log(`⚠️ Ticket ${ticket.ticketCode} có groupChatId nhưng chat không tồn tại, sẽ tạo mới`);
+        ticket.groupChatId = null;
       }
     }
 
