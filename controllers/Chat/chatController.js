@@ -224,43 +224,49 @@ exports.sendMessage = async (req, res) => {
             isGroup: populatedMessage.isGroup
         });
         
-        const emitWithRetry = (event, data, retries = 3) => {
+        const emitWithRetry = async (event, data, retries = 3) => {
             try {
                 console.log(`📤 [Backend] Emitting ${event} to room ${chatId}`);
                 console.log(`📤 [Backend] Chat type:`, { isGroup: chat.isGroup, chatId });
                 
                 // Sử dụng namespace phù hợp dựa trên chat type
                 if (chat.isGroup) {
-                    const roomSize = groupChatNamespace.adapter.rooms.get(chatId)?.size || 0;
-                    const roomMembers = groupChatNamespace.adapter.rooms.get(chatId) ? Array.from(groupChatNamespace.adapter.rooms.get(chatId)) : [];
-                    console.log(`📤 [Backend] GROUP: Room ${chatId} has ${roomSize} connected members:`, roomMembers);
-                    console.log(`📤 [Backend] GROUP: All rooms in namespace:`, Array.from(groupChatNamespace.adapter.rooms.keys()));
-                    
-                    groupChatNamespace.to(chatId).emit(event, data);
-                    console.log(`✅ [Backend] Successfully emitted ${event} to GROUP room ${chatId}`);
-                    
-                    // Double check - emit đến từng socket riêng lẻ để đảm bảo
-                    groupChatNamespace.in(chatId).fetchSockets().then(sockets => {
+                    // Fix cho Redis adapter - sử dụng fetchSockets thay vì adapter.rooms.get
+                    try {
+                        const sockets = await groupChatNamespace.in(chatId).fetchSockets();
+                        const roomSize = sockets.length;
+                        const roomMembers = sockets.map(s => s.id);
+                        console.log(`📤 [Backend] GROUP: Room ${chatId} has ${roomSize} connected members:`, roomMembers);
+                        
+                        groupChatNamespace.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to GROUP room ${chatId}`);
+                        
+                        // Double check logging
                         console.log(`🔍 [Backend] Room ${chatId} has ${sockets.length} sockets:`, sockets.map(s => s.id));
-                        sockets.forEach(s => {
-                            console.log(`📤 [Backend] Emitting directly to socket ${s.id}`);
-                            s.emit(event, data);
-                        });
-                    }).catch(err => {
-                        console.error(`❌ [Backend] Error fetching sockets:`, err);
-                    });
-                    
+                    } catch (fetchError) {
+                        console.warn(`⚠️ [Backend] Could not fetch group room size for ${chatId}, emitting anyway:`, fetchError.message);
+                        groupChatNamespace.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to GROUP room ${chatId} (no size check)`);
+                    }
                 } else {
-                    const roomSize = io.adapter.rooms.get(chatId)?.size || 0;
-                    console.log(`📤 [Backend] 1-1: Room ${chatId} has ${roomSize} connected members`);
-                    io.to(chatId).emit(event, data);
-                    console.log(`✅ [Backend] Successfully emitted ${event} to 1-1 room ${chatId}`);
+                    // Fix cho Redis adapter - sử dụng fetchSockets thay vì adapter.rooms.get
+                    try {
+                        const sockets = await io.in(chatId).fetchSockets();
+                        const roomSize = sockets.length;
+                        console.log(`📤 [Backend] 1-1: Room ${chatId} has ${roomSize} connected members`);
+                        io.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to 1-1 room ${chatId}`);
+                    } catch (fetchError) {
+                        console.warn(`⚠️ [Backend] Could not fetch room size for ${chatId}, emitting anyway:`, fetchError.message);
+                        io.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to 1-1 room ${chatId} (no size check)`);
+                    }
                 }
             } catch (error) {
                 console.error(`❌ [Backend] Error emitting ${event} to room ${chatId}:`, error);
                 if (retries > 0) {
                     console.log(`🔄 [Backend] Retrying emit ${event} (${retries} retries left)`);
-                    setTimeout(() => emitWithRetry(event, data, retries - 1), 1000);
+                    setTimeout(async () => await emitWithRetry(event, data, retries - 1), 1000);
                 } else {
                     console.error(`❌ [Backend] Failed to emit ${event} after all retries`);
                     // Use logger if available, otherwise console.error
@@ -271,7 +277,7 @@ exports.sendMessage = async (req, res) => {
             }
         };
 
-        emitWithRetry('receiveMessage', populatedMessage);
+        await emitWithRetry('receiveMessage', populatedMessage);
 
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
