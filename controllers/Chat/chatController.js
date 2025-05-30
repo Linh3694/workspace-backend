@@ -232,9 +232,24 @@ exports.sendMessage = async (req, res) => {
                 // Sử dụng namespace phù hợp dựa trên chat type
                 if (chat.isGroup) {
                     const roomSize = groupChatNamespace.adapter.rooms.get(chatId)?.size || 0;
-                    console.log(`📤 [Backend] GROUP: Room ${chatId} has ${roomSize} connected members`);
+                    const roomMembers = groupChatNamespace.adapter.rooms.get(chatId) ? Array.from(groupChatNamespace.adapter.rooms.get(chatId)) : [];
+                    console.log(`📤 [Backend] GROUP: Room ${chatId} has ${roomSize} connected members:`, roomMembers);
+                    console.log(`📤 [Backend] GROUP: All rooms in namespace:`, Array.from(groupChatNamespace.adapter.rooms.keys()));
+                    
                     groupChatNamespace.to(chatId).emit(event, data);
                     console.log(`✅ [Backend] Successfully emitted ${event} to GROUP room ${chatId}`);
+                    
+                    // Double check - emit đến từng socket riêng lẻ để đảm bảo
+                    groupChatNamespace.in(chatId).fetchSockets().then(sockets => {
+                        console.log(`🔍 [Backend] Room ${chatId} has ${sockets.length} sockets:`, sockets.map(s => s.id));
+                        sockets.forEach(s => {
+                            console.log(`📤 [Backend] Emitting directly to socket ${s.id}`);
+                            s.emit(event, data);
+                        });
+                    }).catch(err => {
+                        console.error(`❌ [Backend] Error fetching sockets:`, err);
+                    });
+                    
                 } else {
                     const roomSize = io.adapter.rooms.get(chatId)?.size || 0;
                     console.log(`📤 [Backend] 1-1: Room ${chatId} has ${roomSize} connected members`);

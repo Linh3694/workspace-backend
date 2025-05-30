@@ -151,8 +151,8 @@ module.exports = async function (groupChatNamespace) {
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
           console.log(`🔑 [GroupChat AUTH][${socket.id}] Token decoded:`, decoded ? 'YES' : 'NO');
           
-          if (decoded && decoded._id) {
-            currentUserId = decoded._id.toString();
+          if (decoded && (decoded._id || decoded.id)) {
+            currentUserId = (decoded._id || decoded.id).toString();
             socket.join(currentUserId);
             socket.data.userId = currentUserId;
             
@@ -196,7 +196,20 @@ module.exports = async function (groupChatNamespace) {
 
       // ====================== GROUP CHAT SOCKET EVENTS ======================
       
-      // Join group chat room
+      // Debug room membership function  
+      const debugRoomMembership = (roomId) => {
+        const room = groupChatNamespace.adapter.rooms.get(roomId);
+        const members = room ? Array.from(room) : [];
+        console.log(`🏠 [GroupChat Debug] Room ${roomId} membership:`, {
+          roomExists: !!room,
+          memberCount: members.length,
+          members: members,
+          allRooms: Array.from(groupChatNamespace.adapter.rooms.keys())
+        });
+        return members;
+      };
+
+      // Enhanced join group chat room
       socket.on("joinGroupChat", async (data) => {
         try {
           const { chatId } = data;
@@ -243,6 +256,19 @@ module.exports = async function (groupChatNamespace) {
           console.log(`✅ [JOIN GROUP][${socket.id}] User ${socket.data.userId} joined group chat ${chatId}`);
           console.log(`✅ [JOIN GROUP][${socket.id}] Room ${chatId} now has ${socket.adapter.rooms.get(chatId)?.size || 0} members`);
           console.log(`✅ [JOIN GROUP][${socket.id}] Socket rooms after join:`, Array.from(socket.rooms));
+          
+          // Debug room membership
+          debugRoomMembership(chatId);
+          
+          // Test emit to confirm room membership
+          socket.emit('roomJoinConfirmed', {
+            chatId,
+            userId: socket.data.userId,
+            socketId: socket.id,
+            roomSize: socket.adapter.rooms.get(chatId)?.size || 0,
+            timestamp: new Date().toISOString()
+          });
+          console.log(`✅ [JOIN GROUP][${socket.id}] Sent roomJoinConfirmed to client`);
           
           // Notify other members
           socket.to(chatId).emit("userJoinedGroup", {
