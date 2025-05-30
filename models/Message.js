@@ -109,6 +109,11 @@ const messageSchema = new mongoose.Schema(
       type: Date
     },
     isRevoked: { type: Boolean, default: false },
+    // Đánh dấu tin nhắn thuộc group chat hay chat 1-1
+    isGroup: { 
+      type: Boolean, 
+      default: false 
+    },
     createdAt: {
       type: Date,
       default: Date.now,

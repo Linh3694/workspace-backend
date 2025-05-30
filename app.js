@@ -42,6 +42,7 @@ const libraryRoutes = require("./routes/Library/library");
 const admissionRoutes = require("./routes/Admission/admissionRoutes");
 const chatRoutes = require("./routes/Chat/chatRoutes");
 const chatSocket = require('./socketChat');
+const socketGroupChat = require('./socketGroupChat');
 const socketTicketChat = require('./socketTicketChat');
 const notificationRoutes = require("./routes/Notification/notificationRoutes");
 const emojiRoutes = require('./routes/Chat/emojiRoutes');
@@ -70,9 +71,27 @@ const io = new Server(server, {
 
 app.set("io", io); // expose socket.io instance to controllers
 
+// Khởi tạo namespace riêng cho group chat
+const groupChatNamespace = io.of('/groupchat');
+
+// Setup authentication middleware cho group chat namespace
+groupChatNamespace.use((socket, next) => {
+  const token = socket.handshake.query.token;
+  if (!token) return next(new Error("unauthorized"));
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return next(new Error("unauthorized"));
+    socket.user = decoded;
+    next();
+  });
+});
+
 // Khởi tạo các socket handlers
 socketTicketChat(io);
-chatSocket(io);
+chatSocket(io); // Socket cho chat 1-1
+socketGroupChat(groupChatNamespace); // Socket riêng cho group chat
+
+// Expose group chat namespace để controllers có thể sử dụng
+app.set("groupChatNamespace", groupChatNamespace);
 
 // Initialize newfeed socket
 const newfeedSocket = new NewfeedSocket(io);
