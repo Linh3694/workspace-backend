@@ -137,6 +137,14 @@ module.exports = async function (groupChatNamespace) {
       console.log("[GroupChat] Socket connected:", socket.id);
       let currentUserId = null;
 
+      // Debug all incoming events
+      socket.onAny((eventName, ...args) => {
+        console.log(`🔍 [GroupChat][${socket.id}] ========= RECEIVED EVENT =========`);
+        console.log(`🔍 [GroupChat][${socket.id}] Event: ${eventName}`);
+        console.log(`🔍 [GroupChat][${socket.id}] Args:`, args);
+        console.log(`🔍 [GroupChat][${socket.id}] =========================================`);
+      });
+
       // Lắng nghe lỗi socket
       socket.on('error', (err) => {
         logger.error(`[GroupChat][${socket.id}] error: ${err.message}`);
