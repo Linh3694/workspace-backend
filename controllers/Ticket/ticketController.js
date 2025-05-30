@@ -730,27 +730,20 @@ exports.getTicketGroupChat = async (req, res) => {
     // Kiểm tra user có trong group chat không
     const isParticipant = groupChat.participants.some(p => p._id.equals(userId));
     
-    // Nếu user không phải participant nhưng có quyền truy cập (admin/superadmin), tự động add vào
-    if (!isParticipant && (req.user.role === "admin" || req.user.role === "superadmin")) {
-      console.log(`➕ Auto-adding ${req.user.role} ${userId} to group chat ${groupChat._id}`);
-      groupChat.participants.push(userId);
-      await groupChat.save();
-      
-      // Refresh lại data với participant mới
-      const updatedGroupChat = await Chat.findById(ticket.groupChatId)
-        .populate('participants', 'fullname avatarUrl email department')
-        .populate('creator', 'fullname avatarUrl email')
-        .populate('admins', 'fullname avatarUrl email');
-        
-      return res.status(200).json({ success: true, groupChat: updatedGroupChat });
-    }
-
-    // Nếu không phải participant và không có quyền admin
-    if (!isParticipant) {
+    // Admin/Superadmin có thể xem group chat nhưng chưa join
+    // Chỉ check permission cho user thông thường
+    if (!isParticipant && req.user.role !== "admin" && req.user.role !== "superadmin") {
       return res.status(403).json({ success: false, message: "Bạn không có quyền truy cập group chat này" });
     }
 
-    res.status(200).json({ success: true, groupChat });
+    // Trả về group chat với thông tin về việc user có phải participant không
+    res.status(200).json({ 
+      success: true, 
+      groupChat,
+      isParticipant,
+      canJoin: req.user.role === "admin" || req.user.role === "superadmin" || isParticipant
+    });
+    
   } catch (error) {
     console.error('Lỗi khi lấy group chat của ticket:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -1047,3 +1040,87 @@ exports.createTicketGroupChat = async (req, res) => {
 };
 
 exports.createTicketHelper = createTicketHelper;
+
+// Tham gia group chat của ticket (cho admin/superadmin)
+exports.joinTicketGroupChat = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user._id;
+
+    // Tìm ticket
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: "Ticket không tồn tại" });
+    }
+
+    // Kiểm tra quyền tham gia (chỉ admin/superadmin hoặc người có liên quan đến ticket)
+    const canJoin = ticket.creator.equals(userId) || 
+                   (ticket.assignedTo && ticket.assignedTo.equals(userId)) ||
+                   req.user.role === "admin" || 
+                   req.user.role === "superadmin";
+
+    if (!canJoin) {
+      return res.status(403).json({ success: false, message: "Bạn không có quyền tham gia group chat này" });
+    }
+
+    // Kiểm tra group chat tồn tại
+    if (!ticket.groupChatId) {
+      return res.status(404).json({ success: false, message: "Ticket chưa có group chat" });
+    }
+
+    const groupChat = await Chat.findById(ticket.groupChatId);
+    if (!groupChat) {
+      return res.status(404).json({ success: false, message: "Group chat không tồn tại" });
+    }
+
+    // Kiểm tra xem user đã là participant chưa
+    const isAlreadyParticipant = groupChat.participants.some(p => p.equals(userId));
+    
+    if (isAlreadyParticipant) {
+      // Đã là participant, chỉ cần populate và trả về
+      const populatedGroupChat = await Chat.findById(ticket.groupChatId)
+        .populate('participants', 'fullname avatarUrl email department')
+        .populate('creator', 'fullname avatarUrl email')
+        .populate('admins', 'fullname avatarUrl email');
+        
+      return res.status(200).json({ 
+        success: true, 
+        message: "Bạn đã là thành viên của group chat",
+        groupChat: populatedGroupChat,
+        isParticipant: true
+      });
+    }
+
+    // Thêm user vào group chat
+    console.log(`➕ ${req.user.role} ${req.user.fullname} joining group chat ${groupChat._id} for ticket ${ticket.ticketCode}`);
+    groupChat.participants.push(userId);
+    await groupChat.save();
+
+    // Ghi log vào ticket history
+    ticket.history.push({
+      timestamp: new Date(),
+      action: ` <strong>${req.user.fullname} (${req.user.role})</strong> đã tham gia group chat`,
+      user: userId,
+    });
+    await ticket.save();
+
+    // Populate thông tin để trả về
+    const updatedGroupChat = await Chat.findById(ticket.groupChatId)
+      .populate('participants', 'fullname avatarUrl email department')
+      .populate('creator', 'fullname avatarUrl email')
+      .populate('admins', 'fullname avatarUrl email');
+
+    console.log(`✅ ${req.user.fullname} đã tham gia group chat ${groupChat._id}`);
+    
+    res.status(200).json({ 
+      success: true, 
+      message: "Tham gia group chat thành công",
+      groupChat: updatedGroupChat,
+      isParticipant: true
+    });
+    
+  } catch (error) {
+    console.error('Lỗi khi tham gia group chat:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
