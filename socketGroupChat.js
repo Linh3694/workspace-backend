@@ -107,10 +107,17 @@ const safePublish = async (channel, message) => {
 };
 
 module.exports = async function (groupChatNamespace) {
+  console.log('🚀 [GroupChat] Initializing socketGroupChat module...');
+  
   try {
+    console.log('🔗 [GroupChat] Connecting to Redis...');
     await pubClient.connect();
     await subClient.connect();
+    console.log('✅ [GroupChat] Redis connected successfully');
+    
+    console.log('🔧 [GroupChat] Setting up Redis adapter...');
     groupChatNamespace.adapter(createAdapter(pubClient, subClient));
+    console.log('✅ [GroupChat] Redis adapter setup complete');
 
     // Hàm để đánh dấu người dùng offline sau một khoảng thời gian
     const setUserInactiveTimeout = async (userId) => {
@@ -133,6 +140,7 @@ module.exports = async function (groupChatNamespace) {
       }, USER_OFFLINE_TIMEOUT);
     };
 
+    console.log('🎧 [GroupChat] Setting up connection event listener...');
     groupChatNamespace.on("connection", async (socket) => {
       console.log("🔗 [GroupChat] Socket connected:", socket.id);
       
@@ -480,8 +488,10 @@ module.exports = async function (groupChatNamespace) {
       });
     });
 
+    console.log('✅ [GroupChat] Connection event listener setup complete');
     logger.info('[GroupChat] Socket handlers initialized successfully');
   } catch (error) {
+    console.error('❌ [GroupChat] Error initializing socket:', error);
     logger.error(`[GroupChat] Error initializing socket: ${error.message}`);
   }
 }; 
