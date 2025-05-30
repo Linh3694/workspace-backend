@@ -180,7 +180,7 @@ exports.sendMessage = async (req, res) => {
         const message = await Message.create({
             chat: chatId,
             sender: senderId,
-            content: content.trim(),
+            content: content ? content.trim() : '',
             type,
             readBy: [senderId],
             isEmoji,
@@ -485,6 +485,13 @@ exports.uploadChatAttachment = async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ message: 'Không có file được upload' });
         }
+
+        // Lấy thông tin chat để kiểm tra isGroup
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: 'Chat not found' });
+        }
+
         // Xác định loại file
         let type = 'file';
         if (req.file.mimetype.startsWith('image/')) {
@@ -502,9 +509,6 @@ exports.uploadChatAttachment = async (req, res) => {
             readBy: [senderId],
             isGroup: chat.isGroup || false // Đánh dấu đây là group message hay không
         });
-
-        // Lấy thông tin chat để gửi thông báo
-        const chat = await Chat.findById(chatId);
 
         // Cập nhật lastMessage trong chat
         await Chat.findByIdAndUpdate(chatId, {
@@ -579,6 +583,12 @@ exports.uploadMultipleImages = async (req, res) => {
             return res.status(400).json({ message: 'Không có file được upload' });
         }
 
+        // Lấy thông tin chat để kiểm tra isGroup
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: 'Chat not found' });
+        }
+
         // Lưu đường dẫn của tất cả các file
         const fileUrls = req.files.map(file => `/uploads/Chat/${file.filename}`);
 
@@ -593,9 +603,6 @@ exports.uploadMultipleImages = async (req, res) => {
             readBy: [senderId],
             isGroup: chat.isGroup || false // Đánh dấu đây là group message hay không
         });
-
-        // Lấy thông tin chat để gửi thông báo
-        const chat = await Chat.findById(chatId);
 
         // Cập nhật lastMessage trong chat
         await Chat.findByIdAndUpdate(chatId, {
