@@ -820,14 +820,44 @@ async function createTicketHelper({ title, description, creatorId, priority, fil
 
   await newTicket.save();
   
-  // 6) Tạo group chat tự động cho ticket
+  return newTicket;
+}
+
+// Tạo group chat cho ticket theo yêu cầu
+exports.createTicketGroupChat = async (req, res) => {
   try {
+    const { ticketId } = req.params;
+    const userId = req.user._id;
+
+    // Tìm ticket
+    const ticket = await Ticket.findById(ticketId).populate('creator assignedTo');
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: "Ticket không tồn tại" });
+    }
+
+    // Kiểm tra quyền tạo group chat
+    const hasPermission = ticket.creator.equals(userId) || 
+                         (ticket.assignedTo && ticket.assignedTo.equals(userId)) ||
+                         req.user.role === "admin" || 
+                         req.user.role === "superadmin";
+
+    if (!hasPermission) {
+      return res.status(403).json({ success: false, message: "Bạn không có quyền tạo group chat cho ticket này" });
+    }
+
+    // Kiểm tra xem đã có group chat chưa
+    if (ticket.groupChatId) {
+      const existingChat = await Chat.findById(ticket.groupChatId);
+      if (existingChat) {
+        return res.status(400).json({ success: false, message: "Ticket này đã có group chat" });
+      }
+    }
+
     // Tìm admin ít group chat nhất để chia đều
     const adminUsers = await User.find({ role: "admin" });
     let selectedAdmin = null;
     
     if (adminUsers.length > 0) {
-      // Đếm số group chat mà mỗi admin tham gia
       const adminChatCounts = await Promise.all(
         adminUsers.map(async (admin) => {
           const count = await Chat.countDocuments({ 
@@ -844,37 +874,57 @@ async function createTicketHelper({ title, description, creatorId, priority, fil
     }
     
     // Tạo danh sách participants cho group chat
-    const participants = [creatorId, leastAssignedUser._id];
+    const participants = [ticket.creator._id, ticket.assignedTo._id];
     if (selectedAdmin && !participants.includes(selectedAdmin._id.toString())) {
       participants.push(selectedAdmin._id);
     }
     
     // Tạo group chat
     const groupChat = await Chat.create({
-      name: `Ticket: ${ticketCode}`,
-      description: `Group chat tự động cho ticket ${ticketCode}`,
+      name: `Ticket: ${ticket.ticketCode}`,
+      description: `Group chat tự động cho ticket ${ticket.ticketCode}`,
       isGroup: true,
-      avatar: "ticket-icon.svg", // Avatar mặc định
-      creator: creatorId,
-      admins: [selectedAdmin ? selectedAdmin._id : leastAssignedUser._id],
+      avatar: "ticket-icon.svg",
+      creator: userId,
+      admins: [selectedAdmin ? selectedAdmin._id : ticket.assignedTo._id],
       participants: participants,
       settings: {
-        allowMembersToAdd: false, // Chỉ admin mới được thêm thành viên
+        allowMembersToAdd: false,
         allowMembersToEdit: false,
         muteNotifications: false
       }
     });
     
     // Lưu group chat ID vào ticket
-    newTicket.groupChatId = groupChat._id;
-    await newTicket.save();
+    ticket.groupChatId = groupChat._id;
     
-    console.log(`✅ Đã tạo group chat ${groupChat._id} cho ticket ${ticketCode}`);
+    // Ghi log tạo group chat
+    ticket.history.push({
+      timestamp: new Date(),
+      action: ` <strong>${req.user.fullname}</strong> đã tạo group chat cho ticket`,
+      user: userId,
+    });
+    
+    await ticket.save();
+    
+    // Populate thông tin cho response
+    const populatedGroupChat = await Chat.findById(groupChat._id)
+      .populate('participants', 'fullname avatarUrl email department')
+      .populate('creator', 'fullname avatarUrl email')
+      .populate('admins', 'fullname avatarUrl email');
+    
+    console.log(`✅ Đã tạo group chat ${groupChat._id} cho ticket ${ticket.ticketCode}`);
+    
+    res.status(201).json({ 
+      success: true, 
+      message: "Tạo group chat thành công",
+      groupChat: populatedGroupChat 
+    });
+    
   } catch (error) {
-    console.error(`❌ Lỗi khi tạo group chat cho ticket ${ticketCode}:`, error);
-    // Không throw error để không ảnh hưởng đến việc tạo ticket
+    console.error('Lỗi khi tạo group chat cho ticket:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
-  
-  return newTicket;
-}
+};
+
 exports.createTicketHelper = createTicketHelper;

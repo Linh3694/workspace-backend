@@ -14,6 +14,7 @@ router.get("/support-team", ticketController.getSupportTeam);
 router.get("/", authenticate, ticketController.getTickets);
 router.get("/:ticketId", authenticate, ticketController.getTicketById);
 router.get("/:ticketId/group-chat", authenticate, ticketController.getTicketGroupChat);
+router.post("/:ticketId/group-chat", authenticate, ticketController.createTicketGroupChat);
 router.put("/:ticketId", authenticate, ticketController.updateTicket);
 router.post("/:ticketId/feedback", authenticate, ticketController.addFeedback);
 router.post("/:ticketId/escalate", authenticate, ticketController.escalateTicket);
