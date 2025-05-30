@@ -212,14 +212,30 @@ exports.sendMessage = async (req, res) => {
 
         // Emit socket event với retry mechanism
         const io = req.app.get('io');
+        console.log('📤 [Backend] About to emit receiveMessage to room:', chatId);
+        console.log('📤 [Backend] Message data:', {
+            id: populatedMessage._id,
+            content: populatedMessage.content,
+            sender: populatedMessage.sender._id,
+            chat: populatedMessage.chat
+        });
+        
         const emitWithRetry = (event, data, retries = 3) => {
             try {
+                console.log(`📤 [Backend] Emitting ${event} to room ${chatId}`);
                 io.to(chatId).emit(event, data);
+                console.log(`✅ [Backend] Successfully emitted ${event} to room ${chatId}`);
             } catch (error) {
+                console.error(`❌ [Backend] Error emitting ${event} to room ${chatId}:`, error);
                 if (retries > 0) {
+                    console.log(`🔄 [Backend] Retrying emit ${event} (${retries} retries left)`);
                     setTimeout(() => emitWithRetry(event, data, retries - 1), 1000);
                 } else {
-                    logger.error(`Failed to emit ${event} after retries:`, error);
+                    console.error(`❌ [Backend] Failed to emit ${event} after all retries`);
+                    // Use logger if available, otherwise console.error
+                    if (typeof logger !== 'undefined' && logger.error) {
+                        logger.error(`Failed to emit ${event} after retries:`, error);
+                    }
                 }
             }
         };
