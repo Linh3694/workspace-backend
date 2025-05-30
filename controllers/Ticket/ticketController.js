@@ -787,13 +787,15 @@ exports.debugTicketGroupChat = async (req, res) => {
         name: groupChat.name,
         participants: groupChat.participants,
         creator: groupChat.creator,
-        admins: groupChat.admins
+        admins: groupChat.admins,
+        participantsCount: groupChat.participants.length
       },
       permissionCheck: {
         isCurrentUserInParticipants: groupChat.participants.some(p => p._id.equals(userId)),
         isCreator: ticket.creator.equals(userId),
         isAssignedTo: ticket.assignedTo && ticket.assignedTo.equals(userId),
-        isAdmin: req.user.role === "admin" || req.user.role === "superadmin"
+        isAdmin: req.user.role === "admin" || req.user.role === "superadmin",
+        isCreatorOrAssigned: ticket.creator.equals(userId) || (ticket.assignedTo && ticket.assignedTo.equals(userId))
       }
     };
 
@@ -1025,9 +1027,17 @@ exports.createTicketGroupChat = async (req, res) => {
     ticket.groupChatId = groupChat._id;
     
     // Ghi log tạo group chat
+    const isCreatorOrAssignedUser = ticket.creator._id.equals(userId) || 
+                                   (ticket.assignedTo && ticket.assignedTo._id.equals(userId));
+    
+    let logMessage = ` <strong>${req.user.fullname}</strong> đã tạo group chat cho ticket`;
+    if (!isCreatorOrAssignedUser) {
+      logMessage += ` (với ${participants.length} thành viên ban đầu)`;
+    }
+    
     ticket.history.push({
       timestamp: new Date(),
-      action: ` <strong>${req.user.fullname}</strong> đã tạo group chat cho ticket`,
+      action: logMessage,
       user: userId,
     });
     
@@ -1044,7 +1054,9 @@ exports.createTicketGroupChat = async (req, res) => {
     res.status(201).json({ 
       success: true, 
       message: "Tạo group chat thành công",
-      groupChat: populatedGroupChat 
+      groupChat: populatedGroupChat,
+      participantsCount: populatedGroupChat.participants.length,
+      isCurrentUserInChat: populatedGroupChat.participants.some(p => p._id.equals(userId))
     });
     
   } catch (error) {
