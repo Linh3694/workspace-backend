@@ -740,6 +740,60 @@ exports.getTicketGroupChat = async (req, res) => {
   }
 };
 
+// Debug endpoint để kiểm tra participants của group chat
+exports.debugTicketGroupChat = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user._id;
+
+    const ticket = await Ticket.findById(ticketId).populate('creator assignedTo');
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: "Ticket không tồn tại" });
+    }
+
+    if (!ticket.groupChatId) {
+      return res.status(404).json({ success: false, message: "Ticket chưa có group chat" });
+    }
+
+    const groupChat = await Chat.findById(ticket.groupChatId)
+      .populate('participants', 'fullname email role')
+      .populate('creator', 'fullname email role')
+      .populate('admins', 'fullname email role');
+
+    const debugInfo = {
+      ticketInfo: {
+        id: ticket._id,
+        code: ticket.ticketCode,
+        creator: ticket.creator,
+        assignedTo: ticket.assignedTo
+      },
+      currentUser: {
+        id: userId,
+        fullname: req.user.fullname,
+        role: req.user.role
+      },
+      groupChatInfo: {
+        id: groupChat._id,
+        name: groupChat.name,
+        participants: groupChat.participants,
+        creator: groupChat.creator,
+        admins: groupChat.admins
+      },
+      permissionCheck: {
+        isCurrentUserInParticipants: groupChat.participants.some(p => p._id.equals(userId)),
+        isCreator: ticket.creator.equals(userId),
+        isAssignedTo: ticket.assignedTo && ticket.assignedTo.equals(userId),
+        isAdmin: req.user.role === "admin" || req.user.role === "superadmin"
+      }
+    };
+
+    res.status(200).json({ success: true, debug: debugInfo });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 async function createTicketHelper({ title, description, creatorId, priority, files = [] }) {
   // 1) Tính SLA Phase 1 (4h, 8:00 - 17:00)
   const phase1Duration = 4;
@@ -852,6 +906,16 @@ exports.createTicketGroupChat = async (req, res) => {
     if (ticket.groupChatId) {
       const existingChat = await Chat.findById(ticket.groupChatId);
       if (existingChat) {
+        // Kiểm tra xem user hiện tại có trong participants không
+        const isUserInChat = existingChat.participants.some(p => p.equals(userId));
+        
+        if (!isUserInChat) {
+          // Thêm user hiện tại vào group chat
+          console.log(`➕ Adding current user ${userId} to existing group chat ${existingChat._id}`);
+          existingChat.participants.push(userId);
+          await existingChat.save();
+        }
+        
         // Populate để trả về full data
         const populatedChat = await Chat.findById(existingChat._id)
           .populate('participants', 'fullname avatarUrl email department')
@@ -891,23 +955,29 @@ exports.createTicketGroupChat = async (req, res) => {
     }
     
     // Tạo danh sách participants cho group chat
-    const participants = [ticket.creator._id, ticket.assignedTo._id];
+    const participantIds = new Set();
     
-    // Đảm bảo user hiện tại cũng được add nếu chưa có
-    if (!participants.some(p => p.equals(userId))) {
-      participants.push(userId);
+    // Luôn thêm creator và assignedTo
+    participantIds.add(ticket.creator._id.toString());
+    participantIds.add(ticket.assignedTo._id.toString());
+    
+    // Luôn thêm user hiện tại (người tạo group chat)
+    participantIds.add(userId.toString());
+    
+    // Thêm admin nếu có
+    if (selectedAdmin) {
+      participantIds.add(selectedAdmin._id.toString());
     }
     
-    // Thêm admin nếu chưa có
-    if (selectedAdmin && !participants.some(p => p.equals(selectedAdmin._id))) {
-      participants.push(selectedAdmin._id);
-    }
+    // Convert Set back to array of ObjectIds
+    const participants = Array.from(participantIds).map(id => new mongoose.Types.ObjectId(id));
     
     console.log(`📝 Creating group chat participants:`, {
       creator: ticket.creator._id,
       assignedTo: ticket.assignedTo._id,
       currentUser: userId,
       selectedAdmin: selectedAdmin?._id,
+      participantIds: Array.from(participantIds),
       finalParticipants: participants
     });
     
