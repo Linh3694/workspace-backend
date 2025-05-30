@@ -57,7 +57,7 @@ case "$1" in
         
     test)
         echo "🧪 Test chạy script một lần..."
-        /Users/linh/staff-portal-web-only/staff-portal/workspace-backend/scripts/run_sync.sh
+        /Users/linh/WIS/workspace-backend/scripts/run_sync.sh
         ;;
         
     *)

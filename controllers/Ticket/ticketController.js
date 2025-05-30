@@ -1,6 +1,7 @@
 const Ticket = require("../../models/Ticket");
 const User = require("../../models/Users"); // Import model User nếu chưa import
 const SupportTeam = require("../../models/SupportTeam");
+const Chat = require("../../models/Chat"); // Thêm import Chat model
 const notificationController = require('../Notification/notificationController'); // Thêm import
 const mongoose = require("mongoose");
 
@@ -687,6 +688,54 @@ exports.removeUserFromSupportTeam = async (req, res) => {
   }
 };
 
+// Lấy group chat của ticket
+exports.getTicketGroupChat = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user._id;
+
+    // Tìm ticket
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: "Ticket không tồn tại" });
+    }
+
+    // Kiểm tra quyền truy cập ticket
+    const hasAccess = ticket.creator.equals(userId) || 
+                     (ticket.assignedTo && ticket.assignedTo.equals(userId)) ||
+                     req.user.role === "admin" || 
+                     req.user.role === "superadmin";
+
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, message: "Bạn không có quyền truy cập ticket này" });
+    }
+
+    // Lấy group chat
+    if (!ticket.groupChatId) {
+      return res.status(404).json({ success: false, message: "Ticket chưa có group chat" });
+    }
+
+    const groupChat = await Chat.findById(ticket.groupChatId)
+      .populate('participants', 'fullname avatarUrl email department')
+      .populate('creator', 'fullname avatarUrl email')
+      .populate('admins', 'fullname avatarUrl email');
+
+    if (!groupChat) {
+      return res.status(404).json({ success: false, message: "Group chat không tồn tại" });
+    }
+
+    // Kiểm tra user có trong group chat không
+    const isParticipant = groupChat.participants.some(p => p._id.equals(userId));
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: "Bạn không có quyền truy cập group chat này" });
+    }
+
+    res.status(200).json({ success: true, groupChat });
+  } catch (error) {
+    console.error('Lỗi khi lấy group chat của ticket:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 
 async function createTicketHelper({ title, description, creatorId, priority, files = [] }) {
   // 1) Tính SLA Phase 1 (4h, 8:00 - 17:00)
@@ -770,6 +819,62 @@ async function createTicketHelper({ title, description, creatorId, priority, fil
   });
 
   await newTicket.save();
+  
+  // 6) Tạo group chat tự động cho ticket
+  try {
+    // Tìm admin ít group chat nhất để chia đều
+    const adminUsers = await User.find({ role: "admin" });
+    let selectedAdmin = null;
+    
+    if (adminUsers.length > 0) {
+      // Đếm số group chat mà mỗi admin tham gia
+      const adminChatCounts = await Promise.all(
+        adminUsers.map(async (admin) => {
+          const count = await Chat.countDocuments({ 
+            participants: admin._id,
+            isGroup: true
+          });
+          return { admin, count };
+        })
+      );
+      
+      // Chọn admin có ít group chat nhất
+      adminChatCounts.sort((a, b) => a.count - b.count);
+      selectedAdmin = adminChatCounts[0].admin;
+    }
+    
+    // Tạo danh sách participants cho group chat
+    const participants = [creatorId, leastAssignedUser._id];
+    if (selectedAdmin && !participants.includes(selectedAdmin._id.toString())) {
+      participants.push(selectedAdmin._id);
+    }
+    
+    // Tạo group chat
+    const groupChat = await Chat.create({
+      name: `Ticket: ${ticketCode}`,
+      description: `Group chat tự động cho ticket ${ticketCode}`,
+      isGroup: true,
+      avatar: "ticket-icon.svg", // Avatar mặc định
+      creator: creatorId,
+      admins: [selectedAdmin ? selectedAdmin._id : leastAssignedUser._id],
+      participants: participants,
+      settings: {
+        allowMembersToAdd: false, // Chỉ admin mới được thêm thành viên
+        allowMembersToEdit: false,
+        muteNotifications: false
+      }
+    });
+    
+    // Lưu group chat ID vào ticket
+    newTicket.groupChatId = groupChat._id;
+    await newTicket.save();
+    
+    console.log(`✅ Đã tạo group chat ${groupChat._id} cho ticket ${ticketCode}`);
+  } catch (error) {
+    console.error(`❌ Lỗi khi tạo group chat cho ticket ${ticketCode}:`, error);
+    // Không throw error để không ảnh hưởng đến việc tạo ticket
+  }
+  
   return newTicket;
 }
 exports.createTicketHelper = createTicketHelper;
