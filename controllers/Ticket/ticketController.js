@@ -700,7 +700,7 @@ exports.getTicketGroupChat = async (req, res) => {
       return res.status(404).json({ success: false, message: "Ticket không tồn tại" });
     }
 
-    // Kiểm tra quyền truy cập ticket
+    // Kiểm tra quyền truy cập ticket - superadmin có thể xem tất cả
     const hasAccess = ticket.creator.equals(userId) || 
                      (ticket.assignedTo && ticket.assignedTo.equals(userId)) ||
                      req.user.role === "admin" || 
@@ -729,6 +729,23 @@ exports.getTicketGroupChat = async (req, res) => {
 
     // Kiểm tra user có trong group chat không
     const isParticipant = groupChat.participants.some(p => p._id.equals(userId));
+    
+    // Nếu user không phải participant nhưng có quyền truy cập (admin/superadmin), tự động add vào
+    if (!isParticipant && (req.user.role === "admin" || req.user.role === "superadmin")) {
+      console.log(`➕ Auto-adding ${req.user.role} ${userId} to group chat ${groupChat._id}`);
+      groupChat.participants.push(userId);
+      await groupChat.save();
+      
+      // Refresh lại data với participant mới
+      const updatedGroupChat = await Chat.findById(ticket.groupChatId)
+        .populate('participants', 'fullname avatarUrl email department')
+        .populate('creator', 'fullname avatarUrl email')
+        .populate('admins', 'fullname avatarUrl email');
+        
+      return res.status(200).json({ success: true, groupChat: updatedGroupChat });
+    }
+
+    // Nếu không phải participant và không có quyền admin
     if (!isParticipant) {
       return res.status(403).json({ success: false, message: "Bạn không có quyền truy cập group chat này" });
     }
