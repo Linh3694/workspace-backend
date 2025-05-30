@@ -135,7 +135,10 @@ module.exports = async function (groupChatNamespace) {
 
     groupChatNamespace.on("connection", async (socket) => {
       console.log("🔗 [GroupChat] Socket connected:", socket.id);
-      let currentUserId = null;
+      
+      // User đã được authenticate trong middleware
+      const currentUserId = socket.data.userId;
+      console.log(`✅ [GroupChat] Authenticated user: ${currentUserId} for socket ${socket.id}`);
 
       // Debug all incoming events
       socket.onAny((eventName, ...args) => {
@@ -152,62 +155,27 @@ module.exports = async function (groupChatNamespace) {
         socket.emit('error', { code: 500, message: 'Lỗi kết nối socket', detail: err.message });
       });
 
-      try {
-        // Authentication
-        const token = socket.handshake.query.token || socket.handshake.auth?.token;
-        console.log(`🔑 [GroupChat AUTH][${socket.id}] Token received:`, token ? 'YES' : 'NO');
-        console.log(`🔑 [GroupChat AUTH][${socket.id}] Token value (first 50 chars):`, token ? token.substring(0, 50) + '...' : 'NONE');
-        
-        if (token) {
-          console.log(`🔑 [GroupChat AUTH][${socket.id}] About to verify token...`);
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
-          console.log(`🔑 [GroupChat AUTH][${socket.id}] Token decoded:`, decoded ? 'YES' : 'NO');
-          console.log(`🔑 [GroupChat AUTH][${socket.id}] Decoded content:`, decoded);
-          
-          if (decoded && (decoded._id || decoded.id)) {
-            currentUserId = (decoded._id || decoded.id).toString();
-            socket.join(currentUserId);
-            socket.data.userId = currentUserId;
-            
-            console.log(`✅ [GroupChat AUTH][${socket.id}] User authenticated:`, currentUserId);
+      if (currentUserId) {
+        // Đánh dấu online trên Redis và publish event
+        await redisService.setUserOnlineStatus(currentUserId, true, Date.now());
+        await redisService.setUserSocketId(currentUserId, socket.id);
+        await pubClient.publish('user:online', JSON.stringify({ userId: currentUserId }));
 
-            // Đánh dấu online trên Redis và publish event
-            await redisService.setUserOnlineStatus(currentUserId, true, Date.now());
-            await redisService.setUserSocketId(currentUserId, socket.id);
-            await pubClient.publish('user:online', JSON.stringify({ userId: currentUserId }));
+        logger.info(`[GroupChat][${socket.id}] User online: ${currentUserId}`);
+        groupChatNamespace.emit("userOnline", { userId: currentUserId });
 
-            logger.info(`[GroupChat][${socket.id}] User online: ${currentUserId}`);
-            groupChatNamespace.emit("userOnline", { userId: currentUserId });
-
-            // Thiết lập timeout cho user
-            setUserInactiveTimeout(currentUserId);
-          } else {
-            console.log(`❌ [GroupChat AUTH][${socket.id}] Token decoded but no _id found`);
-          }
-        } else {
-          console.log(`❌ [GroupChat AUTH][${socket.id}] No token provided`);
-        }
-      } catch (err) {
-        console.error(`❌ [GroupChat AUTH][${socket.id}] Token verify error:`, err.message);
-        logger.error(`[GroupChat][${socket.id}] Token verify error: ${err.message}`);
-        socket.emit('error', { code: 401, message: 'Token không hợp lệ', detail: err.message });
+        // Thiết lập timeout cho user
+        setUserInactiveTimeout(currentUserId);
       }
 
-      // Debug log sau khi authentication
-      console.log(`🔍 [GroupChat AUTH][${socket.id}] Final auth status:`, {
-        currentUserId,
-        'socket.data.userId': socket.data.userId,
-        authenticated: !!socket.data.userId
-      });
-
+      // ====================== GROUP CHAT SOCKET EVENTS ======================
+      
       // Reset inactivity timeout khi user có hoạt động
       const resetUserActivity = () => {
-        if (socket.data.userId) {
-          setUserInactiveTimeout(socket.data.userId);
+        if (currentUserId) {
+          setUserInactiveTimeout(currentUserId);
         }
       };
-
-      // ====================== GROUP CHAT SOCKET EVENTS ======================
       
       // Debug room membership function  
       const debugRoomMembership = (roomId) => {
@@ -228,16 +196,16 @@ module.exports = async function (groupChatNamespace) {
           const { chatId } = data;
           console.log(`🏠 [JOIN GROUP][${socket.id}] Joining group chat:`, {
             chatId,
-            userId: socket.data.userId,
-            hasUserId: !!socket.data.userId,
+            userId: currentUserId,
+            hasUserId: !!currentUserId,
             socketRooms: Array.from(socket.rooms),
             timestamp: new Date().toISOString()
           });
           
-          if (!chatId || !socket.data.userId) {
+          if (!chatId || !currentUserId) {
             console.log(`❌ [JOIN GROUP][${socket.id}] Missing data:`, {
               chatId: !!chatId,
-              userId: !!socket.data.userId
+              userId: !!currentUserId
             });
             return;
           }
@@ -255,10 +223,10 @@ module.exports = async function (groupChatNamespace) {
             return;
           }
 
-          const isMember = chat.participants.includes(socket.data.userId);
+          const isMember = chat.participants.includes(currentUserId);
           if (!isMember) {
             console.log(`❌ [JOIN GROUP][${socket.id}] User not a member:`, {
-              userId: socket.data.userId,
+              userId: currentUserId,
               participants: chat.participants
             });
             socket.emit('error', { message: 'Bạn không phải thành viên của nhóm này' });
@@ -266,7 +234,7 @@ module.exports = async function (groupChatNamespace) {
           }
 
           socket.join(chatId);
-          console.log(`✅ [JOIN GROUP][${socket.id}] User ${socket.data.userId} joined group chat ${chatId}`);
+          console.log(`✅ [JOIN GROUP][${socket.id}] User ${currentUserId} joined group chat ${chatId}`);
           console.log(`✅ [JOIN GROUP][${socket.id}] Room ${chatId} now has ${socket.adapter.rooms.get(chatId)?.size || 0} members`);
           console.log(`✅ [JOIN GROUP][${socket.id}] Socket rooms after join:`, Array.from(socket.rooms));
           
@@ -276,7 +244,7 @@ module.exports = async function (groupChatNamespace) {
           // Test emit to confirm room membership
           socket.emit('roomJoinConfirmed', {
             chatId,
-            userId: socket.data.userId,
+            userId: currentUserId,
             socketId: socket.id,
             roomSize: socket.adapter.rooms.get(chatId)?.size || 0,
             timestamp: new Date().toISOString()
@@ -285,7 +253,7 @@ module.exports = async function (groupChatNamespace) {
           
           // Notify other members
           socket.to(chatId).emit("userJoinedGroup", {
-            userId: socket.data.userId,
+            userId: currentUserId,
             chatId,
             timestamp: new Date().toISOString()
           });
@@ -303,18 +271,18 @@ module.exports = async function (groupChatNamespace) {
         const { chatId } = data;
         console.log(`🚪 [LEAVE GROUP][${socket.id}] Leave group chat:`, {
           chatId,
-          userId: socket.data.userId,
-          hasUserId: !!socket.data.userId
+          userId: currentUserId,
+          hasUserId: !!currentUserId
         });
         
         if (!chatId) return;
 
         socket.leave(chatId);
-        console.log(`👥 [GroupChat] User ${socket.data.userId} left group chat ${chatId}`);
+        console.log(`👥 [GroupChat] User ${currentUserId} left group chat ${chatId}`);
         
         // Notify other members
         socket.to(chatId).emit("userLeftGroup", {
-          userId: socket.data.userId,
+          userId: currentUserId,
           chatId,
           timestamp: new Date().toISOString()
         });
@@ -326,7 +294,7 @@ module.exports = async function (groupChatNamespace) {
       socket.on("groupTyping", (data) => {
         console.log('⌨️ [GroupChat Backend] Received groupTyping event:', {
           socketId: socket.id,
-          userId: socket.data.userId,
+          userId: currentUserId,
           data,
           timestamp: new Date().toISOString()
         });
@@ -338,17 +306,17 @@ module.exports = async function (groupChatNamespace) {
         }
 
         const { chatId, isTyping } = data;
-        if (!chatId || !socket.data.userId) {
+        if (!chatId || !currentUserId) {
           console.log('⌨️ [GroupChat Backend] Missing required data:', {
             hasChatId: !!chatId,
-            hasUserId: !!socket.data.userId
+            hasUserId: !!currentUserId
           });
           return;
         }
 
         console.log('⌨️ [GroupChat Backend] Processing typing event:', {
           chatId,
-          userId: socket.data.userId,
+          userId: currentUserId,
           isTyping,
           roomMembers: socket.adapter.rooms.get(chatId)?.size || 0
         });
@@ -356,7 +324,7 @@ module.exports = async function (groupChatNamespace) {
         if (isTyping) {
           console.log('⌨️ [GroupChat Backend] Emitting userTypingInGroup to room:', chatId);
           socket.to(chatId).emit("userTypingInGroup", {
-            userId: socket.data.userId,
+            userId: currentUserId,
             chatId,
             timestamp: new Date().toISOString()
           });
@@ -364,7 +332,7 @@ module.exports = async function (groupChatNamespace) {
         } else {
           console.log('⌨️ [GroupChat Backend] Emitting userStopTypingInGroup to room:', chatId);
           socket.to(chatId).emit("userStopTypingInGroup", {
-            userId: socket.data.userId,
+            userId: currentUserId,
             chatId,
             timestamp: new Date().toISOString()
           });
@@ -377,10 +345,10 @@ module.exports = async function (groupChatNamespace) {
       // Group message read status
       socket.on("groupMessageRead", (data) => {
         const { chatId, messageId } = data;
-        if (!chatId || !messageId || !socket.data.userId) return;
+        if (!chatId || !messageId || !currentUserId) return;
 
         socket.to(chatId).emit("groupMessageRead", {
-          userId: socket.data.userId,
+          userId: currentUserId,
           chatId,
           messageId,
           timestamp: new Date().toISOString()
@@ -391,7 +359,7 @@ module.exports = async function (groupChatNamespace) {
 
       // Join user room để nhận notifications
       socket.on("joinUserRoom", (userId) => {
-        if (userId && socket.data.userId === userId) {
+        if (userId && currentUserId === userId) {
           socket.join(userId);
           console.log(`👤 [GroupChat] User ${userId} joined their personal room`);
         }
@@ -407,7 +375,7 @@ module.exports = async function (groupChatNamespace) {
 
           const { chatId, content, type = 'text', replyTo, fileUrls, isEmoji } = messageData;
           
-          if (!chatId || !socket.data.userId) return;
+          if (!chatId || !currentUserId) return;
 
           // Verify user is member of this group
           const Chat = require('./models/Chat');
@@ -418,7 +386,7 @@ module.exports = async function (groupChatNamespace) {
             return;
           }
 
-          const isMember = chat.participants.includes(socket.data.userId);
+          const isMember = chat.participants.includes(currentUserId);
           if (!isMember) {
             socket.emit('error', { message: 'Bạn không phải thành viên của nhóm này' });
             return;
@@ -427,7 +395,7 @@ module.exports = async function (groupChatNamespace) {
           // Tạo message mới
           const Message = require('./models/Message');
           const newMessage = await Message.create({
-            sender: socket.data.userId,
+            sender: currentUserId,
             chat: chatId,
             content,
             type,
@@ -456,7 +424,7 @@ module.exports = async function (groupChatNamespace) {
           const User = require('./models/User');
           const members = await User.find({
             _id: { $in: chat.participants },
-            _id: { $ne: socket.data.userId }
+            _id: { $ne: currentUserId }
           }).select('_id fullname');
 
           for (const member of members) {
@@ -480,19 +448,19 @@ module.exports = async function (groupChatNamespace) {
       socket.on("disconnect", (reason) => {
         console.log(`🔌 [GroupChat] Socket ${socket.id} disconnected:`, reason);
         
-        if (socket.data.userId) {
+        if (currentUserId) {
           // Xóa timeout của user khi disconnect
-          if (userActivityTimeouts[socket.data.userId]) {
-            clearTimeout(userActivityTimeouts[socket.data.userId]);
-            delete userActivityTimeouts[socket.data.userId];
+          if (userActivityTimeouts[currentUserId]) {
+            clearTimeout(userActivityTimeouts[currentUserId]);
+            delete userActivityTimeouts[currentUserId];
           }
 
           // Đánh dấu user offline ngay lập tức
-          redisService.setUserOnlineStatus(socket.data.userId, false, Date.now())
+          redisService.setUserOnlineStatus(currentUserId, false, Date.now())
             .then(() => {
-              safePublish('user:offline', { userId: socket.data.userId });
-              logger.info(`[GroupChat] User marked as offline on disconnect: ${socket.data.userId}`);
-              groupChatNamespace.emit("userOffline", { userId: socket.data.userId });
+              safePublish('user:offline', { userId: currentUserId });
+              logger.info(`[GroupChat] User marked as offline on disconnect: ${currentUserId}`);
+              groupChatNamespace.emit("userOffline", { userId: currentUserId });
             })
             .catch(err => {
               logger.error(`[GroupChat] Error setting user offline on disconnect: ${err.message}`);

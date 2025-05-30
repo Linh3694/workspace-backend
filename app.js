@@ -77,10 +77,26 @@ const groupChatNamespace = io.of('/groupchat');
 // Setup authentication middleware cho group chat namespace
 groupChatNamespace.use((socket, next) => {
   const token = socket.handshake.query.token;
-  if (!token) return next(new Error("unauthorized"));
+  console.log(`🔑 [GroupChat Middleware] Token check for socket ${socket.id}`);
+  if (!token) {
+    console.log(`❌ [GroupChat Middleware] No token provided for socket ${socket.id}`);
+    return next(new Error("unauthorized"));
+  }
+  
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) return next(new Error("unauthorized"));
+    if (err) {
+      console.log(`❌ [GroupChat Middleware] Token verify failed for socket ${socket.id}:`, err.message);
+      return next(new Error("unauthorized"));
+    }
+    
+    console.log(`✅ [GroupChat Middleware] Token verified for socket ${socket.id}:`, decoded);
+    
+    // Set both socket.user and socket.data.userId for compatibility
     socket.user = decoded;
+    socket.data = socket.data || {};
+    socket.data.userId = (decoded._id || decoded.id).toString();
+    
+    console.log(`✅ [GroupChat Middleware] Set userId: ${socket.data.userId} for socket ${socket.id}`);
     next();
   });
 });
