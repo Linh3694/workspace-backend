@@ -147,6 +147,7 @@ exports.sendMessage = async (req, res) => {
             chatId,
             content,
             type = 'text',
+            replyTo = null,
             isEmoji = false,
             emojiId = null,
             emojiType = null,
@@ -188,7 +189,8 @@ exports.sendMessage = async (req, res) => {
             emojiType,
             emojiName,
             emojiUrl,
-            isGroup: chat.isGroup || false // Đánh dấu đây là group message hay không
+            isGroup: chat.isGroup || false, // Đánh dấu đây là group message hay không
+            replyTo: replyTo ? replyTo.toString() : null
         });
 
         // Cập nhật lastMessage trong chat
@@ -206,7 +208,14 @@ exports.sendMessage = async (req, res) => {
 
         // Populate thông tin người gửi
         const populatedMessage = await Message.findById(message._id)
-            .populate('sender', 'fullname avatarUrl email');
+            .populate('sender', 'fullname avatarUrl email')
+            .populate({
+                path: 'replyTo',
+                populate: {
+                    path: 'sender',
+                    select: 'fullname avatarUrl email'
+                }
+            });
 
         // Track delivery status
         trackMessageDelivery(message._id, chat.participants);
