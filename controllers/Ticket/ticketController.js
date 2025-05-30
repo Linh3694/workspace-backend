@@ -919,9 +919,13 @@ exports.createTicketGroupChat = async (req, res) => {
         // Kiểm tra xem user hiện tại có trong participants không
         const isUserInChat = existingChat.participants.some(p => p.equals(userId));
         
-        if (!isUserInChat) {
-          // Thêm user hiện tại vào group chat
-          console.log(`➕ Adding current user ${userId} to existing group chat ${existingChat._id}`);
+        // Chỉ auto-add nếu user là creator hoặc assignedTo và chưa có trong chat
+        const isCreatorOrAssigned = ticket.creator._id.equals(userId) || 
+                                   (ticket.assignedTo && ticket.assignedTo._id.equals(userId));
+        
+        if (!isUserInChat && isCreatorOrAssigned) {
+          // Thêm user hiện tại vào group chat nếu họ là creator/assignedTo
+          console.log(`➕ Adding ${isCreatorOrAssigned ? 'creator/assignedTo' : 'currentUser'} ${userId} to existing group chat ${existingChat._id}`);
           existingChat.participants.push(userId);
           await existingChat.save();
         }
@@ -971,12 +975,18 @@ exports.createTicketGroupChat = async (req, res) => {
     participantIds.add(ticket.creator._id.toString());
     participantIds.add(ticket.assignedTo._id.toString());
     
-    // Luôn thêm user hiện tại (người tạo group chat)
-    participantIds.add(userId.toString());
-    
     // Thêm admin nếu có
     if (selectedAdmin) {
       participantIds.add(selectedAdmin._id.toString());
+    }
+    
+    // Chỉ thêm currentUser nếu họ là creator hoặc assignedTo
+    // Không thêm superadmin/admin khác vào ban đầu
+    const isCreatorOrAssigned = ticket.creator._id.equals(userId) || 
+                               (ticket.assignedTo && ticket.assignedTo._id.equals(userId));
+    
+    if (isCreatorOrAssigned) {
+      participantIds.add(userId.toString()); // Đã có rồi nhưng Set sẽ tự loại bỏ duplicate
     }
     
     // Convert Set back to array of ObjectIds
@@ -985,8 +995,9 @@ exports.createTicketGroupChat = async (req, res) => {
     console.log(`📝 Creating group chat participants:`, {
       creator: ticket.creator._id,
       assignedTo: ticket.assignedTo._id,
-      currentUser: userId,
       selectedAdmin: selectedAdmin?._id,
+      currentUser: userId,
+      isCreatorOrAssigned,
       participantIds: Array.from(participantIds),
       finalParticipants: participants
     });
@@ -1006,6 +1017,9 @@ exports.createTicketGroupChat = async (req, res) => {
         muteNotifications: false
       }
     });
+    
+    console.log(`✅ Đã tạo group chat ${groupChat._id} cho ticket ${ticket.ticketCode} với ${participants.length} participants`);
+    console.log(`👥 Participants ban đầu:`, participants.map(p => p.toString()));
     
     // Lưu group chat ID vào ticket
     ticket.groupChatId = groupChat._id;
