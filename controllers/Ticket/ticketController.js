@@ -892,9 +892,24 @@ exports.createTicketGroupChat = async (req, res) => {
     
     // Tạo danh sách participants cho group chat
     const participants = [ticket.creator._id, ticket.assignedTo._id];
-    if (selectedAdmin && !participants.includes(selectedAdmin._id.toString())) {
+    
+    // Đảm bảo user hiện tại cũng được add nếu chưa có
+    if (!participants.some(p => p.equals(userId))) {
+      participants.push(userId);
+    }
+    
+    // Thêm admin nếu chưa có
+    if (selectedAdmin && !participants.some(p => p.equals(selectedAdmin._id))) {
       participants.push(selectedAdmin._id);
     }
+    
+    console.log(`📝 Creating group chat participants:`, {
+      creator: ticket.creator._id,
+      assignedTo: ticket.assignedTo._id,
+      currentUser: userId,
+      selectedAdmin: selectedAdmin?._id,
+      finalParticipants: participants
+    });
     
     // Tạo group chat
     const groupChat = await Chat.create({
