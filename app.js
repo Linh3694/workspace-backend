@@ -56,6 +56,22 @@ const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require("jsonwebtoken"); // ADD THIS import just above
 const server = http.createServer(app);
+
+// Setup Redis adapter for Socket.IO
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { createClient } = require('redis');
+
+// Redis clients for Socket.IO
+const pubClient = createClient({
+  socket: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: process.env.REDIS_PORT || 6379,
+  },
+  password: process.env.REDIS_PASSWORD || undefined,
+});
+
+const subClient = pubClient.duplicate();
+
 const io = new Server(server, {
   cors: { origin: "*" },
   allowRequest: (req, callback) => {
@@ -70,6 +86,22 @@ const io = new Server(server, {
 });
 
 app.set("io", io); // expose socket.io instance to controllers
+
+// Setup Redis adapter for Socket.IO clustering
+(async () => {
+  try {
+    console.log('🔗 [Main IO] Connecting to Redis for adapter...');
+    await pubClient.connect();
+    await subClient.connect();
+    console.log('✅ [Main IO] Redis connected for adapter');
+    
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('✅ [Main IO] Redis adapter setup complete');
+  } catch (error) {
+    console.warn('⚠️ [Main IO] Redis adapter setup failed:', error.message);
+    console.warn('⚠️ [Main IO] Continuing without Redis adapter (single instance)');
+  }
+})();
 
 // Khởi tạo namespace riêng cho group chat
 const groupChatNamespace = io.of('/groupchat');

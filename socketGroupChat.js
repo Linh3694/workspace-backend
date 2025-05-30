@@ -110,14 +110,17 @@ module.exports = async function (groupChatNamespace) {
   console.log('🚀 [GroupChat] Initializing socketGroupChat module...');
   
   try {
-    console.log('🔗 [GroupChat] Connecting to Redis...');
-    await pubClient.connect();
-    await subClient.connect();
-    console.log('✅ [GroupChat] Redis connected successfully');
+    console.log('🔗 [GroupChat] Connecting to Redis clients...');
     
-    console.log('🔧 [GroupChat] Setting up Redis adapter...');
-    groupChatNamespace.adapter(createAdapter(pubClient, subClient));
-    console.log('✅ [GroupChat] Redis adapter setup complete');
+    // Connect Redis clients nếu chưa connected
+    if (!pubClient.isOpen) {
+      await pubClient.connect();
+    }
+    if (!subClient.isOpen) {
+      await subClient.connect();
+    }
+    
+    console.log('✅ [GroupChat] Redis clients ready');
 
     // Hàm để đánh dấu người dùng offline sau một khoảng thời gian
     const setUserInactiveTimeout = async (userId) => {
