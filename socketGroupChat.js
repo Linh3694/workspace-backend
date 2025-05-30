@@ -134,7 +134,7 @@ module.exports = async function (groupChatNamespace) {
     };
 
     groupChatNamespace.on("connection", async (socket) => {
-      console.log("[GroupChat] Socket connected:", socket.id);
+      console.log("🔗 [GroupChat] Socket connected:", socket.id);
       let currentUserId = null;
 
       // Debug all incoming events
@@ -142,6 +142,7 @@ module.exports = async function (groupChatNamespace) {
         console.log(`🔍 [GroupChat][${socket.id}] ========= RECEIVED EVENT =========`);
         console.log(`🔍 [GroupChat][${socket.id}] Event: ${eventName}`);
         console.log(`🔍 [GroupChat][${socket.id}] Args:`, args);
+        console.log(`🔍 [GroupChat][${socket.id}] User authenticated:`, !!currentUserId);
         console.log(`🔍 [GroupChat][${socket.id}] =========================================`);
       });
 
@@ -152,12 +153,16 @@ module.exports = async function (groupChatNamespace) {
       });
 
       try {
-        const token = socket.handshake.query.token;
+        // Authentication
+        const token = socket.handshake.query.token || socket.handshake.auth?.token;
         console.log(`🔑 [GroupChat AUTH][${socket.id}] Token received:`, token ? 'YES' : 'NO');
+        console.log(`🔑 [GroupChat AUTH][${socket.id}] Token value (first 50 chars):`, token ? token.substring(0, 50) + '...' : 'NONE');
         
         if (token) {
+          console.log(`🔑 [GroupChat AUTH][${socket.id}] About to verify token...`);
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
           console.log(`🔑 [GroupChat AUTH][${socket.id}] Token decoded:`, decoded ? 'YES' : 'NO');
+          console.log(`🔑 [GroupChat AUTH][${socket.id}] Decoded content:`, decoded);
           
           if (decoded && (decoded._id || decoded.id)) {
             currentUserId = (decoded._id || decoded.id).toString();
