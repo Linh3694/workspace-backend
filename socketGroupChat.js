@@ -203,7 +203,9 @@ module.exports = async function (groupChatNamespace) {
           console.log(`🏠 [JOIN GROUP][${socket.id}] Joining group chat:`, {
             chatId,
             userId: socket.data.userId,
-            hasUserId: !!socket.data.userId
+            hasUserId: !!socket.data.userId,
+            socketRooms: Array.from(socket.rooms),
+            timestamp: new Date().toISOString()
           });
           
           if (!chatId || !socket.data.userId) {
@@ -219,18 +221,28 @@ module.exports = async function (groupChatNamespace) {
           const chat = await Chat.findById(chatId);
           
           if (!chat || !chat.isGroup) {
+            console.log(`❌ [JOIN GROUP][${socket.id}] Invalid group chat:`, {
+              chatExists: !!chat,
+              isGroup: chat?.isGroup
+            });
             socket.emit('error', { message: 'Group chat không tồn tại' });
             return;
           }
 
           const isMember = chat.participants.includes(socket.data.userId);
           if (!isMember) {
+            console.log(`❌ [JOIN GROUP][${socket.id}] User not a member:`, {
+              userId: socket.data.userId,
+              participants: chat.participants
+            });
             socket.emit('error', { message: 'Bạn không phải thành viên của nhóm này' });
             return;
           }
 
           socket.join(chatId);
           console.log(`✅ [JOIN GROUP][${socket.id}] User ${socket.data.userId} joined group chat ${chatId}`);
+          console.log(`✅ [JOIN GROUP][${socket.id}] Room ${chatId} now has ${socket.adapter.rooms.get(chatId)?.size || 0} members`);
+          console.log(`✅ [JOIN GROUP][${socket.id}] Socket rooms after join:`, Array.from(socket.rooms));
           
           // Notify other members
           socket.to(chatId).emit("userJoinedGroup", {
@@ -238,6 +250,7 @@ module.exports = async function (groupChatNamespace) {
             chatId,
             timestamp: new Date().toISOString()
           });
+          console.log(`📢 [JOIN GROUP][${socket.id}] Notified other members in room ${chatId}`);
 
           resetUserActivity();
         } catch (error) {
@@ -272,26 +285,51 @@ module.exports = async function (groupChatNamespace) {
 
       // Group typing indicator
       socket.on("groupTyping", (data) => {
+        console.log('⌨️ [GroupChat Backend] Received groupTyping event:', {
+          socketId: socket.id,
+          userId: socket.data.userId,
+          data,
+          timestamp: new Date().toISOString()
+        });
+
         if (!checkRateLimit(socket.id, 'groupTyping')) {
+          console.log('⌨️ [GroupChat Backend] Rate limit exceeded for typing event');
           socket.emit('rateLimitExceeded', { message: 'Too many typing events' });
           return;
         }
 
         const { chatId, isTyping } = data;
-        if (!chatId || !socket.data.userId) return;
+        if (!chatId || !socket.data.userId) {
+          console.log('⌨️ [GroupChat Backend] Missing required data:', {
+            hasChatId: !!chatId,
+            hasUserId: !!socket.data.userId
+          });
+          return;
+        }
+
+        console.log('⌨️ [GroupChat Backend] Processing typing event:', {
+          chatId,
+          userId: socket.data.userId,
+          isTyping,
+          roomMembers: socket.adapter.rooms.get(chatId)?.size || 0
+        });
 
         if (isTyping) {
+          console.log('⌨️ [GroupChat Backend] Emitting userTypingInGroup to room:', chatId);
           socket.to(chatId).emit("userTypingInGroup", {
             userId: socket.data.userId,
             chatId,
             timestamp: new Date().toISOString()
           });
+          console.log('⌨️ [GroupChat Backend] ✅ Emitted userTypingInGroup event');
         } else {
+          console.log('⌨️ [GroupChat Backend] Emitting userStopTypingInGroup to room:', chatId);
           socket.to(chatId).emit("userStopTypingInGroup", {
             userId: socket.data.userId,
             chatId,
             timestamp: new Date().toISOString()
           });
+          console.log('⌨️ [GroupChat Backend] ✅ Emitted userStopTypingInGroup event');
         }
 
         resetUserActivity();

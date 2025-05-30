@@ -227,12 +227,17 @@ exports.sendMessage = async (req, res) => {
         const emitWithRetry = (event, data, retries = 3) => {
             try {
                 console.log(`📤 [Backend] Emitting ${event} to room ${chatId}`);
+                console.log(`📤 [Backend] Chat type:`, { isGroup: chat.isGroup, chatId });
                 
                 // Sử dụng namespace phù hợp dựa trên chat type
                 if (chat.isGroup) {
+                    const roomSize = groupChatNamespace.adapter.rooms.get(chatId)?.size || 0;
+                    console.log(`📤 [Backend] GROUP: Room ${chatId} has ${roomSize} connected members`);
                     groupChatNamespace.to(chatId).emit(event, data);
                     console.log(`✅ [Backend] Successfully emitted ${event} to GROUP room ${chatId}`);
                 } else {
+                    const roomSize = io.adapter.rooms.get(chatId)?.size || 0;
+                    console.log(`📤 [Backend] 1-1: Room ${chatId} has ${roomSize} connected members`);
                     io.to(chatId).emit(event, data);
                     console.log(`✅ [Backend] Successfully emitted ${event} to 1-1 room ${chatId}`);
                 }
