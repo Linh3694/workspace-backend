@@ -108,6 +108,7 @@ router.get("/microsoft/callback", (req, res, next) => {
     redirectUri = req.session.authState.redirectUri;
     isMobile = req.session.authState.isMobile;
     isAdmission = req.session.authState.isAdmission;
+    console.log("🔍 Callback with session state:", { redirectUri, isMobile, isAdmission });
     // Xóa sau khi đã lấy để không lộ thông tin lần sau
     delete req.session.authState;
   }
@@ -115,11 +116,17 @@ router.get("/microsoft/callback", (req, res, next) => {
   passport.authenticate("azuread-openidconnect", async (err, user, info) => {
     if (err) {
       console.error("❌ Lỗi từ Microsoft OAuth:", err);
-      return res.redirect(`http://localhost:3000/login?error=${encodeURIComponent(err.message)}`);
+      if (isMobile && redirectUri) {
+        return res.redirect(`${redirectUri}?error=${encodeURIComponent(err.message)}`);
+      }
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=${encodeURIComponent(err.message)}`);
     }
     if (!user) {
       console.error("❌ Lỗi xác thực: Không tìm thấy user.");
-      return res.redirect(`http://localhost:3000/login?error=Authentication+failed`);
+      if (isMobile && redirectUri) {
+        return res.redirect(`${redirectUri}?error=Authentication+failed`);
+      }
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=Authentication+failed`);
     }
 
     try {
@@ -139,17 +146,25 @@ router.get("/microsoft/callback", (req, res, next) => {
         // Tiếp tục xử lý mà không block
       }
 
-      // Nếu đăng nhập từ mobile và có redirectUri thì chuyển về mobile
+      console.log("✅ Auth success, redirecting:", { isMobile, redirectUri, hasToken: !!token });
+
+      // Ưu tiên redirect mobile trước
       if (isMobile && redirectUri) {
+        console.log("📱 Redirecting to mobile app:", `${redirectUri}?token=${token}`);
         return res.redirect(`${redirectUri}?token=${token}`);
       }
 
       // Nếu từ web, chuyển hướng về frontend
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       const admissionQuery = isAdmission ? "&admission=true" : "";
-      return res.redirect(`http://localhost:3000/auth/microsoft/success?token=${token}${admissionQuery}`);
+      console.log("🌐 Redirecting to web:", `${frontendUrl}/auth/microsoft/success?token=${token}${admissionQuery}`);
+      return res.redirect(`${frontendUrl}/auth/microsoft/success?token=${token}${admissionQuery}`);
     } catch (error) {
       console.error("❌ Lỗi khi tạo JWT:", error);
-      return res.redirect(`http://localhost:3000/login?error=${encodeURIComponent(error.message)}`);
+      if (isMobile && redirectUri) {
+        return res.redirect(`${redirectUri}?error=${encodeURIComponent(error.message)}`);
+      }
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=${encodeURIComponent(error.message)}`);
     }
   })(req, res, next);
 });
