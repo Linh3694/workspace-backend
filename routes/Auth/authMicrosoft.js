@@ -86,19 +86,65 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
+// Debug endpoint để test session
+router.get("/debug-session", (req, res) => {
+  res.json({
+    sessionId: req.sessionID,
+    session: req.session,
+    cookies: req.headers.cookie,
+    query: req.query,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Route bắt đầu flow OAuth với Microsoft
 router.get("/microsoft", (req, res, next) => {
   const redirectUri = req.query.redirectUri || "";
   const isMobile = req.query.mobile === "true";
   const isAdmission = req.query.admission === "true";
 
+  console.log("🔍 [/microsoft] Full request details:", {
+    query: req.query,
+    redirectUri,
+    isMobile,
+    isAdmission,
+    sessionId: req.sessionID,
+    sessionExists: !!req.session
+  });
+
+  // Ensure session exists before storing data
+  if (!req.session) {
+    console.error("❌ [/microsoft] No session found!");
+    return res.status(500).send("Session error - please try again");
+  }
+
   // Lưu thông tin tùy chỉnh vào session
   req.session.authState = { redirectUri, isMobile, isAdmission };
-  console.log("🔍 Nhận được request đến /microsoft với redirectUri:", redirectUri);
-  passport.authenticate("azuread-openidconnect")(req, res, next);
+  
+  // Force session save to ensure it persists through OAuth flow
+  req.session.save((err) => {
+    if (err) {
+      console.error("❌ [/microsoft] Session save error:", err);
+      return res.status(500).send("Session save error");
+    }
+    
+    console.log("✅ [/microsoft] Session saved successfully:", {
+      sessionId: req.sessionID,
+      authState: req.session.authState
+    });
+    
+    passport.authenticate("azuread-openidconnect")(req, res, next);
+  });
 });
 
 router.get("/microsoft/callback", (req, res, next) => {
+  console.log("🔍 [/callback] Callback received:", {
+    query: req.query,
+    sessionId: req.sessionID,
+    sessionExists: !!req.session,
+    hasAuthState: !!(req.session && req.session.authState)
+  });
+
   let redirectUri = "";
   let isMobile = false;
   let isAdmission = false;
@@ -108,25 +154,48 @@ router.get("/microsoft/callback", (req, res, next) => {
     redirectUri = req.session.authState.redirectUri;
     isMobile = req.session.authState.isMobile;
     isAdmission = req.session.authState.isAdmission;
-    console.log("🔍 Callback with session state:", { redirectUri, isMobile, isAdmission });
+    console.log("✅ [/callback] Found session state:", { redirectUri, isMobile, isAdmission });
     // Xóa sau khi đã lấy để không lộ thông tin lần sau
     delete req.session.authState;
+  } else {
+    console.warn("⚠️ [/callback] No session state found - using query params as fallback");
+    // Fallback: try to extract from query parameters if available
+    redirectUri = req.query.redirectUri || "";
+    isMobile = req.query.mobile === "true";
+    isAdmission = req.query.admission === "true";
   }
 
+  console.log("🔍 [/callback] Final params:", { redirectUri, isMobile, isAdmission });
+
   passport.authenticate("azuread-openidconnect", async (err, user, info) => {
+    console.log("🔍 [/callback] Passport authenticate result:", {
+      hasError: !!err,
+      hasUser: !!user,
+      info,
+      isMobile,
+      redirectUri
+    });
+
     if (err) {
       console.error("❌ Lỗi từ Microsoft OAuth:", err);
-      if (isMobile && redirectUri) {
+      if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
+        console.log("📱 [ERROR] Redirecting to mobile app with error");
         return res.redirect(`${redirectUri}?error=${encodeURIComponent(err.message)}`);
       }
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=${encodeURIComponent(err.message)}`);
+      console.log("🌐 [ERROR] Redirecting to web with error");
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(err.message)}`);
     }
+    
     if (!user) {
       console.error("❌ Lỗi xác thực: Không tìm thấy user.");
-      if (isMobile && redirectUri) {
+      if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
+        console.log("📱 [NO_USER] Redirecting to mobile app with error");
         return res.redirect(`${redirectUri}?error=Authentication+failed`);
       }
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=Authentication+failed`);
+      console.log("🌐 [NO_USER] Redirecting to web with error");
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      return res.redirect(`${frontendUrl}/login?error=Authentication+failed`);
     }
 
     try {
@@ -146,25 +215,33 @@ router.get("/microsoft/callback", (req, res, next) => {
         // Tiếp tục xử lý mà không block
       }
 
-      console.log("✅ Auth success, redirecting:", { isMobile, redirectUri, hasToken: !!token });
+      console.log("✅ [/callback] Auth success, deciding redirect:", { 
+        isMobile, 
+        redirectUri, 
+        hasToken: !!token,
+        isStaffPortalScheme: redirectUri.startsWith('staffportal://')
+      });
 
-      // Ưu tiên redirect mobile trước
-      if (isMobile && redirectUri) {
-        console.log("📱 Redirecting to mobile app:", `${redirectUri}?token=${token}`);
+      // Ưu tiên redirect mobile trước (only if valid staffportal scheme)
+      if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
+        console.log("📱 [SUCCESS] Redirecting to mobile app:", `${redirectUri}?token=${token}`);
         return res.redirect(`${redirectUri}?token=${token}`);
       }
 
-      // Nếu từ web, chuyển hướng về frontend
+      // Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       const admissionQuery = isAdmission ? "&admission=true" : "";
-      console.log("🌐 Redirecting to web:", `${frontendUrl}/auth/microsoft/success?token=${token}${admissionQuery}`);
-      return res.redirect(`${frontendUrl}/auth/microsoft/success?token=${token}${admissionQuery}`);
+      const webRedirectUrl = `${frontendUrl}/auth/microsoft/success?token=${token}${admissionQuery}`;
+      console.log("🌐 [SUCCESS] Redirecting to web:", webRedirectUrl);
+      return res.redirect(webRedirectUrl);
+      
     } catch (error) {
       console.error("❌ Lỗi khi tạo JWT:", error);
-      if (isMobile && redirectUri) {
+      if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
         return res.redirect(`${redirectUri}?error=${encodeURIComponent(error.message)}`);
       }
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=${encodeURIComponent(error.message)}`);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error.message)}`);
     }
   })(req, res, next);
 });
