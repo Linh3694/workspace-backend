@@ -175,11 +175,21 @@ router.get("/microsoft/callback", (req, res, next) => {
   let isAdmission = false;
 
   try {
-    const parsed = JSON.parse(base64UrlDecode(rawState));
+    // Thử decode với decodeURIComponent trước (cho mobile app mới)
+    let parsed;
+    try {
+      parsed = JSON.parse(decodeURIComponent(rawState));
+      console.log("✅ [/callback] Parsed state with URL decode:", parsed);
+    } catch (urlDecodeError) {
+      // Fallback về base64 decode (cho compatibility)
+      parsed = JSON.parse(base64UrlDecode(rawState));
+      console.log("✅ [/callback] Parsed state with base64 decode:", parsed);
+    }
+    
     redirectUri  = parsed.redirectUri || "";
     isMobile     = parsed.mobile === true || parsed.mobile === "true";
     isAdmission  = parsed.isAdmission === true || parsed.isAdmission === "true";
-    console.log("✅ [/callback] Parsed state:", { redirectUri, isMobile, isAdmission });
+    console.log("✅ [/callback] Final parsed state:", { redirectUri, isMobile, isAdmission });
   } catch (err) {
     console.warn("⚠️ [/callback] Unable to parse state:", err);
     
