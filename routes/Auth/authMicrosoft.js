@@ -20,14 +20,26 @@ passport.use(
       responseMode: "query",
       redirectUrl: azureConfig.credentials.callbackURL,
       allowHttpForRedirectUrl: true,
-      passReqToCallback: false,
+      passReqToCallback: true,
       scope: ["User.Read", "profile", "email", "openid"],
-      // Thêm các tuỳ chọn debug
       loggingLevel: "info",
-      validateIssuer: false, // Nếu bạn muốn tắt xác thực issuer (đặc biệt là khi dùng multi-tenant)
+      validateIssuer: false,
+      clockSkew: 300,
+      nonceLifetime: 3600,
+      nonceMaxAmount: 5,
+      useCookieInsteadOfSession: false,
+      cookieEncryptionKeys: [
+        { 'key': process.env.JWT_SECRET, 'iv': process.env.JWT_SECRET.substring(0, 12) }
+      ]
     },
-    // Callback khi nhận được dữ liệu từ Microsoft
-    async (iss, sub, profile, accessToken, refreshToken, params, done) => {
+    async (req, iss, sub, profile, accessToken, refreshToken, params, done) => {
+      console.log("🔍 [OIDC Strategy] Callback received:", {
+        hasReq: !!req,
+        hasProfile: !!profile,
+        sessionId: req?.sessionID,
+        profileEmail: profile?._json?.preferred_username
+      });
+
       if (!profile || !profile._json) {
         console.error("❌ Lỗi: Không nhận được thông tin user từ Microsoft.");
         return done(null, false, { message: "Không nhận được thông tin từ Microsoft" });
@@ -38,9 +50,12 @@ passport.use(
         const email = profile._json.preferred_username;
         const displayName = profile.displayName || "No name";
 
+        console.log("🔍 [OIDC Strategy] Processing user:", { email, displayName });
+
         // Kiểm tra xem email đã tồn tại trong database chưa
         let user = await User.findOne({ email });
         if (!user) {
+          console.log("🔍 [OIDC Strategy] Creating new user:", email);
           // Nếu chưa tồn tại, tạo mới user với flag needProfileUpdate = true
           user = new User({
             fullname: displayName,
@@ -53,13 +68,17 @@ passport.use(
 
           // Xóa cache danh sách users khi tạo user mới
           await redisService.deleteAllUsersCache();
+        } else {
+          console.log("🔍 [OIDC Strategy] Found existing user:", email);
         }
 
         // Lưu thông tin user vào Redis
         await redisService.setUserData(user._id, user);
 
+        console.log("✅ [OIDC Strategy] User processed successfully:", user._id);
         return done(null, user);
       } catch (error) {
+        console.error("❌ [OIDC Strategy] Error processing user:", error);
         return done(error, null);
       }
     }
@@ -142,7 +161,8 @@ router.get("/microsoft/callback", (req, res, next) => {
     query: req.query,
     sessionId: req.sessionID,
     sessionExists: !!req.session,
-    hasAuthState: !!(req.session && req.session.authState)
+    hasAuthState: !!(req.session && req.session.authState),
+    cookies: req.headers.cookie?.substring(0, 100) + '...' // Log first 100 chars of cookies
   });
 
   let redirectUri = "";
@@ -158,26 +178,31 @@ router.get("/microsoft/callback", (req, res, next) => {
     // Xóa sau khi đã lấy để không lộ thông tin lần sau
     delete req.session.authState;
   } else {
-    console.warn("⚠️ [/callback] No session state found - using query params as fallback");
-    // Fallback: try to extract from query parameters if available
-    redirectUri = req.query.redirectUri || "";
-    isMobile = req.query.mobile === "true";
-    isAdmission = req.query.admission === "true";
+    console.warn("⚠️ [/callback] No session state found - this might be due to session store issues");
+    console.log("🔍 [/callback] Session debug info:", {
+      sessionId: req.sessionID,
+      sessionData: req.session,
+      cookieHeader: !!req.headers.cookie
+    });
+    
+    // Don't use query params as fallback since they're not available in OAuth callback
+    // Instead, we'll redirect to a generic error page
   }
 
   console.log("🔍 [/callback] Final params:", { redirectUri, isMobile, isAdmission });
 
-  passport.authenticate("azuread-openidconnect", async (err, user, info) => {
+  // Custom callback to handle the passport authentication result
+  const handleAuthResult = async (err, user, info) => {
     console.log("🔍 [/callback] Passport authenticate result:", {
       hasError: !!err,
       hasUser: !!user,
-      info,
+      info: info,
       isMobile,
       redirectUri
     });
 
     if (err) {
-      console.error("❌ Lỗi từ Microsoft OAuth:", err);
+      console.error("❌ [/callback] Microsoft OAuth error:", err);
       if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
         console.log("📱 [ERROR] Redirecting to mobile app with error");
         return res.redirect(`${redirectUri}?error=${encodeURIComponent(err.message)}`);
@@ -188,7 +213,16 @@ router.get("/microsoft/callback", (req, res, next) => {
     }
     
     if (!user) {
-      console.error("❌ Lỗi xác thực: Không tìm thấy user.");
+      console.error("❌ [/callback] No user found after authentication");
+      console.error("❌ [/callback] Info:", info);
+      
+      // If session state was lost, redirect to login with a specific error
+      if (!redirectUri && !isMobile) {
+        console.log("🌐 [NO_USER] Session lost - redirecting to web login");
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/login?error=Session+expired+please+try+again`);
+      }
+      
       if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
         console.log("📱 [NO_USER] Redirecting to mobile app with error");
         return res.redirect(`${redirectUri}?error=Authentication+failed`);
@@ -219,7 +253,7 @@ router.get("/microsoft/callback", (req, res, next) => {
         isMobile, 
         redirectUri, 
         hasToken: !!token,
-        isStaffPortalScheme: redirectUri.startsWith('staffportal://')
+        isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false
       });
 
       // Ưu tiên redirect mobile trước (only if valid staffportal scheme)
@@ -236,14 +270,17 @@ router.get("/microsoft/callback", (req, res, next) => {
       return res.redirect(webRedirectUrl);
       
     } catch (error) {
-      console.error("❌ Lỗi khi tạo JWT:", error);
+      console.error("❌ [/callback] Error creating JWT:", error);
       if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
         return res.redirect(`${redirectUri}?error=${encodeURIComponent(error.message)}`);
       }
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error.message)}`);
     }
-  })(req, res, next);
+  };
+
+  // Use passport authenticate with custom callback
+  passport.authenticate("azuread-openidconnect", handleAuthResult)(req, res, next);
 });
 
 module.exports = router;

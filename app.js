@@ -9,6 +9,8 @@ const session = require("express-session");
 const Ticket = require("./models/Ticket");
 const { connectRedis } = require('./config/redis');
 require("dotenv").config();
+const RedisStore = require('connect-redis')(session);
+const { createClient } = require('redis');
 
 // Import các route
 const authRoutes = require("./routes/Auth/auth");
@@ -59,7 +61,6 @@ const server = http.createServer(app);
 
 // Setup Redis adapter for Socket.IO
 const { createAdapter } = require('@socket.io/redis-adapter');
-const { createClient } = require('redis');
 
 // Redis clients for Socket.IO
 const pubClient = createClient({
@@ -172,19 +173,35 @@ app.use(express.urlencoded({ limit: "4096mb", extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(uploadPath));
 
+// Create Redis client for sessions
+const sessionRedisClient = createClient({
+  socket: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: process.env.REDIS_PORT || 6379,
+  },
+  password: process.env.REDIS_PASSWORD || undefined,
+});
+
+// Connect Redis client for sessions
+sessionRedisClient.connect().catch(console.error);
+
 // Cấu hình session và passport
 app.use(
   session({
+    store: new RedisStore({ 
+      client: sessionRedisClient,
+      prefix: 'staffportal:sess:'
+    }),
     secret: process.env.JWT_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: { 
-      maxAge: 24 * 60 * 60 * 1000,
-      secure: false,
-      httpOnly: true,
-      sameSite: 'lax'
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      secure: false, // Set to false for development, true for production HTTPS
+      httpOnly: true, // Prevent XSS attacks
+      sameSite: 'lax' // CSRF protection
     },
-    name: 'staffportal.sid'
+    name: 'staffportal.sid' // Custom session name
   })
 );
 app.use(passport.initialize());
