@@ -279,7 +279,7 @@ router.get("/microsoft/callback", (req, res, next) => {
       });
 
       // 1. Ưu tiên mobile app redirect
-      if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
+      if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
         console.log("📱 [SUCCESS] Redirecting to mobile app:", `${redirectUri}?token=${token}`);
         // Use immediate redirect for mobile
         res.writeHead(302, { 'Location': `${redirectUri}?token=${token}` });
