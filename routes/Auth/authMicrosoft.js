@@ -275,14 +275,21 @@ router.get("/microsoft/callback", (req, res, next) => {
         isMobile, 
         redirectUri, 
         hasToken: !!token,
-        isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false
+        isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false,
+        userAgent: req.headers['user-agent']
       });
 
-      // 1. Ưu tiên mobile app redirect
-      if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
-        console.log("📱 [SUCCESS] Redirecting to mobile app:", `${redirectUri}?token=${token}`);
-        // Use immediate redirect for mobile
-        res.writeHead(302, { 'Location': `${redirectUri}?token=${token}` });
+      // 1. Ưu tiên mobile app redirect nếu có isMobile=true hoặc redirectUri là staffportal scheme
+      if (isMobile || (redirectUri && redirectUri.startsWith('staffportal://'))) {
+        console.log("📱 [SUCCESS] Mobile detected in callback, redirecting to mobile app");
+        
+        let mobileRedirectUri = 'staffportal://auth/success';
+        if (redirectUri && redirectUri.startsWith('staffportal://')) {
+          mobileRedirectUri = redirectUri;
+        }
+        
+        console.log("📱 [SUCCESS] Final mobile redirect from callback:", `${mobileRedirectUri}?token=${token}`);
+        res.writeHead(302, { 'Location': `${mobileRedirectUri}?token=${token}` });
         return res.end();
       }
 
@@ -423,32 +430,21 @@ router.get("/microsoft/success", async (req, res) => {
       userAgent: req.headers['user-agent']
     });
 
-    // 1. Ưu tiên mobile app redirect
-    if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
-      console.log("📱 [SUCCESS] Redirecting to mobile app:", `${redirectUri}?token=${token}`);
-      // Use immediate redirect for mobile
-      res.writeHead(302, { 'Location': `${redirectUri}?token=${token}` });
-      return res.end();
-    }
-
-    // 2. Fallback: Nếu không có frontend URL hoặc có vẻ như từ mobile (không có browser agent)
-    const userAgent = req.headers['user-agent'] || '';
-    const isMobileUA = userAgent.includes('ExpoClient') || userAgent.includes('ReactNativeWebView') || !userAgent.includes('Mozilla');
-    
-    console.log("🔍 [/microsoft/success] User agent analysis:", {
-      userAgent: userAgent,
-      isMobileUA: isMobileUA,
-      hasValidParams: mobile === "true" && redirectUri
-    });
-
-    if (isMobileUA) {
-      console.log("📱 [SUCCESS] Detected mobile user agent, using mobile redirect scheme");
-      const mobileRedirectUri = 'staffportal://auth/success';
+    // 1. Ưu tiên mobile app redirect nếu có mobile=true hoặc redirectUri là staffportal scheme
+    if ((mobile === "true") || (redirectUri && redirectUri.startsWith('staffportal://'))) {
+      console.log("📱 [SUCCESS] Mobile detected, redirecting to mobile app");
+      
+      let mobileRedirectUri = 'staffportal://auth/success';
+      if (redirectUri && redirectUri.startsWith('staffportal://')) {
+        mobileRedirectUri = redirectUri;
+      }
+      
+      console.log("📱 [SUCCESS] Final mobile redirect:", `${mobileRedirectUri}?token=${token}`);
       res.writeHead(302, { 'Location': `${mobileRedirectUri}?token=${token}` });
       return res.end();
     }
 
-    // 3. Nếu có frontend URL riêng, redirect về frontend
+    // 2. Nếu có frontend URL riêng, redirect về frontend
     const frontendUrl = process.env.FRONTEND_URL;
     if (frontendUrl && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
       const dashboardUrl = admission === "true" 
