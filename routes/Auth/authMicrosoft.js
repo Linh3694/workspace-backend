@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../../models/Users");
 const router = express.Router();
 const redisService = require('../../services/redisService');
+const { Buffer } = require('buffer');
 
 const azureConfig = require("../../config/azure");
 
@@ -117,47 +118,27 @@ router.get("/debug-session", (req, res) => {
 });
 
 // Route bắt đầu flow OAuth với Microsoft
-router.get("/microsoft", (req, res, next) => {
-  const redirectUri = req.query.redirectUri || "";
-  const isMobile = req.query.mobile === "true";
-  const isAdmission = req.query.admission === "true";
+router.get("/microsoft",
+  (req, res, next) => {
+    const redirectUri = req.query.redirectUri || "";
+    const isMobile    = req.query.mobile === "true";
+    const isAdmission = req.query.admission === "true";
 
-  console.log("🔍 [/microsoft] Full request details:", {
-    query: req.query,
-    redirectUri,
-    isMobile,
-    isAdmission,
-    sessionId: req.sessionID,
-    sessionExists: !!req.session,
-    userAgent: req.headers['user-agent'],
-    originalUrl: req.originalUrl,
-    fullUrl: req.protocol + '://' + req.get('host') + req.originalUrl
-  });
-
-  // Ensure session exists before storing data
-  if (!req.session) {
-    console.error("❌ [/microsoft] No session found!");
-    return res.status(500).send("Session error - please try again");
-  }
-
-  // Lưu thông tin tùy chỉnh vào session
-  req.session.authState = { redirectUri, isMobile, isAdmission };
-  
-  // Force session save to ensure it persists through OAuth flow
-  req.session.save((err) => {
-    if (err) {
-      console.error("❌ [/microsoft] Session save error:", err);
-      return res.status(500).send("Session save error");
-    }
-    
-    console.log("✅ [/microsoft] Session saved successfully:", {
-      sessionId: req.sessionID,
-      authState: req.session.authState
+    console.log("🔍 [/microsoft] Stateless request:", {
+      query: req.query,
+      redirectUri,
+      isMobile,
+      isAdmission,
     });
-    
-    passport.authenticate("azuread-openidconnect")(req, res, next);
-  });
-});
+
+    // Encode custom data into OAuth "state"
+    const statePayload = { mobile: isMobile, redirectUri, isAdmission };
+    const rawState     = Buffer.from(JSON.stringify(statePayload)).toString("base64url");
+
+    // Launch Azure AD flow with the custom state
+    passport.authenticate("azuread-openidconnect", { state: rawState })(req, res, next);
+  }
+);
 
 router.get("/microsoft/callback", (req, res, next) => {
   console.log("🔍 [/callback] Callback received:", {
@@ -168,28 +149,19 @@ router.get("/microsoft/callback", (req, res, next) => {
     cookies: req.headers.cookie?.substring(0, 100) + '...' // Log first 100 chars of cookies
   });
 
+  const rawState = req.query.state || "";
   let redirectUri = "";
-  let isMobile = false;
+  let isMobile    = false;
   let isAdmission = false;
 
-  // Lấy thông tin từ session (nếu có)
-  if (req.session && req.session.authState) {
-    redirectUri = req.session.authState.redirectUri;
-    isMobile = req.session.authState.isMobile;
-    isAdmission = req.session.authState.isAdmission;
-    console.log("✅ [/callback] Found session state:", { redirectUri, isMobile, isAdmission });
-    // Xóa sau khi đã lấy để không lộ thông tin lần sau
-    delete req.session.authState;
-  } else {
-    console.warn("⚠️ [/callback] No session state found - this might be due to session store issues");
-    console.log("🔍 [/callback] Session debug info:", {
-      sessionId: req.sessionID,
-      sessionData: req.session,
-      cookieHeader: !!req.headers.cookie
-    });
-    
-    // Don't use query params as fallback since they're not available in OAuth callback
-    // Instead, we'll redirect to a generic error page
+  try {
+    const parsed = JSON.parse(Buffer.from(rawState, "base64url").toString());
+    redirectUri  = parsed.redirectUri || "";
+    isMobile     = parsed.mobile === true || parsed.mobile === "true";
+    isAdmission  = parsed.isAdmission === true || parsed.isAdmission === "true";
+    console.log("✅ [/callback] Parsed state:", { redirectUri, isMobile, isAdmission });
+  } catch (err) {
+    console.warn("⚠️ [/callback] Unable to parse state:", err);
   }
 
   console.log("🔍 [/callback] Final params:", { redirectUri, isMobile, isAdmission });
