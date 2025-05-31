@@ -316,7 +316,7 @@ router.get("/microsoft/callback", (req, res, next) => {
 });
 
 // Route để handle success redirect từ Microsoft auth
-router.get("/microsoft/success", (req, res) => {
+router.get("/microsoft/success", async (req, res) => {
   const token = req.query.token;
   const error = req.query.error;
   const admission = req.query.admission;
@@ -328,99 +328,60 @@ router.get("/microsoft/success", (req, res) => {
     query: req.query
   });
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  const admissionParam = admission === "true" ? "?admission=true" : "";
-
   if (error) {
-    // Nếu có frontend URL riêng, redirect tới đó
-    if (process.env.FRONTEND_URL && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
-      return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error)}`);
-    }
-    
-    // Nếu không, hiển thị error page
     return res.send(`
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Authentication Error</title>
-    <meta charset="UTF-8">
-</head>
+<head><title>Authentication Error</title><meta charset="UTF-8"></head>
 <body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
     <h2>❌ Authentication Error</h2>
     <p>Error: ${error}</p>
     <a href="/api/auth/microsoft">Try Again</a>
 </body>
-</html>
-    `);
+</html>`);
   }
 
   if (!token) {
-    // Nếu có frontend URL riêng, redirect tới đó
-    if (process.env.FRONTEND_URL && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
-      return res.redirect(`${frontendUrl}/login?error=No+token+provided`);
-    }
-    
-    // Nếu không, hiển thị error page
     return res.send(`
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Authentication Error</title>
-    <meta charset="UTF-8">
-</head>
+<head><title>Authentication Error</title><meta charset="UTF-8"></head>
 <body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
     <h2>❌ Authentication Error</h2>
     <p>No token provided</p>
     <a href="/api/auth/microsoft">Try Again</a>
 </body>
-</html>
-    `);
+</html>`);
   }
 
-  // Nếu có frontend URL riêng và không phải backend URL
-  if (process.env.FRONTEND_URL && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
+  try {
+    // Giải mã token để lấy user info
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id;
+    
+    // Lấy user data từ database
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Chuẩn bị user data giống như login thông thường
+    const userData = {
+      _id: user._id,
+      fullname: user.fullname || "N/A",
+      email: user.email || "N/A",
+      role: user.role || "user",
+      avatar: user.avatarUrl,
+      department: user.department || "N/A",
+      needProfileUpdate: user.needProfileUpdate || false,
+      jobTitle: user.jobTitle || "N/A",
+      employeeCode: user.employeeCode || "N/A",
+    };
+
+    // Redirect về dashboard với token và user data
+    const dashboardUrl = admission === "true" ? "/dashboard?admission=true" : "/dashboard";
+    
     const html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Authentication Success</title>
-    <script>
-        // Store token in localStorage and redirect
-        if (window.opener) {
-            // If opened in popup, send message to parent
-            window.opener.postMessage({
-                type: 'MICROSOFT_AUTH_SUCCESS',
-                token: '${token}',
-                admission: ${admission === "true"}
-            }, '${frontendUrl}');
-            window.close();
-        } else {
-            // If not popup, redirect to frontend with token
-            localStorage.setItem('token', '${token}');
-            window.location.href = '${frontendUrl}/dashboard${admissionParam}';
-        }
-    </script>
-</head>
-<body>
-    <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-        <h2>✅ Authentication Successful</h2>
-        <p>Redirecting to dashboard...</p>
-        <script>
-            // Fallback redirect after 3 seconds
-            setTimeout(() => {
-                localStorage.setItem('token', '${token}');
-                window.location.href = '${frontendUrl}/dashboard${admissionParam}';
-            }, 3000);
-        </script>
-    </div>
-</body>
-</html>
-    `;
-    return res.send(html);
-  }
-
-  // Nếu không có frontend URL riêng, hiển thị success page với token
-  const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -429,16 +390,33 @@ router.get("/microsoft/success", (req, res) => {
 </head>
 <body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
     <h2>✅ Authentication Successful</h2>
-    <p>Your authentication token:</p>
-    <textarea readonly style="width: 80%; height: 100px; margin: 20px 0;">${token}</textarea>
-    <br>
-    <p>Copy this token and use it in your application.</p>
-    ${admission === "true" ? "<p><strong>Admission Mode:</strong> Enabled</p>" : ""}
+    <p>Redirecting to dashboard...</p>
+    <script>
+        // Store token và user data trong localStorage
+        localStorage.setItem('token', '${token}');
+        localStorage.setItem('user', JSON.stringify(${JSON.stringify(userData)}));
+        
+        // Redirect tới dashboard
+        window.location.href = '${dashboardUrl}';
+    </script>
 </body>
-</html>
-  `;
+</html>`;
 
-  res.send(html);
+    return res.send(html);
+
+  } catch (jwtError) {
+    console.error("❌ [/microsoft/success] Invalid token:", jwtError);
+    return res.send(`
+<!DOCTYPE html>
+<html>
+<head><title>Authentication Error</title><meta charset="UTF-8"></head>
+<body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+    <h2>❌ Authentication Error</h2>
+    <p>Invalid token. Please try again.</p>
+    <a href="/api/auth/microsoft">Try Again</a>
+</body>
+</html>`);
+  }
 });
 
 module.exports = router;
