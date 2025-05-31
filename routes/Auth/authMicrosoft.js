@@ -10,6 +10,28 @@ const { Buffer } = require('buffer');
 
 const azureConfig = require("../../config/azure");
 
+// --- helpers ----------------------------------------------------------
+/**
+ * Encode UTF‑8 string -> Base64URL (RFC 4648 §5)
+ */
+function base64UrlEncode(str) {
+  return Buffer.from(str, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Decode Base64URL -> UTF‑8 string
+ */
+function base64UrlDecode(b64url) {
+  let base64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4) base64 += "="; // pad
+  return Buffer.from(base64, "base64").toString("utf8");
+}
+// ----------------------------------------------------------------------
+
 // Cấu hình passport strategy với OIDCStrategy
 passport.use(
   new OIDCStrategy(
@@ -135,7 +157,7 @@ router.get("/microsoft",
     let rawState = req.query.state;
     if (!rawState) {
       const statePayload = { mobile: isMobile, redirectUri, isAdmission };
-      rawState = Buffer.from(JSON.stringify(statePayload)).toString("base64url");
+      rawState = base64UrlEncode(JSON.stringify(statePayload));
     }
 
     // Launch Azure AD flow with the (existing or new) state
@@ -158,7 +180,7 @@ router.get("/microsoft/callback", (req, res, next) => {
   let isAdmission = false;
 
   try {
-    const parsed = JSON.parse(Buffer.from(rawState, "base64url").toString());
+    const parsed = JSON.parse(base64UrlDecode(rawState));
     redirectUri  = parsed.redirectUri || "";
     isMobile     = parsed.mobile === true || parsed.mobile === "true";
     isAdmission  = parsed.isAdmission === true || parsed.isAdmission === "true";
