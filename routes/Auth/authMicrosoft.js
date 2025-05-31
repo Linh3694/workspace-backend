@@ -268,26 +268,25 @@ router.get("/microsoft/callback", (req, res, next) => {
         redirectUri, 
         hasToken: !!token,
         isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false,
-        userAgent: req.headers['user-agent']
+        userAgent: req.headers['user-agent'],
+        parsedStateDetails: { isMobile, redirectUri, isAdmission }
       });
 
-      // 1. Ưu tiên mobile app redirect nếu có isMobile=true hoặc redirectUri là staffportal scheme
-      if (isMobile || (redirectUri && redirectUri.startsWith('staffportal://'))) {
-        console.log("📱 [SUCCESS] Mobile detected in callback, redirecting to mobile app");
-        
-        if (redirectUri && redirectUri.startsWith('staffportal://')) {
-          // Sử dụng chính xác redirectUri mà mobile app gửi
-          console.log("📱 [SUCCESS] Using exact mobile redirectUri from callback:", `${redirectUri}?token=${token}`);
-          return res.redirect(`${redirectUri}?token=${token}`);
-        } else if (isMobile) {
-          // Fallback nếu chỉ có isMobile=true mà không có redirectUri
-          console.log("📱 [SUCCESS] Mobile flag detected in callback, using default mobile redirect scheme");
-          const defaultMobileRedirectUri = 'staffportal://auth/success';
-          return res.redirect(`${defaultMobileRedirectUri}?token=${token}`);
-        }
+      // 1. LUÔN ưu tiên mobile app redirect nếu có redirectUri là staffportal scheme
+      if (redirectUri && redirectUri.startsWith('staffportal://')) {
+        console.log("📱 [SUCCESS] Staffportal scheme detected in callback, redirecting to mobile app:", `${redirectUri}?token=${token}`);
+        return res.redirect(`${redirectUri}?token=${token}`);
       }
 
-      // Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend
+      // 2. Hoặc nếu có mobile === "true" 
+      if (isMobile) {
+        console.log("📱 [SUCCESS] Mobile flag detected in callback, using default mobile redirect scheme");
+        const defaultMobileRedirectUri = 'staffportal://auth/success';
+        console.log("📱 [SUCCESS] Redirecting to:", `${defaultMobileRedirectUri}?token=${token}`);
+        return res.redirect(`${defaultMobileRedirectUri}?token=${token}`);
+      }
+
+      // 3. Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend hoặc success route
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       const admissionQuery = isAdmission ? "&admission=true" : "";
       
@@ -429,23 +428,20 @@ router.get("/microsoft/success", async (req, res) => {
       userAgent: req.headers['user-agent']
     });
 
-    // 1. Ưu tiên mobile app redirect nếu có mobile === "true" hoặc redirectUri là staffportal scheme
-    if (mobile === "true" || (redirectUri && redirectUri.startsWith('staffportal://'))) {
-      console.log("📱 [SUCCESS] Mobile detected in success route, redirecting to mobile app");
-      
-      if (redirectUri && redirectUri.startsWith('staffportal://')) {
-        // Sử dụng chính xác redirectUri mà mobile app gửi
-        console.log("📱 [SUCCESS] Using exact mobile redirectUri from success route:", `${redirectUri}?token=${token}`);
-        return res.redirect(`${redirectUri}?token=${token}`);
-      } else if (mobile === "true") {
-        // Fallback nếu chỉ có mobile=true mà không có redirectUri
-        console.log("📱 [SUCCESS] Mobile flag detected in success route, using default mobile redirect scheme");
-        const defaultMobileRedirectUri = 'staffportal://auth/success';
-        return res.redirect(`${defaultMobileRedirectUri}?token=${token}`);
-      }
+    // 1. LUÔN ưu tiên mobile app redirect nếu có redirectUri là staffportal scheme
+    if (redirectUri && redirectUri.startsWith('staffportal://')) {
+      console.log("📱 [SUCCESS] Staffportal scheme detected, redirecting to mobile app");
+      return res.redirect(`${redirectUri}?token=${token}`);
     }
 
-    // 2. Nếu có frontend URL riêng, redirect về frontend
+    // 2. Hoặc nếu có mobile === "true" 
+    if (mobile === "true") {
+      console.log("📱 [SUCCESS] Mobile flag detected, using default mobile redirect scheme");
+      const defaultMobileRedirectUri = 'staffportal://auth/success';
+      return res.redirect(`${defaultMobileRedirectUri}?token=${token}`);
+    }
+
+    // 3. Nếu có frontend URL riêng, redirect về frontend
     const frontendUrl = process.env.FRONTEND_URL;
     if (frontendUrl && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
       const dashboardUrl = admission === "true" 
@@ -456,8 +452,8 @@ router.get("/microsoft/success", async (req, res) => {
       return res.redirect(dashboardUrl);
     }
 
-    // 3. Nếu không có frontend URL, trả về JSON response như login thông thường
-    console.log("📊 [SUCCESS] Returning JSON response");
+    // 4. Chỉ trả JSON nếu không có cách nào khác (fallback cuối cùng)
+    console.log("📊 [SUCCESS] No redirect options found, returning JSON response as last resort");
     return res.status(200).json({
       message: "Đăng nhập Microsoft thành công!",
       token,
