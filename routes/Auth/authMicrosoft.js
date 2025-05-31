@@ -131,11 +131,14 @@ router.get("/microsoft",
       isAdmission,
     });
 
-    // Encode custom data into OAuth "state"
-    const statePayload = { mobile: isMobile, redirectUri, isAdmission };
-    const rawState     = Buffer.from(JSON.stringify(statePayload)).toString("base64url");
+    // Re‑use incoming state from the mobile app if it exists; otherwise create one
+    let rawState = req.query.state;
+    if (!rawState) {
+      const statePayload = { mobile: isMobile, redirectUri, isAdmission };
+      rawState = Buffer.from(JSON.stringify(statePayload)).toString("base64url");
+    }
 
-    // Launch Azure AD flow with the custom state
+    // Launch Azure AD flow with the (existing or new) state
     passport.authenticate("azuread-openidconnect", { state: rawState })(req, res, next);
   }
 );
