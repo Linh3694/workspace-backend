@@ -428,15 +428,26 @@ router.get("/microsoft/success", async (req, res) => {
       userAgent: req.headers['user-agent']
     });
 
+    // BACKUP: Detect mobile từ User-Agent nếu mobile parameters không có
+    const isMobileUserAgent = req.headers['user-agent'] && 
+      req.headers['user-agent'].includes('Mobile') && 
+      (req.headers['user-agent'].includes('iPhone') || req.headers['user-agent'].includes('Android'));
+    
+    console.log("🔍 [/microsoft/success] Mobile detection backup:", {
+      isMobileUserAgent,
+      originalMobile: mobile,
+      userAgent: req.headers['user-agent']?.substring(0, 100)
+    });
+
     // 1. LUÔN ưu tiên mobile app redirect nếu có redirectUri là staffportal scheme
     if (redirectUri && redirectUri.startsWith('staffportal://')) {
       console.log("📱 [SUCCESS] Staffportal scheme detected, redirecting to mobile app");
       return res.redirect(`${redirectUri}?token=${token}`);
     }
 
-    // 2. Hoặc nếu có mobile === "true" 
-    if (mobile === "true") {
-      console.log("📱 [SUCCESS] Mobile flag detected, using default mobile redirect scheme");
+    // 2. Hoặc nếu có mobile === "true" HOẶC detect được mobile từ User-Agent
+    if (mobile === "true" || isMobileUserAgent) {
+      console.log("📱 [SUCCESS] Mobile detected (flag or User-Agent), redirecting to mobile app");
       const defaultMobileRedirectUri = 'staffportal://auth/success';
       return res.redirect(`${defaultMobileRedirectUri}?token=${token}`);
     }
