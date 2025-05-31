@@ -337,7 +337,17 @@ router.get("/microsoft/success", async (req, res) => {
     admission: admission,
     mobile: mobile,
     redirectUri: redirectUri,
-    query: req.query
+    query: req.query,
+    allQueryKeys: Object.keys(req.query)
+  });
+
+  console.log("🔍 [/microsoft/success] Mobile detection:", {
+    mobile: mobile,
+    mobileType: typeof mobile,
+    mobileEquals: mobile === "true",
+    redirectUri: redirectUri,
+    redirectUriType: typeof redirectUri,
+    redirectUriStartsWith: redirectUri ? redirectUri.startsWith('staffportal://') : false
   });
 
   if (error) {
