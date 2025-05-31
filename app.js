@@ -9,7 +9,7 @@ const session = require("express-session");
 const Ticket = require("./models/Ticket");
 const { connectRedis } = require('./config/redis');
 require("dotenv").config();
-const RedisStore = require('connect-redis');
+const { RedisStore } = require('connect-redis');
 const { createClient } = require('redis');
 
 // Import các route
