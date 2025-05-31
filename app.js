@@ -42,6 +42,7 @@ const libraryRoutes = require("./routes/Library/library");
 const admissionRoutes = require("./routes/Admission/admissionRoutes");
 const chatRoutes = require("./routes/Chat/chatRoutes");
 const chatSocket = require('./socketChat');
+const socketGroupChat = require('./socketGroupChat');
 const socketTicketChat = require('./socketTicketChat');
 const notificationRoutes = require("./routes/Notification/notificationRoutes");
 const emojiRoutes = require('./routes/Chat/emojiRoutes');
@@ -55,6 +56,22 @@ const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require("jsonwebtoken"); // ADD THIS import just above
 const server = http.createServer(app);
+
+// Setup Redis adapter for Socket.IO
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { createClient } = require('redis');
+
+// Redis clients for Socket.IO
+const pubClient = createClient({
+  socket: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: process.env.REDIS_PORT || 6379,
+  },
+  password: process.env.REDIS_PASSWORD || undefined,
+});
+
+const subClient = pubClient.duplicate();
+
 const io = new Server(server, {
   cors: { origin: "*" },
   allowRequest: (req, callback) => {
@@ -70,9 +87,59 @@ const io = new Server(server, {
 
 app.set("io", io); // expose socket.io instance to controllers
 
+// Setup Redis adapter for Socket.IO clustering
+(async () => {
+  try {
+    console.log('🔗 [Main IO] Connecting to Redis for adapter...');
+    await pubClient.connect();
+    await subClient.connect();
+    console.log('✅ [Main IO] Redis connected for adapter');
+    
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('✅ [Main IO] Redis adapter setup complete');
+  } catch (error) {
+    console.warn('⚠️ [Main IO] Redis adapter setup failed:', error.message);
+    console.warn('⚠️ [Main IO] Continuing without Redis adapter (single instance)');
+  }
+})();
+
+// Khởi tạo namespace riêng cho group chat
+const groupChatNamespace = io.of('/groupchat');
+
+// Setup authentication middleware cho group chat namespace
+groupChatNamespace.use((socket, next) => {
+  const token = socket.handshake.query.token;
+  console.log(`🔑 [GroupChat Middleware] Token check for socket ${socket.id}`);
+  if (!token) {
+    console.log(`❌ [GroupChat Middleware] No token provided for socket ${socket.id}`);
+    return next(new Error("unauthorized"));
+  }
+  
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      console.log(`❌ [GroupChat Middleware] Token verify failed for socket ${socket.id}:`, err.message);
+      return next(new Error("unauthorized"));
+    }
+    
+    console.log(`✅ [GroupChat Middleware] Token verified for socket ${socket.id}:`, decoded);
+    
+    // Set both socket.user and socket.data.userId for compatibility
+    socket.user = decoded;
+    socket.data = socket.data || {};
+    socket.data.userId = (decoded._id || decoded.id).toString();
+    
+    console.log(`✅ [GroupChat Middleware] Set userId: ${socket.data.userId} for socket ${socket.id}`);
+    next();
+  });
+});
+
 // Khởi tạo các socket handlers
 socketTicketChat(io);
-chatSocket(io);
+chatSocket(io); // Socket cho chat 1-1
+socketGroupChat(groupChatNamespace); // Socket riêng cho group chat
+
+// Expose group chat namespace để controllers có thể sử dụng
+app.set("groupChatNamespace", groupChatNamespace);
 
 // Initialize newfeed socket
 const newfeedSocket = new NewfeedSocket(io);

@@ -152,12 +152,21 @@ module.exports = async function (io) {
 
       try {
         const token = socket.handshake.query.token;
+        console.log(`🔑 [AUTH][${socket.id}] Token received:`, token ? 'YES' : 'NO');
+        console.log(`🔑 [AUTH][${socket.id}] Token value:`, token);
+        
         if (token) {
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          console.log(`🔑 [AUTH][${socket.id}] Token decoded:`, decoded ? 'YES' : 'NO');
+          console.log(`🔑 [AUTH][${socket.id}] Decoded content:`, decoded);
+          
           if (decoded && decoded._id) {
             currentUserId = decoded._id.toString();
             socket.join(currentUserId);
             socket.data.userId = currentUserId;
+            
+            console.log(`✅ [AUTH][${socket.id}] User authenticated:`, currentUserId);
+            console.log(`✅ [AUTH][${socket.id}] socket.data.userId set to:`, socket.data.userId);
 
             // Đánh dấu online trên Redis và publish event
             await redisService.setUserOnlineStatus(currentUserId, true, Date.now());
@@ -169,12 +178,25 @@ module.exports = async function (io) {
 
             // Thiết lập timeout cho user
             setUserInactiveTimeout(currentUserId);
+          } else {
+            console.log(`❌ [AUTH][${socket.id}] Token decoded but no _id found`);
           }
+        } else {
+          console.log(`❌ [AUTH][${socket.id}] No token provided`);
         }
       } catch (err) {
+        console.error(`❌ [AUTH][${socket.id}] Token verify error:`, err.message);
+        console.error(`❌ [AUTH][${socket.id}] Full error:`, err);
         logger.error(`[Socket][${socket.id}] Token verify error: ${err.message}`);
         socket.emit('error', { code: 401, message: 'Token không hợp lệ', detail: err.message });
       }
+
+      // Debug log sau khi authentication
+      console.log(`🔍 [AUTH][${socket.id}] Final auth status:`, {
+        currentUserId,
+        'socket.data.userId': socket.data.userId,
+        authenticated: !!socket.data.userId
+      });
 
       // Join vào phòng chat
       socket.on("joinChat", (chatId) => {
@@ -450,168 +472,22 @@ module.exports = async function (io) {
 
       // ====================== GROUP CHAT SOCKET EVENTS ======================
       
-      // Join group chat room
-      socket.on("joinGroupChat", async (data) => {
-        try {
-          const { chatId } = data;
-          if (!chatId || !socket.data.userId) return;
-
-          // Verify user is member of this group
-          const Chat = require('./models/Chat');
-          const chat = await Chat.findById(chatId);
-          
-          if (!chat || !chat.isGroup) {
-            socket.emit('error', { message: 'Group chat không tồn tại' });
-            return;
-          }
-
-          const isMember = chat.participants.includes(socket.data.userId);
-          if (!isMember) {
-            socket.emit('error', { message: 'Bạn không phải thành viên của nhóm này' });
-            return;
-          }
-
-          socket.join(chatId);
-          console.log(`👥 User ${socket.data.userId} joined group chat ${chatId}`);
-          
-          // Notify other members
-          socket.to(chatId).emit("userJoinedGroup", {
-            userId: socket.data.userId,
-            chatId,
-            timestamp: new Date().toISOString()
-          });
-
-        } catch (error) {
-          console.error('Error joining group chat:', error);
-          socket.emit('error', { message: 'Lỗi khi tham gia group chat' });
-        }
-      });
-
-      // Leave group chat room
-      socket.on("leaveGroupChat", (data) => {
-        const { chatId } = data;
-        if (!chatId) return;
-
-        socket.leave(chatId);
-        console.log(`👥 User ${socket.data.userId} left group chat ${chatId}`);
-        
-        // Notify other members
-        socket.to(chatId).emit("userLeftGroup", {
-          userId: socket.data.userId,
-          chatId,
-          timestamp: new Date().toISOString()
-        });
-      });
-
-      // Group typing indicator
-      socket.on("groupTyping", (data) => {
-        const { chatId, isTyping } = data;
-        if (!chatId || !socket.data.userId) return;
-
-        if (isTyping) {
-          socket.to(chatId).emit("userTypingInGroup", {
-            userId: socket.data.userId,
-            chatId,
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          socket.to(chatId).emit("userStopTypingInGroup", {
-            userId: socket.data.userId,
-            chatId,
-            timestamp: new Date().toISOString()
-          });
-        }
-      });
-
-      // Group message read status
-      socket.on("groupMessageRead", (data) => {
-        const { chatId, messageId } = data;
-        if (!chatId || !messageId || !socket.data.userId) return;
-
-        socket.to(chatId).emit("groupMessageRead", {
-          userId: socket.data.userId,
-          chatId,
-          messageId,
-          timestamp: new Date().toISOString()
-        });
-      });
-
-      // Group member management events
-      socket.on("groupMemberAdded", (data) => {
-        const { chatId, newMemberIds, addedBy } = data;
-        if (!chatId || !newMemberIds || !socket.data.userId) return;
-
-        // Emit to all group members
-        socket.to(chatId).emit("groupMembersAdded", {
-          chatId,
-          newMembers: newMemberIds,
-          addedBy: socket.data.userId,
-          timestamp: new Date().toISOString()
-        });
-
-        // Emit to new members
-        newMemberIds.forEach(memberId => {
-          socket.to(memberId).emit("addedToGroup", {
-            chatId,
-            addedBy: socket.data.userId,
-            timestamp: new Date().toISOString()
-          });
-        });
-      });
-
-      socket.on("groupMemberRemoved", (data) => {
-        const { chatId, removedUserId, removedBy } = data;
-        if (!chatId || !removedUserId || !socket.data.userId) return;
-
-        // Emit to group members
-        socket.to(chatId).emit("groupMemberRemoved", {
-          chatId,
-          removedUserId,
-          removedBy: socket.data.userId,
-          timestamp: new Date().toISOString()
-        });
-
-        // Emit to removed user
-        socket.to(removedUserId).emit("removedFromGroup", {
-          chatId,
-          removedBy: socket.data.userId,
-          timestamp: new Date().toISOString()
-        });
-      });
-
-      // Group info updates
-      socket.on("groupInfoUpdated", (data) => {
-        const { chatId, changes } = data;
-        if (!chatId || !changes || !socket.data.userId) return;
-
-        socket.to(chatId).emit("groupInfoUpdated", {
-          chatId,
-          changes,
-          updatedBy: socket.data.userId,
-          timestamp: new Date().toISOString()
-        });
-      });
-
-      // Group admin management
-      socket.on("groupAdminUpdated", (data) => {
-        const { chatId, targetUserId, action } = data; // action: 'promoted' | 'demoted'
-        if (!chatId || !targetUserId || !action || !socket.data.userId) return;
-
-        socket.to(chatId).emit("groupAdminUpdated", {
-          chatId,
-          targetUserId,
-          action,
-          actionBy: socket.data.userId,
-          timestamp: new Date().toISOString()
-        });
-      });
+      // Group chat events đã được chuyển sang socketGroupChat.js
+      // File này chỉ xử lý chat 1-1
 
       // ====================== END GROUP CHAT EVENTS ======================
 
       // Xử lý khi ngắt kết nối
       socket.on("disconnecting", async () => {
         const uid = socket.data.userId;
+        console.log(`🔌 [DISCONNECT][${socket.id}] User disconnecting:`, {
+          userId: uid,
+          hasUserId: !!uid,
+          rooms: Array.from(socket.rooms)
+        });
+        
         if (uid) {
+          console.log(`✅ [DISCONNECT][${socket.id}] Processing disconnect for user:`, uid);
           await redisService.setUserOnlineStatus(uid, false, Date.now());
           await redisService.deleteUserSocketId(uid);
           await pubClient.publish('user:offline', JSON.stringify({ userId: uid, lastSeen: Date.now() }));
@@ -638,6 +514,8 @@ module.exports = async function (io) {
               socket.to(room).emit("userStatus", { userId: uid, status: "offline" });
             }
           });
+        } else {
+          console.log(`❌ [DISCONNECT][${socket.id}] No userId found during disconnect`);
         }
       });
     });

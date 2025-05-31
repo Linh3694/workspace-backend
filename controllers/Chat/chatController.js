@@ -147,6 +147,7 @@ exports.sendMessage = async (req, res) => {
             chatId,
             content,
             type = 'text',
+            replyTo = null,
             isEmoji = false,
             emojiId = null,
             emojiType = null,
@@ -180,14 +181,16 @@ exports.sendMessage = async (req, res) => {
         const message = await Message.create({
             chat: chatId,
             sender: senderId,
-            content: content.trim(),
+            content: content ? content.trim() : '',
             type,
             readBy: [senderId],
             isEmoji,
             emojiId,
             emojiType,
             emojiName,
-            emojiUrl
+            emojiUrl,
+            isGroup: chat.isGroup || false, // Đánh dấu đây là group message hay không
+            replyTo: replyTo ? replyTo.toString() : null
         });
 
         // Cập nhật lastMessage trong chat
@@ -205,26 +208,85 @@ exports.sendMessage = async (req, res) => {
 
         // Populate thông tin người gửi
         const populatedMessage = await Message.findById(message._id)
-            .populate('sender', 'fullname avatarUrl email');
+            .populate('sender', 'fullname avatarUrl email')
+            .populate({
+                path: 'replyTo',
+                populate: {
+                    path: 'sender',
+                    select: 'fullname avatarUrl email'
+                }
+            });
 
         // Track delivery status
         trackMessageDelivery(message._id, chat.participants);
 
         // Emit socket event với retry mechanism
         const io = req.app.get('io');
-        const emitWithRetry = (event, data, retries = 3) => {
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
+        console.log('📤 [Backend] About to emit receiveMessage to room:', chatId);
+        console.log('📤 [Backend] Message data:', {
+            id: populatedMessage._id,
+            content: populatedMessage.content,
+            sender: populatedMessage.sender._id,
+            chat: populatedMessage.chat,
+            isGroup: populatedMessage.isGroup
+        });
+        
+        const emitWithRetry = async (event, data, retries = 3) => {
             try {
-                io.to(chatId).emit(event, data);
-            } catch (error) {
-                if (retries > 0) {
-                    setTimeout(() => emitWithRetry(event, data, retries - 1), 1000);
+                console.log(`📤 [Backend] Emitting ${event} to room ${chatId}`);
+                console.log(`📤 [Backend] Chat type:`, { isGroup: chat.isGroup, chatId });
+                
+                // Sử dụng namespace phù hợp dựa trên chat type
+                if (chat.isGroup) {
+                    // Fix cho Redis adapter - sử dụng fetchSockets thay vì adapter.rooms.get
+                    try {
+                        const sockets = await groupChatNamespace.in(chatId).fetchSockets();
+                        const roomSize = sockets.length;
+                        const roomMembers = sockets.map(s => s.id);
+                        console.log(`📤 [Backend] GROUP: Room ${chatId} has ${roomSize} connected members:`, roomMembers);
+                        
+                        groupChatNamespace.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to GROUP room ${chatId}`);
+                        
+                        // Double check logging
+                        console.log(`🔍 [Backend] Room ${chatId} has ${sockets.length} sockets:`, sockets.map(s => s.id));
+                    } catch (fetchError) {
+                        console.warn(`⚠️ [Backend] Could not fetch group room size for ${chatId}, emitting anyway:`, fetchError.message);
+                        groupChatNamespace.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to GROUP room ${chatId} (no size check)`);
+                    }
                 } else {
-                    logger.error(`Failed to emit ${event} after retries:`, error);
+                    // Fix cho Redis adapter - sử dụng fetchSockets thay vì adapter.rooms.get
+                    try {
+                        const sockets = await io.in(chatId).fetchSockets();
+                        const roomSize = sockets.length;
+                        console.log(`📤 [Backend] 1-1: Room ${chatId} has ${roomSize} connected members`);
+                        io.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to 1-1 room ${chatId}`);
+                    } catch (fetchError) {
+                        console.warn(`⚠️ [Backend] Could not fetch room size for ${chatId}, emitting anyway:`, fetchError.message);
+                        io.to(chatId).emit(event, data);
+                        console.log(`✅ [Backend] Successfully emitted ${event} to 1-1 room ${chatId} (no size check)`);
+                    }
+                }
+            } catch (error) {
+                console.error(`❌ [Backend] Error emitting ${event} to room ${chatId}:`, error);
+                if (retries > 0) {
+                    console.log(`🔄 [Backend] Retrying emit ${event} (${retries} retries left)`);
+                    setTimeout(async () => await emitWithRetry(event, data, retries - 1), 1000);
+                } else {
+                    console.error(`❌ [Backend] Failed to emit ${event} after all retries`);
+                    // Use logger if available, otherwise console.error
+                    if (typeof logger !== 'undefined' && logger.error) {
+                        logger.error(`Failed to emit ${event} after retries:`, error);
+                    }
                 }
             }
         };
 
-        emitWithRetry('receiveMessage', populatedMessage);
+        await emitWithRetry('receiveMessage', populatedMessage);
 
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
@@ -432,6 +494,13 @@ exports.uploadChatAttachment = async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ message: 'Không có file được upload' });
         }
+
+        // Lấy thông tin chat để kiểm tra isGroup
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: 'Chat not found' });
+        }
+
         // Xác định loại file
         let type = 'file';
         if (req.file.mimetype.startsWith('image/')) {
@@ -446,11 +515,9 @@ exports.uploadChatAttachment = async (req, res) => {
             content: req.file.originalname,
             type,
             fileUrl,
-            readBy: [senderId]
+            readBy: [senderId],
+            isGroup: chat.isGroup || false // Đánh dấu đây là group message hay không
         });
-
-        // Lấy thông tin chat để gửi thông báo
-        const chat = await Chat.findById(chatId);
 
         // Cập nhật lastMessage trong chat
         await Chat.findByIdAndUpdate(chatId, {
@@ -464,7 +531,14 @@ exports.uploadChatAttachment = async (req, res) => {
 
         // Emit socket event
         const io = req.app.get('io');
-        io.to(chatId).emit('receiveMessage', populatedMessage);
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
+        // Sử dụng namespace phù hợp dựa trên chat type
+        if (chat.isGroup) {
+            groupChatNamespace.to(chatId).emit('receiveMessage', populatedMessage);
+        } else {
+            io.to(chatId).emit('receiveMessage', populatedMessage);
+        }
 
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
@@ -486,7 +560,9 @@ exports.uploadChatAttachment = async (req, res) => {
 
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chatId);
-        updatedChat.participants.forEach(async (p) => {
+        const chatForCache = await Chat.findById(chatId)
+            .populate('participants', 'fullname avatarUrl email');
+        chatForCache.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
                 await invalidateUserChatCache(participantId);
@@ -494,13 +570,11 @@ exports.uploadChatAttachment = async (req, res) => {
         });
 
         // Gửi thông báo push cho người nhận
-        if (chat) {
-            notificationController.sendNewChatMessageNotification(
-                message,
-                req.user.fullname,
-                chat
-            );
-        }
+        notificationController.sendNewChatMessageNotification(
+            message,
+            req.user.fullname,
+            chat
+        );
 
         res.status(201).json(populatedMessage);
     } catch (error) {
@@ -518,6 +592,12 @@ exports.uploadMultipleImages = async (req, res) => {
             return res.status(400).json({ message: 'Không có file được upload' });
         }
 
+        // Lấy thông tin chat để kiểm tra isGroup
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: 'Chat not found' });
+        }
+
         // Lưu đường dẫn của tất cả các file
         const fileUrls = req.files.map(file => `/uploads/Chat/${file.filename}`);
 
@@ -529,11 +609,9 @@ exports.uploadMultipleImages = async (req, res) => {
             type: 'multiple-images',
             fileUrl: fileUrls[0], // Lưu ảnh đầu tiên làm ảnh đại diện cho các thumbnail
             fileUrls: fileUrls,   // Mảng chứa tất cả đường dẫn ảnh
-            readBy: [senderId]
+            readBy: [senderId],
+            isGroup: chat.isGroup || false // Đánh dấu đây là group message hay không
         });
-
-        // Lấy thông tin chat để gửi thông báo
-        const chat = await Chat.findById(chatId);
 
         // Cập nhật lastMessage trong chat
         await Chat.findByIdAndUpdate(chatId, {
@@ -547,7 +625,14 @@ exports.uploadMultipleImages = async (req, res) => {
 
         // Emit socket event
         const io = req.app.get('io');
-        io.to(chatId).emit('receiveMessage', populatedMessage);
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
+        // Sử dụng namespace phù hợp dựa trên chat type
+        if (chat.isGroup) {
+            groupChatNamespace.to(chatId).emit('receiveMessage', populatedMessage);
+        } else {
+            io.to(chatId).emit('receiveMessage', populatedMessage);
+        }
 
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chatId)
@@ -569,7 +654,9 @@ exports.uploadMultipleImages = async (req, res) => {
 
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chatId);
-        updatedChat.participants.forEach(async (p) => {
+        const chatForCache = await Chat.findById(chatId)
+            .populate('participants', 'fullname avatarUrl email');
+        chatForCache.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
                 await invalidateUserChatCache(participantId);
@@ -577,13 +664,11 @@ exports.uploadMultipleImages = async (req, res) => {
         });
 
         // Gửi thông báo push cho người nhận
-        if (chat) {
-            notificationController.sendNewChatMessageNotification(
-                message,
-                req.user.fullname,
-                chat
-            );
-        }
+        notificationController.sendNewChatMessageNotification(
+            message,
+            req.user.fullname,
+            chat
+        );
 
         res.status(201).json(populatedMessage);
     } catch (error) {
@@ -696,6 +781,12 @@ exports.replyToMessage = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy tin nhắn cần trả lời' });
         }
 
+        // Lấy thông tin chat để kiểm tra type
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: 'Không tìm thấy chat' });
+        }
+
         // Tạo tin nhắn reply mới
         const message = await Message.create({
             chat: chatId,
@@ -703,7 +794,8 @@ exports.replyToMessage = async (req, res) => {
             content,
             type,
             replyTo: replyToId,
-            readBy: [senderId]
+            readBy: [senderId],
+            isGroup: chat.isGroup || false // Đánh dấu đây là group message hay không
         });
 
         // Cập nhật lastMessage trong chat
@@ -725,9 +817,9 @@ exports.replyToMessage = async (req, res) => {
 
         // Xóa cache liên quan
         await redisService.deleteChatMessagesCache(chatId);
-        const chat = await Chat.findById(chatId)
+        const chatForCache = await Chat.findById(chatId)
             .populate('participants', 'fullname avatarUrl email');
-        chat.participants.forEach(async (p) => {
+        chatForCache.participants.forEach(async (p) => {
             const participantId = getParticipantId(p);
             if (participantId) {
                 await invalidateUserChatCache(participantId);
@@ -736,7 +828,14 @@ exports.replyToMessage = async (req, res) => {
 
         // Emit socket event
         const io = req.app.get('io');
-        io.to(chatId).emit('receiveMessage', populatedMessage);
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
+        // Sử dụng namespace phù hợp dựa trên chat type
+        if (chat.isGroup) {
+            groupChatNamespace.to(chat._id.toString()).emit('receiveMessage', populatedMessage);
+        } else {
+            io.to(chat._id.toString()).emit('receiveMessage', populatedMessage);
+        }
 
         // Gửi thông báo push cho người nhận
         notificationController.sendNewChatMessageNotification(
@@ -1017,7 +1116,8 @@ exports.forwardMessage = async (req, res) => {
             emojiId: originalMessage.emojiId,
             emojiType: originalMessage.emojiType,
             emojiName: originalMessage.emojiName,
-            emojiUrl: originalMessage.emojiUrl
+            emojiUrl: originalMessage.emojiUrl,
+            isGroup: chat.isGroup || false // Đánh dấu đây là group message hay không
         });
 
         await forwardedMessage.save();
@@ -1044,7 +1144,14 @@ exports.forwardMessage = async (req, res) => {
 
         // Emit socket event
         const io = req.app.get('io');
-        io.to(chat._id.toString()).emit('receiveMessage', populatedMessage);
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
+        // Sử dụng namespace phù hợp dựa trên chat type
+        if (chat.isGroup) {
+            groupChatNamespace.to(chat._id.toString()).emit('receiveMessage', populatedMessage);
+        } else {
+            io.to(chat._id.toString()).emit('receiveMessage', populatedMessage);
+        }
 
         // Lấy lại chat đã cập nhật kèm populate
         const updatedChat = await Chat.findById(chat._id)
@@ -1269,7 +1376,16 @@ exports.createGroupChat = async (req, res) => {
 
         // Emit socket event cho tất cả participants
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
         allParticipants.forEach(participantId => {
+            // Sử dụng groupChatNamespace cho group chat events
+            groupChatNamespace.to(participantId.toString()).emit('groupMembersAdded', {
+                chatId: groupChat._id,
+                newMembers: allParticipants.filter(p => p.toString() !== participantId),
+                addedBy: creatorId
+            });
+            // Vẫn sử dụng io thông thường cho newChat event
             io.to(participantId.toString()).emit('newChat', populatedChat);
         });
 
@@ -1338,8 +1454,10 @@ exports.addGroupMember = async (req, res) => {
 
         // Emit events
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
         chat.participants.forEach(participantId => {
-            io.to(participantId.toString()).emit('groupMembersAdded', {
+            groupChatNamespace.to(participantId.toString()).emit('groupMembersAdded', {
                 chatId: chat._id,
                 newMembers,
                 addedBy: currentUserId
@@ -1398,19 +1516,13 @@ exports.removeGroupMember = async (req, res) => {
 
         // Emit events
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
         
-        // Notify removed user
-        io.to(userId).emit('removedFromGroup', {
-            chatId: chat._id,
-            removedBy: currentUserId
-        });
-
-        // Notify remaining members
         chat.participants.forEach(participantId => {
-            io.to(participantId.toString()).emit('groupMemberRemoved', {
+            groupChatNamespace.to(participantId.toString()).emit('groupMemberRemoved', {
                 chatId: chat._id,
-                removedUserId: userId,
-                removedBy: currentUserId
+                removedUserId: currentUserId,
+                removedBy: currentUserId // User left by themselves
             });
             io.to(participantId.toString()).emit('newChat', updatedChat);
         });
@@ -1460,10 +1572,13 @@ exports.leaveGroup = async (req, res) => {
 
         // Emit events
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
         chat.participants.forEach(participantId => {
-            io.to(participantId.toString()).emit('groupMemberLeft', {
+            groupChatNamespace.to(participantId.toString()).emit('groupMemberRemoved', {
                 chatId: chat._id,
-                leftUserId: currentUserId
+                removedUserId: currentUserId,
+                removedBy: currentUserId // User left by themselves
             });
             io.to(participantId.toString()).emit('newChat', updatedChat);
         });
@@ -1528,8 +1643,10 @@ exports.updateGroupInfo = async (req, res) => {
 
         // Emit events
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
         chat.participants.forEach(participantId => {
-            io.to(participantId.toString()).emit('groupInfoUpdated', {
+            groupChatNamespace.to(participantId.toString()).emit('groupInfoUpdated', {
                 chatId: chat._id,
                 updatedBy: currentUserId,
                 changes: { name, description, avatar: chat.avatar }
@@ -1583,8 +1700,10 @@ exports.addGroupAdmin = async (req, res) => {
 
         // Emit events
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
         chat.participants.forEach(participantId => {
-            io.to(participantId.toString()).emit('groupAdminAdded', {
+            groupChatNamespace.to(participantId.toString()).emit('groupAdminAdded', {
                 chatId: chat._id,
                 newAdminId: userId,
                 addedBy: currentUserId
@@ -1632,12 +1751,23 @@ exports.removeGroupAdmin = async (req, res) => {
 
         // Emit events
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
+        // Notify removed user
+        groupChatNamespace.to(userId).emit('groupAdminRemoved', {
+            chatId: chat._id,
+            removedAdminId: userId,
+            removedBy: currentUserId
+        });
+
+        // Notify remaining members
         chat.participants.forEach(participantId => {
-            io.to(participantId.toString()).emit('groupAdminRemoved', {
+            groupChatNamespace.to(participantId.toString()).emit('groupMembersAdded', {
                 chatId: chat._id,
-                removedAdminId: userId,
-                removedBy: currentUserId
+                newMembers: chat.participants.filter(p => p.toString() !== userId),
+                addedBy: currentUserId
             });
+            io.to(participantId.toString()).emit('newChat', updatedChat);
         });
 
         res.status(200).json(updatedChat);
@@ -1686,8 +1816,10 @@ exports.updateGroupSettings = async (req, res) => {
 
         // Emit events
         const io = req.app.get('io');
+        const groupChatNamespace = req.app.get('groupChatNamespace');
+        
         chat.participants.forEach(participantId => {
-            io.to(participantId.toString()).emit('groupSettingsUpdated', {
+            groupChatNamespace.to(participantId.toString()).emit('groupSettingsUpdated', {
                 chatId: chat._id,
                 updatedBy: currentUserId,
                 settings: chat.settings

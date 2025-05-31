@@ -54,11 +54,11 @@ router.post('/message', authenticate, chatController.sendMessage);
 // Lấy tin nhắn của một chat
 router.get('/messages/:chatId', authenticate, chatController.getChatMessages);
 
+// Đánh dấu tất cả tin nhắn trong chat là đã đọc
+router.post('/messages/:chatId/read', authenticate, chatController.markAllMessagesAsRead);
+
 // Đánh dấu tin nhắn đã đọc
 router.put('/message/:messageId/read', authenticate, chatController.markMessageAsRead);
-
-// Đánh dấu tất cả tin nhắn trong chat là đã đọc (chỉ cho các tin nhắn mình là người nhận)
-router.put('/read-all/:chatId', authenticate, chatController.markAllMessagesAsRead);
 
 // Upload file/ảnh cho chat
 router.post('/upload-attachment', authenticate, uploadChat.single('file'), chatController.uploadChatAttachment);
