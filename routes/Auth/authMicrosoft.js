@@ -10,6 +10,9 @@ const { Buffer } = require('buffer');
 
 const azureConfig = require("../../config/azure");
 
+// Memory store để lưu token tạm thời cho mobile auth
+const mobileAuthTokens = new Map();
+
 // --- helpers ----------------------------------------------------------
 /**
  * Encode UTF‑8 string -> Base64URL (RFC 4648 §5)
@@ -278,7 +281,7 @@ router.get("/microsoft/callback", (req, res, next) => {
         return res.redirect(`${redirectUri}?token=${token}`);
       }
 
-      // 2. Hoặc nếu có mobile === "true" 
+      // 2. Hoặc nếu có mobile === "true" HOẶC detect được mobile từ User-Agent
       if (isMobile) {
         console.log("📱 [SUCCESS] Mobile flag detected in callback, using default mobile redirect scheme");
         const defaultMobileRedirectUri = 'staffportal://auth/success';
@@ -448,8 +451,30 @@ router.get("/microsoft/success", async (req, res) => {
     // 2. Hoặc nếu có mobile === "true" HOẶC detect được mobile từ User-Agent
     if (mobile === "true" || isMobileUserAgent) {
       console.log("📱 [SUCCESS] Mobile detected (flag or User-Agent), redirecting to mobile app");
+      
+      // Tạo sessionId để mobile app poll token
+      const sessionId = `mobile_auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Lưu token với sessionId trong memory (expire sau 5 phút)
+      mobileAuthTokens.set(sessionId, {
+        token,
+        userData,
+        timestamp: Date.now(),
+        expires: Date.now() + (5 * 60 * 1000) // 5 minutes
+      });
+      
+      // Clean up expired tokens
+      for (const [key, value] of mobileAuthTokens.entries()) {
+        if (Date.now() > value.expires) {
+          mobileAuthTokens.delete(key);
+        }
+      }
+      
+      console.log("📱 [SUCCESS] Token saved with sessionId:", sessionId);
+      
+      // Redirect về app với sessionId thay vì token
       const defaultMobileRedirectUri = 'staffportal://auth/success';
-      return res.redirect(`${defaultMobileRedirectUri}?token=${token}`);
+      return res.redirect(`${defaultMobileRedirectUri}?sessionId=${sessionId}`);
     }
 
     // 3. Nếu có frontend URL riêng, redirect về frontend
@@ -494,6 +519,42 @@ router.get("/microsoft/success", async (req, res) => {
       error: jwtError.message 
     });
   }
+});
+
+// API endpoint để mobile app poll token bằng sessionId
+router.get("/microsoft/poll-token/:sessionId", (req, res) => {
+  const { sessionId } = req.params;
+  
+  console.log("🔍 [/poll-token] Polling for sessionId:", sessionId);
+  
+  if (!sessionId) {
+    return res.status(400).json({ success: false, message: "SessionId is required" });
+  }
+  
+  const authData = mobileAuthTokens.get(sessionId);
+  
+  if (!authData) {
+    console.log("❌ [/poll-token] SessionId not found or expired:", sessionId);
+    return res.status(404).json({ success: false, message: "Session not found or expired" });
+  }
+  
+  // Check if expired
+  if (Date.now() > authData.expires) {
+    mobileAuthTokens.delete(sessionId);
+    console.log("❌ [/poll-token] SessionId expired:", sessionId);
+    return res.status(404).json({ success: false, message: "Session expired" });
+  }
+  
+  // Remove token after successful retrieval
+  mobileAuthTokens.delete(sessionId);
+  
+  console.log("✅ [/poll-token] Token retrieved successfully for sessionId:", sessionId);
+  
+  return res.json({
+    success: true,
+    token: authData.token,
+    user: authData.userData
+  });
 });
 
 module.exports = router;
