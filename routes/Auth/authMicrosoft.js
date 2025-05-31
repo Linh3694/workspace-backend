@@ -334,6 +334,13 @@ router.get("/microsoft/callback", (req, res, next) => {
         }
         
         console.log("📱 [SUCCESS] Token saved with sessionId:", sessionId);
+        console.log("📱 [SUCCESS] Total sessions in memory:", mobileAuthTokens.size);
+        console.log("📱 [SUCCESS] Session data preview:", {
+          sessionId,
+          hasToken: !!token,
+          expires: new Date(Date.now() + (5 * 60 * 1000)).toISOString(),
+          userEmail: user.email
+        });
         
         // Redirect về web page với sessionId (thay vì deep link)
         const baseUrl = req.protocol + '://' + req.get('host');
@@ -578,9 +585,19 @@ router.get("/microsoft/success", async (req, res) => {
 router.get("/microsoft/mobile-success", (req, res) => {
   const { sessionId } = req.query;
   
-  console.log("🔍 [/mobile-success] Mobile success page accessed:", { sessionId });
+  console.log("🔍 [/mobile-success] Mobile success page accessed:", { 
+    sessionId,
+    queryKeys: Object.keys(req.query),
+    fullQuery: req.query
+  });
+  console.log("🔍 [/mobile-success] Current sessions in memory:", {
+    totalSessions: mobileAuthTokens.size,
+    sessionIds: Array.from(mobileAuthTokens.keys()),
+    requestedSessionId: sessionId
+  });
   
   if (!sessionId) {
+    console.log("❌ [/mobile-success] No sessionId provided");
     return res.status(400).send(`
       <html>
         <head>
@@ -597,7 +614,16 @@ router.get("/microsoft/mobile-success", (req, res) => {
   
   // Verify session exists
   const authData = mobileAuthTokens.get(sessionId);
+  console.log("🔍 [/mobile-success] Session lookup result:", {
+    sessionId,
+    found: !!authData,
+    expired: authData ? (Date.now() > authData.expires) : 'N/A',
+    expiresAt: authData ? new Date(authData.expires).toISOString() : 'N/A',
+    currentTime: new Date().toISOString()
+  });
+  
   if (!authData) {
+    console.log("❌ [/mobile-success] Session not found in memory");
     return res.status(404).send(`
       <html>
         <head>
@@ -607,10 +633,32 @@ router.get("/microsoft/mobile-success", (req, res) => {
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
           <h2>⏰ Session hết hạn</h2>
           <p>Session xác thực đã hết hạn. Vui lòng đóng trang này và thử lại từ ứng dụng.</p>
+          <p><small>Debug: SessionId không tìm thấy trong memory</small></p>
         </body>
       </html>
     `);
   }
+  
+  // Check if expired
+  if (Date.now() > authData.expires) {
+    mobileAuthTokens.delete(sessionId);
+    console.log("❌ [/mobile-success] Session expired, removed from memory");
+    return res.status(404).send(`
+      <html>
+        <head>
+          <title>Session hết hạn</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h2>⏰ Session hết hạn</h2>
+          <p>Session xác thực đã hết hạn. Vui lòng đóng trang này và thử lại từ ứng dụng.</p>
+          <p><small>Debug: Session đã expire</small></p>
+        </body>
+      </html>
+    `);
+  }
+  
+  console.log("✅ [/mobile-success] Session valid, showing success page");
   
   // Show success page
   res.send(`
