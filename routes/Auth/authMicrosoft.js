@@ -283,4 +283,74 @@ router.get("/microsoft/callback", (req, res, next) => {
   passport.authenticate("azuread-openidconnect", handleAuthResult)(req, res, next);
 });
 
+// Route để handle success redirect từ Microsoft auth
+router.get("/microsoft/success", (req, res) => {
+  const token = req.query.token;
+  const error = req.query.error;
+  const admission = req.query.admission;
+
+  console.log("🔍 [/microsoft/success] Success route called:", {
+    hasToken: !!token,
+    hasError: !!error,
+    admission: admission,
+    query: req.query
+  });
+
+  if (error) {
+    // Redirect tới trang login với error
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error)}`);
+  }
+
+  if (!token) {
+    // Redirect tới trang login với error
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return res.redirect(`${frontendUrl}/login?error=No+token+provided`);
+  }
+
+  // Tạo HTML page để handle token và redirect
+  const admissionParam = admission === "true" ? "&admission=true" : "";
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authentication Success</title>
+    <script>
+        // Store token in localStorage and redirect
+        if (window.opener) {
+            // If opened in popup, send message to parent
+            window.opener.postMessage({
+                type: 'MICROSOFT_AUTH_SUCCESS',
+                token: '${token}',
+                admission: ${admission === "true"}
+            }, '${frontendUrl}');
+            window.close();
+        } else {
+            // If not popup, redirect to frontend with token
+            localStorage.setItem('token', '${token}');
+            window.location.href = '${frontendUrl}/dashboard${admissionParam}';
+        }
+    </script>
+</head>
+<body>
+    <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+        <h2>Authentication Successful</h2>
+        <p>Redirecting...</p>
+        <script>
+            // Fallback redirect after 3 seconds
+            setTimeout(() => {
+                localStorage.setItem('token', '${token}');
+                window.location.href = '${frontendUrl}/dashboard${admissionParam}';
+            }, 3000);
+        </script>
+    </div>
+</body>
+</html>
+  `;
+
+  res.send(html);
+});
+
 module.exports = router;
