@@ -588,12 +588,23 @@ router.get("/microsoft/mobile-success", (req, res) => {
   console.log("🔍 [/mobile-success] Mobile success page accessed:", { 
     sessionId,
     queryKeys: Object.keys(req.query),
-    fullQuery: req.query
+    fullQuery: req.query,
+    timestamp: new Date().toISOString(),
+    userAgent: req.headers['user-agent'],
+    referer: req.headers.referer,
+    fullUrl: req.protocol + '://' + req.get('host') + req.originalUrl
   });
   console.log("🔍 [/mobile-success] Current sessions in memory:", {
     totalSessions: mobileAuthTokens.size,
     sessionIds: Array.from(mobileAuthTokens.keys()),
-    requestedSessionId: sessionId
+    requestedSessionId: sessionId,
+    sessionDetails: Array.from(mobileAuthTokens.entries()).map(([id, data]) => ({
+      id,
+      created: new Date(data.timestamp).toISOString(),
+      expires: new Date(data.expires).toISOString(),
+      userEmail: data.userData?.email,
+      isExpired: Date.now() > data.expires
+    }))
   });
   
   if (!sessionId) {
@@ -619,11 +630,14 @@ router.get("/microsoft/mobile-success", (req, res) => {
     found: !!authData,
     expired: authData ? (Date.now() > authData.expires) : 'N/A',
     expiresAt: authData ? new Date(authData.expires).toISOString() : 'N/A',
-    currentTime: new Date().toISOString()
+    currentTime: new Date().toISOString(),
+    timeDifference: authData ? `${Math.round((Date.now() - authData.timestamp) / 1000)}s ago` : 'N/A'
   });
   
   if (!authData) {
     console.log("❌ [/mobile-success] Session not found in memory");
+    console.log("🔍 [/mobile-success] All available sessions:", Array.from(mobileAuthTokens.keys()));
+    
     return res.status(404).send(`
       <html>
         <head>
@@ -634,6 +648,8 @@ router.get("/microsoft/mobile-success", (req, res) => {
           <h2>⏰ Session hết hạn</h2>
           <p>Session xác thực đã hết hạn. Vui lòng đóng trang này và thử lại từ ứng dụng.</p>
           <p><small>Debug: SessionId không tìm thấy trong memory</small></p>
+          <p><small>Requested: ${sessionId}</small></p>
+          <p><small>Available: ${Array.from(mobileAuthTokens.keys()).join(', ')}</small></p>
         </body>
       </html>
     `);
@@ -706,6 +722,11 @@ router.get("/microsoft/mobile-success", (req, res) => {
             border-radius: 10px;
             margin-top: 20px;
           }
+          .debug {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 20px;
+          }
         </style>
       </head>
       <body>
@@ -717,6 +738,10 @@ router.get("/microsoft/mobile-success", (req, res) => {
             <p><strong>Hướng dẫn:</strong></p>
             <p>Vui lòng đóng trang này và quay lại ứng dụng.</p>
             <p>Ứng dụng sẽ tự động hoàn tất quá trình đăng nhập.</p>
+          </div>
+          <div class="debug">
+            <p>SessionId: ${sessionId}</p>
+            <p>Time: ${new Date().toISOString()}</p>
           </div>
         </div>
         <script>
@@ -748,6 +773,40 @@ router.get("/microsoft/poll-token/:sessionId", (req, res) => {
   
   if (!authData) {
     console.log("❌ [/poll-token] SessionId not found or expired:", sessionId);
+    console.log("🔍 [/poll-token] Available sessions:", Array.from(mobileAuthTokens.keys()));
+    
+    // Fallback: Try to find a recent session (within last 2 minutes) if exact match fails
+    console.log("🔍 [/poll-token] Trying fallback - looking for recent sessions...");
+    const now = Date.now();
+    const recentSessions = Array.from(mobileAuthTokens.entries())
+      .filter(([id, data]) => {
+        const ageInMs = now - data.timestamp;
+        const ageInMinutes = ageInMs / (1000 * 60);
+        return ageInMinutes <= 2 && now <= data.expires; // within 2 minutes and not expired
+      })
+      .sort((a, b) => b[1].timestamp - a[1].timestamp); // sort by newest first
+    
+    console.log("🔍 [/poll-token] Recent sessions found:", recentSessions.map(([id, data]) => ({
+      id,
+      ageMinutes: Math.round((now - data.timestamp) / (1000 * 60) * 10) / 10,
+      userEmail: data.userData?.email
+    })));
+    
+    if (recentSessions.length > 0) {
+      const [fallbackSessionId, fallbackAuthData] = recentSessions[0];
+      console.log("✅ [/poll-token] Using most recent session as fallback:", fallbackSessionId);
+      
+      // Remove the session after successful retrieval
+      mobileAuthTokens.delete(fallbackSessionId);
+      
+      return res.json({
+        success: true,
+        token: fallbackAuthData.token,
+        user: fallbackAuthData.userData,
+        note: "Retrieved from recent session (fallback mechanism)"
+      });
+    }
+    
     return res.status(404).json({ success: false, message: "Session not found or expired" });
   }
   
@@ -767,6 +826,45 @@ router.get("/microsoft/poll-token/:sessionId", (req, res) => {
     success: true,
     token: authData.token,
     user: authData.userData
+  });
+});
+
+// API endpoint để mobile app lấy token mới nhất (fallback method)
+router.get("/microsoft/poll-latest-token", (req, res) => {
+  console.log("🔍 [/poll-latest-token] Polling for latest token");
+  
+  const now = Date.now();
+  const recentSessions = Array.from(mobileAuthTokens.entries())
+    .filter(([id, data]) => {
+      const ageInMs = now - data.timestamp;
+      const ageInMinutes = ageInMs / (1000 * 60);
+      return ageInMinutes <= 5 && now <= data.expires; // within 5 minutes and not expired
+    })
+    .sort((a, b) => b[1].timestamp - a[1].timestamp); // sort by newest first
+  
+  console.log("🔍 [/poll-latest-token] Recent sessions found:", recentSessions.map(([id, data]) => ({
+    id,
+    ageMinutes: Math.round((now - data.timestamp) / (1000 * 60) * 10) / 10,
+    userEmail: data.userData?.email
+  })));
+  
+  if (recentSessions.length === 0) {
+    console.log("❌ [/poll-latest-token] No recent sessions found");
+    return res.status(404).json({ success: false, message: "No recent authentication found" });
+  }
+  
+  const [latestSessionId, latestAuthData] = recentSessions[0];
+  console.log("✅ [/poll-latest-token] Using latest session:", latestSessionId);
+  
+  // Remove the session after successful retrieval
+  mobileAuthTokens.delete(latestSessionId);
+  
+  return res.json({
+    success: true,
+    token: latestAuthData.token,
+    user: latestAuthData.userData,
+    sessionId: latestSessionId,
+    note: "Retrieved latest token"
   });
 });
 
