@@ -212,7 +212,9 @@ router.get("/microsoft/callback", (req, res, next) => {
       
       // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route với error
       if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
-        return res.redirect(`/api/auth/microsoft/success?error=${encodeURIComponent(err.message)}`);
+        const mobileParam = isMobile ? "&mobile=true" : "";
+        const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
+        return res.redirect(`/api/auth/microsoft/success?error=${encodeURIComponent(err.message)}${mobileParam}${redirectParam}`);
       } else {
         return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(err.message)}`);
       }
@@ -229,7 +231,9 @@ router.get("/microsoft/callback", (req, res, next) => {
         
         // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route với error
         if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
-          return res.redirect(`/api/auth/microsoft/success?error=Session+expired+please+try+again`);
+          const mobileParam = isMobile ? "&mobile=true" : "";
+          const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
+          return res.redirect(`/api/auth/microsoft/success?error=Session+expired+please+try+again${mobileParam}${redirectParam}`);
         } else {
           return res.redirect(`${frontendUrl}/login?error=Session+expired+please+try+again`);
         }
@@ -286,7 +290,9 @@ router.get("/microsoft/callback", (req, res, next) => {
       
       // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route
       if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
-        const webRedirectUrl = `/api/auth/microsoft/success?token=${token}${admissionQuery}`;
+        const mobileParam = isMobile ? "&mobile=true" : "";
+        const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
+        const webRedirectUrl = `/api/auth/microsoft/success?token=${token}${admissionQuery}${mobileParam}${redirectParam}`;
         console.log("🌐 [SUCCESS] Redirecting to backend success route:", webRedirectUrl);
         return res.redirect(webRedirectUrl);
       } else {
@@ -304,7 +310,9 @@ router.get("/microsoft/callback", (req, res, next) => {
       
       // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route với error
       if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
-        return res.redirect(`/api/auth/microsoft/success?error=${encodeURIComponent(error.message)}`);
+        const mobileParam = isMobile ? "&mobile=true" : "";
+        const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
+        return res.redirect(`/api/auth/microsoft/success?error=${encodeURIComponent(error.message)}${mobileParam}${redirectParam}`);
       } else {
         return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error.message)}`);
       }
@@ -320,38 +328,55 @@ router.get("/microsoft/success", async (req, res) => {
   const token = req.query.token;
   const error = req.query.error;
   const admission = req.query.admission;
+  const mobile = req.query.mobile;
+  const redirectUri = req.query.redirectUri;
 
   console.log("🔍 [/microsoft/success] Success route called:", {
     hasToken: !!token,
     hasError: !!error,
     admission: admission,
+    mobile: mobile,
+    redirectUri: redirectUri,
     query: req.query
   });
 
   if (error) {
-    return res.send(`
-<!DOCTYPE html>
-<html>
-<head><title>Authentication Error</title><meta charset="UTF-8"></head>
-<body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-    <h2>❌ Authentication Error</h2>
-    <p>Error: ${error}</p>
-    <a href="/api/auth/microsoft">Try Again</a>
-</body>
-</html>`);
+    // Nếu là mobile app, redirect về mobile với error
+    if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
+      return res.redirect(`${redirectUri}?error=${encodeURIComponent(error)}`);
+    }
+    
+    // Nếu có frontend URL, redirect về đó
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
+      return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error)}`);
+    }
+    
+    // Nếu không, trả về JSON error
+    return res.status(400).json({ 
+      success: false, 
+      message: error,
+      error: error 
+    });
   }
 
   if (!token) {
-    return res.send(`
-<!DOCTYPE html>
-<html>
-<head><title>Authentication Error</title><meta charset="UTF-8"></head>
-<body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-    <h2>❌ Authentication Error</h2>
-    <p>No token provided</p>
-    <a href="/api/auth/microsoft">Try Again</a>
-</body>
-</html>`);
+    // Nếu là mobile app, redirect về mobile với error
+    if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
+      return res.redirect(`${redirectUri}?error=No+token+provided`);
+    }
+    
+    // Nếu có frontend URL, redirect về đó
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
+      return res.redirect(`${frontendUrl}/login?error=No+token+provided`);
+    }
+    
+    // Nếu không, trả về JSON error
+    return res.status(400).json({ 
+      success: false, 
+      message: "No token provided" 
+    });
   }
 
   try {
@@ -378,44 +403,59 @@ router.get("/microsoft/success", async (req, res) => {
       employeeCode: user.employeeCode || "N/A",
     };
 
-    // Redirect về dashboard với token và user data
-    const dashboardUrl = admission === "true" ? "/dashboard?admission=true" : "/dashboard";
-    
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Authentication Success</title>
-    <meta charset="UTF-8">
-</head>
-<body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-    <h2>✅ Authentication Successful</h2>
-    <p>Redirecting to dashboard...</p>
-    <script>
-        // Store token và user data trong localStorage
-        localStorage.setItem('token', '${token}');
-        localStorage.setItem('user', JSON.stringify(${JSON.stringify(userData)}));
-        
-        // Redirect tới dashboard
-        window.location.href = '${dashboardUrl}';
-    </script>
-</body>
-</html>`;
+    console.log("✅ [/microsoft/success] Auth success, deciding redirect:", { 
+      mobile, 
+      redirectUri, 
+      hasToken: !!token,
+      isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false
+    });
 
-    return res.send(html);
+    // 1. Ưu tiên mobile app redirect
+    if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
+      console.log("📱 [SUCCESS] Redirecting to mobile app:", `${redirectUri}?token=${token}`);
+      return res.redirect(`${redirectUri}?token=${token}`);
+    }
+
+    // 2. Nếu có frontend URL riêng, redirect về frontend
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
+      const dashboardUrl = admission === "true" 
+        ? `${frontendUrl}/dashboard?admission=true&token=${token}` 
+        : `${frontendUrl}/dashboard?token=${token}`;
+      
+      console.log("🌐 [SUCCESS] Redirecting to frontend:", dashboardUrl);
+      return res.redirect(dashboardUrl);
+    }
+
+    // 3. Nếu không có frontend URL, trả về JSON response như login thông thường
+    console.log("📊 [SUCCESS] Returning JSON response");
+    return res.status(200).json({
+      message: "Đăng nhập Microsoft thành công!",
+      token,
+      user: userData,
+      admission: admission === "true"
+    });
 
   } catch (jwtError) {
     console.error("❌ [/microsoft/success] Invalid token:", jwtError);
-    return res.send(`
-<!DOCTYPE html>
-<html>
-<head><title>Authentication Error</title><meta charset="UTF-8"></head>
-<body style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-    <h2>❌ Authentication Error</h2>
-    <p>Invalid token. Please try again.</p>
-    <a href="/api/auth/microsoft">Try Again</a>
-</body>
-</html>`);
+    
+    // Nếu là mobile app, redirect về mobile với error
+    if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
+      return res.redirect(`${redirectUri}?error=Invalid+token`);
+    }
+    
+    // Nếu có frontend URL, redirect về đó
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
+      return res.redirect(`${frontendUrl}/login?error=Invalid+token`);
+    }
+    
+    // Nếu không, trả về JSON error
+    return res.status(400).json({ 
+      success: false, 
+      message: "Invalid token",
+      error: jwtError.message 
+    });
   }
 });
 
