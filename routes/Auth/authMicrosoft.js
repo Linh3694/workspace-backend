@@ -128,7 +128,10 @@ router.get("/microsoft", (req, res, next) => {
     isMobile,
     isAdmission,
     sessionId: req.sessionID,
-    sessionExists: !!req.session
+    sessionExists: !!req.session,
+    userAgent: req.headers['user-agent'],
+    originalUrl: req.originalUrl,
+    fullUrl: req.protocol + '://' + req.get('host') + req.originalUrl
   });
 
   // Ensure session exists before storing data
@@ -279,18 +282,22 @@ router.get("/microsoft/callback", (req, res, next) => {
         userAgent: req.headers['user-agent']
       });
 
-      // 1. Ưu tiên mobile app redirect nếu có isMobile=true hoặc redirectUri là staffportal scheme
-      if (isMobile || (redirectUri && redirectUri.startsWith('staffportal://'))) {
-        console.log("📱 [SUCCESS] Mobile detected in callback, redirecting to mobile app");
+      // 1. Ưu tiên mobile app redirect nếu có mobile=true hoặc redirectUri là staffportal scheme
+      if ((mobile === "true") || (redirectUri && redirectUri.startsWith('staffportal://'))) {
+        console.log("📱 [SUCCESS] Mobile detected, redirecting to mobile app");
         
-        let mobileRedirectUri = 'staffportal://auth/success';
         if (redirectUri && redirectUri.startsWith('staffportal://')) {
-          mobileRedirectUri = redirectUri;
+          // Sử dụng chính xác redirectUri mà mobile app gửi
+          console.log("📱 [SUCCESS] Using exact mobile redirectUri:", `${redirectUri}?token=${token}`);
+          res.writeHead(302, { 'Location': `${redirectUri}?token=${token}` });
+          return res.end();
+        } else if (mobile === "true") {
+          // Fallback nếu chỉ có mobile=true mà không có redirectUri
+          console.log("📱 [SUCCESS] Mobile flag detected, using default mobile redirect scheme");
+          const defaultMobileRedirectUri = 'staffportal://auth/success';
+          res.writeHead(302, { 'Location': `${defaultMobileRedirectUri}?token=${token}` });
+          return res.end();
         }
-        
-        console.log("📱 [SUCCESS] Final mobile redirect from callback:", `${mobileRedirectUri}?token=${token}`);
-        res.writeHead(302, { 'Location': `${mobileRedirectUri}?token=${token}` });
-        return res.end();
       }
 
       // Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend
@@ -347,7 +354,10 @@ router.get("/microsoft/success", async (req, res) => {
     mobile: mobile,
     redirectUri: redirectUri,
     query: req.query,
-    allQueryKeys: Object.keys(req.query)
+    allQueryKeys: Object.keys(req.query),
+    userAgent: req.headers['user-agent'],
+    originalUrl: req.originalUrl,
+    fullUrl: req.protocol + '://' + req.get('host') + req.originalUrl
   });
 
   console.log("🔍 [/microsoft/success] Mobile detection:", {
@@ -434,14 +444,18 @@ router.get("/microsoft/success", async (req, res) => {
     if ((mobile === "true") || (redirectUri && redirectUri.startsWith('staffportal://'))) {
       console.log("📱 [SUCCESS] Mobile detected, redirecting to mobile app");
       
-      let mobileRedirectUri = 'staffportal://auth/success';
       if (redirectUri && redirectUri.startsWith('staffportal://')) {
-        mobileRedirectUri = redirectUri;
+        // Sử dụng chính xác redirectUri mà mobile app gửi
+        console.log("📱 [SUCCESS] Using exact mobile redirectUri:", `${redirectUri}?token=${token}`);
+        res.writeHead(302, { 'Location': `${redirectUri}?token=${token}` });
+        return res.end();
+      } else if (mobile === "true") {
+        // Fallback nếu chỉ có mobile=true mà không có redirectUri
+        console.log("📱 [SUCCESS] Mobile flag detected, using default mobile redirect scheme");
+        const defaultMobileRedirectUri = 'staffportal://auth/success';
+        res.writeHead(302, { 'Location': `${defaultMobileRedirectUri}?token=${token}` });
+        return res.end();
       }
-      
-      console.log("📱 [SUCCESS] Final mobile redirect:", `${mobileRedirectUri}?token=${token}`);
-      res.writeHead(302, { 'Location': `${mobileRedirectUri}?token=${token}` });
-      return res.end();
     }
 
     // 2. Nếu có frontend URL riêng, redirect về frontend
