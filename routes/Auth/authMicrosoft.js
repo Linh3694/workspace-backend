@@ -278,10 +278,12 @@ router.get("/microsoft/callback", (req, res, next) => {
         isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false
       });
 
-      // Ưu tiên redirect mobile trước (only if valid staffportal scheme)
-      if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
+      // 1. Ưu tiên mobile app redirect
+      if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
         console.log("📱 [SUCCESS] Redirecting to mobile app:", `${redirectUri}?token=${token}`);
-        return res.redirect(`${redirectUri}?token=${token}`);
+        // Use immediate redirect for mobile
+        res.writeHead(302, { 'Location': `${redirectUri}?token=${token}` });
+        return res.end();
       }
 
       // Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend
@@ -417,16 +419,36 @@ router.get("/microsoft/success", async (req, res) => {
       mobile, 
       redirectUri, 
       hasToken: !!token,
-      isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false
+      isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false,
+      userAgent: req.headers['user-agent']
     });
 
     // 1. Ưu tiên mobile app redirect
     if (mobile === "true" && redirectUri && redirectUri.startsWith('staffportal://')) {
       console.log("📱 [SUCCESS] Redirecting to mobile app:", `${redirectUri}?token=${token}`);
-      return res.redirect(`${redirectUri}?token=${token}`);
+      // Use immediate redirect for mobile
+      res.writeHead(302, { 'Location': `${redirectUri}?token=${token}` });
+      return res.end();
     }
 
-    // 2. Nếu có frontend URL riêng, redirect về frontend
+    // 2. Fallback: Nếu không có frontend URL hoặc có vẻ như từ mobile (không có browser agent)
+    const userAgent = req.headers['user-agent'] || '';
+    const isMobileUA = userAgent.includes('ExpoClient') || userAgent.includes('ReactNativeWebView') || !userAgent.includes('Mozilla');
+    
+    console.log("🔍 [/microsoft/success] User agent analysis:", {
+      userAgent: userAgent,
+      isMobileUA: isMobileUA,
+      hasValidParams: mobile === "true" && redirectUri
+    });
+
+    if (isMobileUA) {
+      console.log("📱 [SUCCESS] Detected mobile user agent, using mobile redirect scheme");
+      const mobileRedirectUri = 'staffportal://auth/success';
+      res.writeHead(302, { 'Location': `${mobileRedirectUri}?token=${token}` });
+      return res.end();
+    }
+
+    // 3. Nếu có frontend URL riêng, redirect về frontend
     const frontendUrl = process.env.FRONTEND_URL;
     if (frontendUrl && !frontendUrl.includes('api-dev.wellspring.edu.vn')) {
       const dashboardUrl = admission === "true" 
@@ -437,7 +459,7 @@ router.get("/microsoft/success", async (req, res) => {
       return res.redirect(dashboardUrl);
     }
 
-    // 3. Nếu không có frontend URL, trả về JSON response như login thông thường
+    // 4. Nếu không có frontend URL, trả về JSON response như login thông thường
     console.log("📊 [SUCCESS] Returning JSON response");
     return res.status(200).json({
       message: "Đăng nhập Microsoft thành công!",
