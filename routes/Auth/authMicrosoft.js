@@ -293,10 +293,43 @@ router.get("/microsoft/callback", (req, res, next) => {
 
       // 2. Hoặc nếu có mobile === "true" HOẶC detect được mobile từ User-Agent
       if (isMobile) {
-        console.log("📱 [SUCCESS] Mobile flag detected in callback, using default mobile redirect scheme");
-        const defaultMobileRedirectUri = 'staffportal://auth/success';
-        console.log("📱 [SUCCESS] Redirecting to:", `${defaultMobileRedirectUri}?token=${token}`);
-        return res.redirect(`${defaultMobileRedirectUri}?token=${token}`);
+        console.log("📱 [SUCCESS] Mobile flag detected in callback, using sessionId approach");
+        
+        // Tạo sessionId để mobile app poll token
+        const sessionId = `mobile_auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Lưu token với sessionId trong memory (expire sau 5 phút)
+        mobileAuthTokens.set(sessionId, {
+          token,
+          userData: {
+            _id: user._id,
+            fullname: user.fullname || "N/A",
+            email: user.email || "N/A",
+            role: user.role || "user",
+            avatar: user.avatarUrl,
+            department: user.department || "N/A",
+            needProfileUpdate: user.needProfileUpdate || false,
+            jobTitle: user.jobTitle || "N/A",
+            employeeCode: user.employeeCode || "N/A",
+          },
+          timestamp: Date.now(),
+          expires: Date.now() + (5 * 60 * 1000) // 5 minutes
+        });
+        
+        // Clean up expired tokens
+        for (const [key, value] of mobileAuthTokens.entries()) {
+          if (Date.now() > value.expires) {
+            mobileAuthTokens.delete(key);
+          }
+        }
+        
+        console.log("📱 [SUCCESS] Token saved with sessionId:", sessionId);
+        
+        // Redirect về web page với sessionId (thay vì deep link)
+        const baseUrl = req.protocol + '://' + req.get('host');
+        const mobileSuccessUrl = `${baseUrl}/api/auth/microsoft/mobile-success?sessionId=${sessionId}`;
+        console.log("📱 [SUCCESS] Redirecting to web URL:", mobileSuccessUrl);
+        return res.redirect(mobileSuccessUrl);
       }
 
       // 3. Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend hoặc success route
@@ -529,6 +562,118 @@ router.get("/microsoft/success", async (req, res) => {
       error: jwtError.message 
     });
   }
+});
+
+// Route để hiển thị trang thành công cho mobile (thay vì deep link)
+router.get("/microsoft/mobile-success", (req, res) => {
+  const { sessionId } = req.query;
+  
+  console.log("🔍 [/mobile-success] Mobile success page accessed:", { sessionId });
+  
+  if (!sessionId) {
+    return res.status(400).send(`
+      <html>
+        <head>
+          <title>Lỗi xác thực</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h2>❌ Lỗi xác thực</h2>
+          <p>Không tìm thấy session. Vui lòng thử lại.</p>
+        </body>
+      </html>
+    `);
+  }
+  
+  // Verify session exists
+  const authData = mobileAuthTokens.get(sessionId);
+  if (!authData) {
+    return res.status(404).send(`
+      <html>
+        <head>
+          <title>Session hết hạn</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h2>⏰ Session hết hạn</h2>
+          <p>Session xác thực đã hết hạn. Vui lòng đóng trang này và thử lại từ ứng dụng.</p>
+        </body>
+      </html>
+    `);
+  }
+  
+  // Show success page
+  res.send(`
+    <html>
+      <head>
+        <title>Đăng nhập thành công</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+          }
+          .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .success-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+          }
+          h2 {
+            margin: 0 0 20px 0;
+            font-size: 24px;
+          }
+          p {
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 10px 0;
+          }
+          .instruction {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="success-icon">✅</div>
+          <h2>Đăng nhập Microsoft thành công!</h2>
+          <p>Bạn đã được xác thực thành công.</p>
+          <div class="instruction">
+            <p><strong>Hướng dẫn:</strong></p>
+            <p>Vui lòng đóng trang này và quay lại ứng dụng.</p>
+            <p>Ứng dụng sẽ tự động hoàn tất quá trình đăng nhập.</p>
+          </div>
+        </div>
+        <script>
+          // Auto close sau 3 giây nếu có thể
+          setTimeout(function() {
+            try {
+              window.close();
+            } catch (e) {
+              console.log('Cannot auto close window');
+            }
+          }, 3000);
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 // API endpoint để mobile app poll token bằng sessionId
