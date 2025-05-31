@@ -182,6 +182,16 @@ router.get("/microsoft/callback", (req, res, next) => {
     console.log("✅ [/callback] Parsed state:", { redirectUri, isMobile, isAdmission });
   } catch (err) {
     console.warn("⚠️ [/callback] Unable to parse state:", err);
+    
+    // FALLBACK: Detect mobile từ User-Agent nếu state parsing thất bại
+    const userAgent = req.headers['user-agent'] || '';
+    isMobile = userAgent.includes('Mobile') && 
+               (userAgent.includes('iPhone') || userAgent.includes('Android'));
+    
+    console.log("🔍 [/callback] Fallback mobile detection from User-Agent:", {
+      isMobile,
+      userAgent: userAgent.substring(0, 100)
+    });
   }
 
   console.log("🔍 [/callback] Final params:", { redirectUri, isMobile, isAdmission });
