@@ -101,7 +101,7 @@ router.post('/microsoft/login', async (req, res) => {
       
       // Generate JWT token for our system
       const systemToken = jwt.sign(
-        { userId: user._id, email: user.email, role: user.role },
+        { id: user._id, role: user.role },
         process.env.JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -144,7 +144,7 @@ router.post('/microsoft/login', async (req, res) => {
 
       // Generate JWT token for our system
       const systemToken = jwt.sign(
-        { userId: savedUser._id, email: savedUser.email, role: savedUser.role },
+        { id: savedUser._id, role: savedUser.role },
         process.env.JWT_SECRET,
         { expiresIn: '7d' }
       );

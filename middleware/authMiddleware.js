@@ -17,9 +17,15 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ message: "Unauthorized - Invalid token" });
     }
 
+    console.log('🔍 [AuthMiddleware] Decoded token:', {
+      id: decoded.id,
+      role: decoded.role
+    });
+
     // Tìm user trong DB
     const user = await User.findById(decoded.id).select("fullname email role needProfileUpdate");
     if (!user) {
+      console.error('❌ [AuthMiddleware] User not found with ID:', decoded.id);
       return res.status(404).json({ message: "User not found" });
     }
 
@@ -31,10 +37,14 @@ const authMiddleware = async (req, res, next) => {
       role: user.role,
       needProfileUpdate: user.needProfileUpdate,
     };
-    console.log("User in Middleware:", req.user);
+    console.log("✅ [AuthMiddleware] User authenticated:", {
+      id: req.user._id,
+      name: req.user.fullname,
+      role: req.user.role
+    });
     next();
   } catch (error) {
-    console.error("Authentication error:", error);
+    console.error("❌ [AuthMiddleware] Authentication error:", error);
     res.status(401).json({ message: "Unauthorized", error: error.message });
   }
 };

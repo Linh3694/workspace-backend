@@ -70,16 +70,21 @@ exports.createTicket = async (req, res) => {
 exports.getTickets = async (req, res) => {
   console.log("🔵 Kiểm tra req.user:", req.user); // ✅ Kiểm tra user có tồn tại không
 
-  const { status, priority, userTickets } = req.query;
+  const { status, priority, userTickets, creator, search } = req.query;
   const userId = req.user._id; // Lấy ID user từ token
 
-  console.log("Query parameters:", { status, priority, userTickets });
+  console.log("Query parameters:", { status, priority, userTickets, creator, search });
 
   try {
     let query = {};
 
+    // Nếu có parameter creator, filter theo creator
+    if (creator) {
+      query.creator = creator;
+      console.log("🔍 Filtering by creator:", creator);
+    }
     // Nếu có parameter userTickets, chỉ lấy ticket của user đó
-    if (userTickets) {
+    else if (userTickets) {
       query = { $or: [{ creator: userTickets }, { assignedTo: userTickets }] };
     } else {
     // Nếu không có userTickets, kiểm tra role
@@ -91,6 +96,18 @@ exports.getTickets = async (req, res) => {
       }
     }
 
+    // Add search functionality
+    if (search) {
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { title: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+          { ticketCode: { $regex: search, $options: 'i' } }
+        ]
+      });
+    }
+
     if (status === "assignedOrProcessing") {
       query.status = { $in: ["Assigned", "Processing"] };
     } else if (status) {
@@ -99,7 +116,7 @@ exports.getTickets = async (req, res) => {
     }
     if (priority) query.priority = priority;
 
-    console.log("Final query:", query);
+    console.log("Final query:", JSON.stringify(query, null, 2));
 
     const tickets = await Ticket.find(query)
       .sort({ createdAt: -1 }) // Sắp xếp giảm dần theo createdAt
