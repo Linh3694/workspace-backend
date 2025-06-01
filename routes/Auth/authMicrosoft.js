@@ -625,16 +625,23 @@ router.get("/microsoft/mobile-success", async (req, res) => {
   // If auto mode, serve minimal HTML that instantly redirects and closes the window
   if (auto) {
     return res.send(`
-      <html>
-        <head>
-          <meta http-equiv="refresh" content="0;url=staffportal://auth/success?sessionId=${sessionId}">
-          <script>
-            window.location.href = 'staffportal://auth/success?sessionId=${sessionId}';
-            setTimeout(() => window.close(), 100);
-          </script>
-        </head>
-        <body></body>
-      </html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <style>html,body{margin:0;padding:0;background:#fff;}</style>
+        <script>
+          (function() {
+            // Try to open the app via custom scheme
+            var target = 'staffportal://auth/success?sessionId=${sessionId}';
+            // Give iOS a moment; if it fails, fall back to normal success page
+            var fallback = '${req.protocol}://${req.get('host')}/api/auth/microsoft/mobile-success?sessionId=${sessionId}';
+            setTimeout(function() { window.location.href = fallback; }, 800);
+            window.location.replace(target);
+          })();
+        </script>
+      </head>
+      <body></body>
+    </html>
     `);
   }
   // Show success page (original, big version)
