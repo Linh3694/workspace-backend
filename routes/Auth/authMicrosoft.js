@@ -335,9 +335,14 @@ router.get("/microsoft/callback", (req, res, next) => {
           expires: Date.now() + (5 * 60 * 1000)
         };
         await saveMobileAuthSession(sessionId, sessionData, 300);
-        const baseUrl = req.protocol + '://' + req.get('host');
-        const mobileSuccessUrl = `${baseUrl}/api/auth/microsoft/mobile-success?sessionId=${sessionId}`;
-        return res.redirect(mobileSuccessUrl);
+        // Prefer deep‑linking straight back to the app so that the in‑app
+        // browser (SFSafariView / Chrome Custom Tab) closes immediately.
+        if (redirectUri && redirectUri.startsWith('staffportal://')) {
+          return res.redirect(`${redirectUri}?sessionId=${sessionId}`);
+        }
+
+        // Fallback deep link if redirectUri is missing (should rarely happen)
+        return res.redirect(`staffportal://auth/success?sessionId=${sessionId}`);
       }
 
       // 3. Web/Frontend redirect
