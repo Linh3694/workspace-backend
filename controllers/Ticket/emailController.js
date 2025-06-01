@@ -11,9 +11,9 @@ const { convert } = require('html-to-text'); // Added import for html-to-text
 
 // Khởi tạo OAuth 2.0 credentials
 const credential = new ClientSecretCredential(
-  process.env.TENANT_ID,
-  process.env.CLIENT_ID,
-  process.env.CLIENT_SECRET
+  process.env.TENANTTICKET_ID,
+  process.env.CLIENTTICKET_ID,
+  process.env.CLIENTTICKET_SECRET
 );
 
 const authProvider = new TokenCredentialAuthenticationProvider(credential, {
