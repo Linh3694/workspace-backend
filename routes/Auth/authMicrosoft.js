@@ -10,6 +10,14 @@ const { Buffer } = require('buffer');
 
 const azureConfig = require("../../config/azure");
 
+/**
+ * NOTE 2025‑06‑01:
+ *   Mobile flow now skips the intermediate "mobile‑success" HTML.
+ *   Backend redirects directly to the custom scheme so Expo AuthSession
+ *   can close the in‑app browser cleanly without Safari error pop‑ups.
+ *   Set env DISABLE_MS_SUCCESS_UI=1 to return 204 for legacy route.
+ */
+
 // Đã chuyển mobileAuthTokens sang Redis, không dùng Map nữa
 // --- Mobile Auth Redis Helpers -------------------------------------------------
 /**
@@ -335,9 +343,12 @@ router.get("/microsoft/callback", (req, res, next) => {
           expires: Date.now() + (5 * 60 * 1000)
         };
         await saveMobileAuthSession(sessionId, sessionData, 300);
-        // Always serve minimal HTML that immediately triggers the deep‑link.
-        const baseUrl = req.protocol + '://' + req.get('host');
-        return res.redirect(`${baseUrl}/api/auth/microsoft/mobile-success?sessionId=${sessionId}&auto=1`);
+        // Redirect straight to the app scheme so Expo WebBrowser closes automatically
+        const deepLink =
+          (redirectUri && redirectUri.startsWith('staffportal://'))
+            ? `${redirectUri}?sessionId=${sessionId}`
+            : `staffportal://auth/success?sessionId=${sessionId}`;
+        return res.redirect(deepLink);
       }
 
       // 3. Web/Frontend redirect
@@ -568,6 +579,10 @@ router.get("/microsoft/success", async (req, res) => {
 
 // Route để hiển thị trang thành công cho mobile (thay vì deep link)
 router.get("/microsoft/mobile-success", async (req, res) => {
+  // Temporary flag to disable legacy success UI
+  if (process.env.DISABLE_MS_SUCCESS_UI === '1') {
+    return res.sendStatus(204); // No Content – nothing to show
+  }
   const { sessionId } = req.query;
   const auto = req.query.auto === '1';
   if (!sessionId) {
