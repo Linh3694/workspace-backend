@@ -10,8 +10,96 @@ const { Buffer } = require('buffer');
 
 const azureConfig = require("../../config/azure");
 
-// Memory store để lưu token tạm thời cho mobile auth
-const mobileAuthTokens = new Map();
+// Đã chuyển mobileAuthTokens sang Redis, không dùng Map nữa
+// --- Mobile Auth Redis Helpers -------------------------------------------------
+/**
+ * Lưu session mobile auth vào Redis với TTL (giây)
+ */
+async function saveMobileAuthSession(sessionId, data, ttlSeconds = 300) {
+  await redisService.setMobileAuthSession(sessionId, data, ttlSeconds);
+}
+
+/**
+ * Lấy session mobile auth từ Redis
+ */
+async function getMobileAuthSession(sessionId) {
+  return await redisService.getMobileAuthSession(sessionId);
+}
+
+/**
+ * Xoá session mobile auth khỏi Redis
+ */
+async function deleteMobileAuthSession(sessionId) {
+  await redisService.deleteMobileAuthSession(sessionId);
+}
+
+/**
+ * Xoá tất cả session mobile auth khỏi Redis (debug/dev)
+ */
+async function deleteAllMobileAuthSessions() {
+  return await redisService.deleteAllMobileAuthSessions();
+}
+// --- Microsoft Callback Helpers ------------------------------------------------
+/**
+ * Helper: Parse state from rawState param
+ */
+function parseMicrosoftCallbackState(rawState, req) {
+  let redirectUri = "";
+  let isMobile    = false;
+  let isAdmission = false;
+  try {
+    let parsed;
+    try {
+      parsed = JSON.parse(decodeURIComponent(rawState));
+    } catch (urlDecodeError) {
+      parsed = JSON.parse(base64UrlDecode(rawState));
+    }
+    redirectUri  = parsed.redirectUri || "";
+    isMobile     = parsed.mobile === true || parsed.mobile === "true";
+    isAdmission  = parsed.isAdmission === true || parsed.isAdmission === "true";
+  } catch (err) {
+    // FALLBACK: Detect mobile từ User-Agent nếu state parsing thất bại
+    const userAgent = req.headers['user-agent'] || '';
+    isMobile = userAgent.includes('Mobile') &&
+               (userAgent.includes('iPhone') || userAgent.includes('Android'));
+  }
+  return { redirectUri, isMobile, isAdmission };
+}
+
+/**
+ * Helper: Tạo JWT token cho user
+ */
+function createJwtToken(user) {
+  return jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "365d" }
+  );
+}
+
+/**
+ * Helper: Chuẩn bị userData trả về cho mobile/web
+ */
+function buildUserData(user) {
+  return {
+    _id: user._id,
+    fullname: user.fullname || "N/A",
+    email: user.email || "N/A",
+    role: user.role || "user",
+    avatar: user.avatarUrl,
+    department: user.department || "N/A",
+    needProfileUpdate: user.needProfileUpdate || false,
+    jobTitle: user.jobTitle || "N/A",
+    employeeCode: user.employeeCode || "N/A",
+  };
+}
+
+/**
+ * Helper: Tạo sessionId cho mobile auth
+ */
+function generateMobileSessionId() {
+  return `mobile_auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
 
 // --- helpers ----------------------------------------------------------
 /**
@@ -166,44 +254,11 @@ router.get("/microsoft/callback", (req, res, next) => {
     sessionId: req.sessionID,
     sessionExists: !!req.session,
     hasAuthState: !!(req.session && req.session.authState),
-    cookies: req.headers.cookie?.substring(0, 100) + '...' // Log first 100 chars of cookies
+    cookies: req.headers.cookie?.substring(0, 100) + '...'
   });
 
   const rawState = req.query.state || "";
-  let redirectUri = "";
-  let isMobile    = false;
-  let isAdmission = false;
-
-  try {
-    // Thử decode với decodeURIComponent trước (cho mobile app mới)
-    let parsed;
-    try {
-      parsed = JSON.parse(decodeURIComponent(rawState));
-      console.log("✅ [/callback] Parsed state with URL decode:", parsed);
-    } catch (urlDecodeError) {
-      // Fallback về base64 decode (cho compatibility)
-      parsed = JSON.parse(base64UrlDecode(rawState));
-      console.log("✅ [/callback] Parsed state with base64 decode:", parsed);
-    }
-    
-    redirectUri  = parsed.redirectUri || "";
-    isMobile     = parsed.mobile === true || parsed.mobile === "true";
-    isAdmission  = parsed.isAdmission === true || parsed.isAdmission === "true";
-    console.log("✅ [/callback] Final parsed state:", { redirectUri, isMobile, isAdmission });
-  } catch (err) {
-    console.warn("⚠️ [/callback] Unable to parse state:", err);
-    
-    // FALLBACK: Detect mobile từ User-Agent nếu state parsing thất bại
-    const userAgent = req.headers['user-agent'] || '';
-    isMobile = userAgent.includes('Mobile') && 
-               (userAgent.includes('iPhone') || userAgent.includes('Android'));
-    
-    console.log("🔍 [/callback] Fallback mobile detection from User-Agent:", {
-      isMobile,
-      userAgent: userAgent.substring(0, 100)
-    });
-  }
-
+  const { redirectUri, isMobile, isAdmission } = parseMicrosoftCallbackState(rawState, req);
   console.log("🔍 [/callback] Final params:", { redirectUri, isMobile, isAdmission });
 
   // Custom callback to handle the passport authentication result
@@ -216,16 +271,13 @@ router.get("/microsoft/callback", (req, res, next) => {
       redirectUri
     });
 
+    // --- Handle error cases ---
     if (err) {
       console.error("❌ [/callback] Microsoft OAuth error:", err);
       if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
-        console.log("📱 [ERROR] Redirecting to mobile app with error");
         return res.redirect(`${redirectUri}?error=${encodeURIComponent(err.message)}`);
       }
-      console.log("🌐 [ERROR] Redirecting to web with error");
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      
-      // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route với error
       if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
         const mobileParam = isMobile ? "&mobile=true" : "";
         const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
@@ -234,17 +286,10 @@ router.get("/microsoft/callback", (req, res, next) => {
         return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(err.message)}`);
       }
     }
-    
     if (!user) {
       console.error("❌ [/callback] No user found after authentication");
-      console.error("❌ [/callback] Info:", info);
-      
-      // If session state was lost, redirect to login with a specific error
       if (!redirectUri && !isMobile) {
-        console.log("🌐 [NO_USER] Session lost - redirecting to web login");
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        
-        // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route với error
         if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
           const mobileParam = isMobile ? "&mobile=true" : "";
           const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
@@ -253,15 +298,10 @@ router.get("/microsoft/callback", (req, res, next) => {
           return res.redirect(`${frontendUrl}/login?error=Session+expired+please+try+again`);
         }
       }
-      
       if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
-        console.log("📱 [NO_USER] Redirecting to mobile app with error");
         return res.redirect(`${redirectUri}?error=Authentication+failed`);
       }
-      console.log("🌐 [NO_USER] Redirecting to web with error");
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      
-      // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route với error
       if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
         return res.redirect(`/api/auth/microsoft/success?error=Authentication+failed`);
       } else {
@@ -269,114 +309,55 @@ router.get("/microsoft/callback", (req, res, next) => {
       }
     }
 
+    // --- Handle success ---
     try {
-      // 🔑 Tạo JWT token
-      const token = jwt.sign(
-        { id: user._id, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: "365d" }
-      );
+      const token = createJwtToken(user);
+      // Save token/user in Redis (non-blocking)
+      redisService.setAuthToken(user._id, token).catch(() => {});
+      redisService.setUserData(user._id, user).catch(() => {});
 
-      // Lưu token vào Redis nếu có thể, nhưng không block luồng chính
-      try {
-        await redisService.setAuthToken(user._id, token);
-        await redisService.setUserData(user._id, user);
-      } catch (redisError) {
-        console.warn("Không thể lưu vào Redis:", redisError);
-        // Tiếp tục xử lý mà không block
-      }
-
-      console.log("✅ [/callback] Auth success, deciding redirect:", { 
-        isMobile, 
-        redirectUri, 
-        hasToken: !!token,
-        isStaffPortalScheme: redirectUri ? redirectUri.startsWith('staffportal://') : false,
-        userAgent: req.headers['user-agent'],
-        parsedStateDetails: { isMobile, redirectUri, isAdmission }
-      });
-
-      // 1. LUÔN ưu tiên mobile app redirect nếu có redirectUri là staffportal scheme
+      // 1. Mobile deep link redirect
       if (redirectUri && redirectUri.startsWith('staffportal://')) {
-        console.log("📱 [SUCCESS] Staffportal scheme detected, redirecting to mobile app");
         return res.redirect(`${redirectUri}?token=${token}`);
       }
 
-      // 2. Hoặc nếu có mobile === "true" HOẶC detect được mobile từ User-Agent
-      const isMobileUserAgent = req.headers['user-agent'] && 
-        req.headers['user-agent'].includes('Mobile') && 
+      // 2. Mobile app session (polling)
+      const isMobileUserAgent = req.headers['user-agent'] &&
+        req.headers['user-agent'].includes('Mobile') &&
         (req.headers['user-agent'].includes('iPhone') || req.headers['user-agent'].includes('Android'));
-      
-      console.log("🔍 [/callback] Mobile detection:", {
-        isMobileUserAgent,
-        originalMobile: isMobile,
-        userAgent: req.headers['user-agent']?.substring(0, 100)
-      });
-      
       if (isMobile === true || isMobileUserAgent) {
-        console.log("📱 [SUCCESS] Mobile detected (flag or User-Agent), creating sessionId for mobile app");
-        
-        // Tạo sessionId để mobile app poll token
-        const sessionId = `mobile_auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        // Lưu token với sessionId trong memory (expire sau 5 phút)
-        mobileAuthTokens.set(sessionId, {
+        const sessionId = generateMobileSessionId();
+        const userData = buildUserData(user);
+        const sessionData = {
           token,
-          userData: {
-            _id: user._id,
-            fullname: user.fullname || "N/A",
-            email: user.email || "N/A",
-            role: user.role || "user",
-            avatar: user.avatarUrl,
-            department: user.department || "N/A",
-            needProfileUpdate: user.needProfileUpdate || false,
-            jobTitle: user.jobTitle || "N/A",
-            employeeCode: user.employeeCode || "N/A",
-          },
+          userData,
           timestamp: Date.now(),
-          expires: Date.now() + (5 * 60 * 1000) // 5 minutes
-        });
-        
-        // Clean up expired tokens
-        for (const [key, value] of mobileAuthTokens.entries()) {
-          if (Date.now() > value.expires) {
-            mobileAuthTokens.delete(key);
-          }
-        }
-        
-        console.log("📱 [SUCCESS] Token saved with sessionId:", sessionId);
-        
-        // ALWAYS redirect to web success page instead of trying URL scheme
+          expires: Date.now() + (5 * 60 * 1000)
+        };
+        await saveMobileAuthSession(sessionId, sessionData, 300);
         const baseUrl = req.protocol + '://' + req.get('host');
         const mobileSuccessUrl = `${baseUrl}/api/auth/microsoft/mobile-success?sessionId=${sessionId}`;
-        console.log("📱 [SUCCESS] Redirecting to mobile success page:", mobileSuccessUrl);
         return res.redirect(mobileSuccessUrl);
       }
 
-      // 3. Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend hoặc success route
+      // 3. Web/Frontend redirect
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       const admissionQuery = isAdmission ? "&admission=true" : "";
-      
-      // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route
       if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
         const mobileParam = isMobile ? "&mobile=true" : "";
         const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
         const webRedirectUrl = `/api/auth/microsoft/success?token=${token}${admissionQuery}${mobileParam}${redirectParam}`;
-        console.log("🌐 [SUCCESS] Redirecting to backend success route:", webRedirectUrl);
         return res.redirect(webRedirectUrl);
       } else {
         const webRedirectUrl = `${frontendUrl}/auth/microsoft/success?token=${token}${admissionQuery}`;
-        console.log("🌐 [SUCCESS] Redirecting to frontend:", webRedirectUrl);
         return res.redirect(webRedirectUrl);
       }
-      
     } catch (error) {
       console.error("❌ [/callback] Error creating JWT:", error);
       if (isMobile && redirectUri && redirectUri.startsWith('staffportal://')) {
         return res.redirect(`${redirectUri}?error=${encodeURIComponent(error.message)}`);
       }
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      
-      // Nếu FRONTEND_URL không được set hoặc là backend URL, redirect về backend success route với error
       if (!process.env.FRONTEND_URL || frontendUrl.includes('api-dev.wellspring.edu.vn')) {
         const mobileParam = isMobile ? "&mobile=true" : "";
         const redirectParam = redirectUri ? `&redirectUri=${encodeURIComponent(redirectUri)}` : "";
@@ -387,7 +368,6 @@ router.get("/microsoft/callback", (req, res, next) => {
     }
   };
 
-  // Use passport authenticate with custom callback
   passport.authenticate("azuread-openidconnect", handleAuthResult)(req, res, next);
 });
 
@@ -587,38 +567,14 @@ router.get("/microsoft/success", async (req, res) => {
 });
 
 // Route để hiển thị trang thành công cho mobile (thay vì deep link)
-router.get("/microsoft/mobile-success", (req, res) => {
+router.get("/microsoft/mobile-success", async (req, res) => {
   const { sessionId } = req.query;
-  
-  console.log("🔍 [/mobile-success] Mobile success page accessed:", { 
-    sessionId,
-    queryKeys: Object.keys(req.query),
-    fullQuery: req.query,
-    timestamp: new Date().toISOString(),
-    userAgent: req.headers['user-agent'],
-    referer: req.headers.referer,
-    fullUrl: req.protocol + '://' + req.get('host') + req.originalUrl
-  });
-  console.log("🔍 [/mobile-success] Current sessions in memory:", {
-    totalSessions: mobileAuthTokens.size,
-    sessionIds: Array.from(mobileAuthTokens.keys()),
-    requestedSessionId: sessionId,
-    sessionDetails: Array.from(mobileAuthTokens.entries()).map(([id, data]) => ({
-      id,
-      created: new Date(data.timestamp).toISOString(),
-      expires: new Date(data.expires).toISOString(),
-      userEmail: data.userData?.email,
-      isExpired: Date.now() > data.expires
-    }))
-  });
-  
   if (!sessionId) {
-    console.log("❌ [/mobile-success] No sessionId provided");
     return res.status(400).send(`
       <html>
         <head>
           <title>Lỗi xác thực</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         </head>
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
           <h2>❌ Lỗi xác thực</h2>
@@ -628,191 +584,34 @@ router.get("/microsoft/mobile-success", (req, res) => {
     `);
   }
   
-  // Verify session exists
-  const authData = mobileAuthTokens.get(sessionId);
-  console.log("🔍 [/mobile-success] Session lookup result:", {
-    sessionId,
-    found: !!authData,
-    expired: authData ? (Date.now() > authData.expires) : 'N/A',
-    expiresAt: authData ? new Date(authData.expires).toISOString() : 'N/A',
-    currentTime: new Date().toISOString(),
-    timeDifference: authData ? `${Math.round((Date.now() - authData.timestamp) / 1000)}s ago` : 'N/A'
-  });
-  
+  // Lấy session từ Redis
+  const authData = await getMobileAuthSession(sessionId);
   if (!authData) {
-    console.log("❌ [/mobile-success] Session not found in memory");
-    console.log("🔍 [/mobile-success] All available sessions:", Array.from(mobileAuthTokens.keys()));
-    
-    // FALLBACK: Try to find a recent session (within last 30 seconds) if exact match fails
-    console.log("🔍 [/mobile-success] Trying fallback - looking for recent sessions...");
-    const now = Date.now();
-    const recentSessions = Array.from(mobileAuthTokens.entries())
-      .filter(([id, data]) => {
-        const ageInMs = now - data.timestamp;
-        const ageInSeconds = ageInMs / 1000;
-        return ageInSeconds <= 30 && now <= data.expires; // within 30 seconds and not expired
-      })
-      .sort((a, b) => b[1].timestamp - a[1].timestamp); // sort by newest first
-    
-    console.log("🔍 [/mobile-success] Recent sessions found:", recentSessions.map(([id, data]) => ({
-      id,
-      ageSeconds: Math.round((now - data.timestamp) / 1000),
-      userEmail: data.userData?.email
-    })));
-    
-    if (recentSessions.length > 0) {
-      const [fallbackSessionId, fallbackAuthData] = recentSessions[0];
-      console.log("✅ [/mobile-success] Using most recent session as fallback:", fallbackSessionId);
-      
-      // Remove the session after successful display
-      mobileAuthTokens.delete(fallbackSessionId);
-      
-      // Show success page with fallback session
-      return res.send(`
-        <html>
-          <head>
-            <title>Đăng nhập thành công</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                text-align: center;
-                padding: 50px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                margin: 0;
-                min-height: 100vh;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                align-items: center;
-              }
-              .container {
-                background: rgba(255, 255, 255, 0.1);
-                padding: 40px;
-                border-radius: 15px;
-                backdrop-filter: blur(10px);
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-              }
-              .success-icon {
-                font-size: 64px;
-                margin-bottom: 20px;
-              }
-              h2 {
-                margin: 0 0 20px 0;
-                font-size: 24px;
-              }
-              p {
-                font-size: 16px;
-                line-height: 1.6;
-                margin: 10px 0;
-              }
-              .instruction {
-                background: rgba(255, 255, 255, 0.1);
-                padding: 20px;
-                border-radius: 10px;
-                margin-top: 20px;
-              }
-              .open-app-btn {
-                background: #4CAF50;
-                color: white;
-                padding: 15px 30px;
-                border: none;
-                border-radius: 25px;
-                font-size: 18px;
-                font-weight: bold;
-                cursor: pointer;
-                margin: 20px 0;
-                text-decoration: none;
-                display: inline-block;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-                transition: all 0.3s ease;
-              }
-              .open-app-btn:hover {
-                background: #45a049;
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-              }
-              .debug {
-                font-size: 12px;
-                opacity: 0.7;
-                margin-top: 20px;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="success-icon">✅</div>
-              <h2>Đăng nhập Microsoft thành công!</h2>
-              <p>Bạn đã được xác thực thành công.</p>
-              
-              <a href="staffportal://auth/success?sessionId=${fallbackSessionId}" class="open-app-btn">
-                🚀 Mở ứng dụng Wiswork
-              </a>
-              
-              <div class="instruction">
-                <p><strong>Hướng dẫn:</strong></p>
-                <p>1. Nhấn nút "Mở ứng dụng" ở trên</p>
-                <p>2. Hoặc mở ứng dụng Wiswork thủ công</p>
-                <p>3. Ứng dụng sẽ tự động đăng nhập</p>
-              </div>
-              <div class="debug">
-                <p>SessionId: ${fallbackSessionId} (fallback)</p>
-                <p>Original: ${sessionId}</p>
-                <p>Time: ${new Date().toISOString()}</p>
-              </div>
-            </div>
-            <script>
-              // Try to open app automatically after 2 seconds
-              setTimeout(function() {
-                try {
-                  // Attempt to open the app
-                  window.location.href = 'staffportal://auth/success?sessionId=${fallbackSessionId}';
-                } catch (e) {
-                  console.log('Cannot auto open app:', e);
-                }
-              }, 2000);
-              
-              // Auto close window after 30 seconds if possible
-              setTimeout(function() {
-                try {
-                  window.close();
-                } catch (e) {
-                  console.log('Cannot auto close window');
-                }
-              }, 30000);
-            </script>
-          </body>
-        </html>
-      `);
-    }
-    
+    // Fallback: tìm recent session (within 30s)
+    // Redis không hỗ trợ search by timestamp, nên bỏ fallback này hoặc có thể implement nếu cần
     return res.status(404).send(`
       <html>
         <head>
           <title>Session hết hạn</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         </head>
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
           <h2>⏰ Session hết hạn</h2>
           <p>Session xác thực đã hết hạn. Vui lòng đóng trang này và thử lại từ ứng dụng.</p>
-          <p><small>Debug: SessionId không tìm thấy trong memory</small></p>
+          <p><small>Debug: SessionId không tìm thấy trong Redis</small></p>
           <p><small>Requested: ${sessionId}</small></p>
-          <p><small>Available: ${Array.from(mobileAuthTokens.keys()).join(', ')}</small></p>
         </body>
       </html>
     `);
   }
-  
-  // Check if expired
-  if (Date.now() > authData.expires) {
-    mobileAuthTokens.delete(sessionId);
-    console.log("❌ [/mobile-success] Session expired, removed from memory");
+  // Check if expired (shouldn't happen if TTL của Redis đúng)
+  if (authData.expires && Date.now() > authData.expires) {
+    await deleteMobileAuthSession(sessionId);
     return res.status(404).send(`
       <html>
         <head>
           <title>Session hết hạn</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         </head>
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
           <h2>⏰ Session hết hạn</h2>
@@ -822,15 +621,12 @@ router.get("/microsoft/mobile-success", (req, res) => {
       </html>
     `);
   }
-  
-  console.log("✅ [/mobile-success] Session valid, showing success page");
-  
   // Show success page
   res.send(`
     <html>
       <head>
         <title>Đăng nhập thành công</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <style>
           body {
             font-family: Arial, sans-serif;
@@ -903,11 +699,9 @@ router.get("/microsoft/mobile-success", (req, res) => {
           <div class="success-icon">✅</div>
           <h2>Đăng nhập Microsoft thành công!</h2>
           <p>Bạn đã được xác thực thành công.</p>
-          
           <a href="staffportal://auth/success?sessionId=${sessionId}" class="open-app-btn">
             🚀 Mở ứng dụng Wiswork
           </a>
-          
           <div class="instruction">
             <p><strong>Hướng dẫn:</strong></p>
             <p>1. Nhấn nút "Mở ứng dụng" ở trên</p>
@@ -920,23 +714,13 @@ router.get("/microsoft/mobile-success", (req, res) => {
           </div>
         </div>
         <script>
-          // Try to open app automatically after 2 seconds
           setTimeout(function() {
             try {
-              // Attempt to open the app
               window.location.href = 'staffportal://auth/success?sessionId=${sessionId}';
-            } catch (e) {
-              console.log('Cannot auto open app:', e);
-            }
+            } catch (e) {}
           }, 2000);
-          
-          // Auto close window after 30 seconds if possible
           setTimeout(function() {
-            try {
-              window.close();
-            } catch (e) {
-              console.log('Cannot auto close window');
-            }
+            try { window.close(); } catch (e) {}
           }, 30000);
         </script>
       </body>
@@ -944,71 +728,30 @@ router.get("/microsoft/mobile-success", (req, res) => {
   `);
 });
 
-// API endpoint để mobile app poll token bằng sessionId
-router.get("/microsoft/poll-token/:sessionId", (req, res) => {
+// API endpoint: mobile app poll token bằng sessionId (Redis)
+router.get("/microsoft/poll-token/:sessionId", async (req, res) => {
   const { sessionId } = req.params;
-  
-  console.log("🔍 [/poll-token] Polling for sessionId:", sessionId);
-  
+  // Optional: maxAttempts, interval
+  let maxAttempts = parseInt(req.query.maxAttempts) || 20;
+  let interval = parseInt(req.query.interval) || 1000;
+  if (isNaN(maxAttempts) || maxAttempts < 1) maxAttempts = 20;
+  if (isNaN(interval) || interval < 100) interval = 1000;
+
   if (!sessionId) {
     return res.status(400).json({ success: false, message: "SessionId is required" });
   }
-  
-  const authData = mobileAuthTokens.get(sessionId);
-  
+  // Polling loop (single attempt, as endpoint is called repeatedly by mobile)
+  const authData = await getMobileAuthSession(sessionId);
   if (!authData) {
-    console.log("❌ [/poll-token] SessionId not found or expired:", sessionId);
-    console.log("🔍 [/poll-token] Available sessions:", Array.from(mobileAuthTokens.keys()));
-    
-    // Fallback: Try to find a recent session (within last 30 seconds) if exact match fails
-    console.log("🔍 [/poll-token] Trying fallback - looking for recent sessions...");
-    const now = Date.now();
-    const recentSessions = Array.from(mobileAuthTokens.entries())
-      .filter(([id, data]) => {
-        const ageInMs = now - data.timestamp;
-        const ageInSeconds = ageInMs / 1000;
-        return ageInSeconds <= 30 && now <= data.expires; // within 30 seconds and not expired
-      })
-      .sort((a, b) => b[1].timestamp - a[1].timestamp); // sort by newest first
-    
-    console.log("🔍 [/poll-token] Recent sessions found:", recentSessions.map(([id, data]) => ({
-      id,
-      ageSeconds: Math.round((now - data.timestamp) / 1000),
-      userEmail: data.userData?.email
-    })));
-    
-    if (recentSessions.length > 0) {
-      const [fallbackSessionId, fallbackAuthData] = recentSessions[0];
-      console.log("✅ [/poll-token] Using most recent session as fallback:", fallbackSessionId);
-      
-      // Remove the session after successful retrieval
-      mobileAuthTokens.delete(fallbackSessionId);
-      
-      return res.json({
-        success: true,
-        token: fallbackAuthData.token,
-        user: fallbackAuthData.userData,
-        note: "Retrieved from recent session (fallback mechanism)",
-        originalSessionId: sessionId,
-        usedSessionId: fallbackSessionId
-      });
-    }
-    
     return res.status(404).json({ success: false, message: "Session not found or expired" });
   }
-  
-  // Check if expired
-  if (Date.now() > authData.expires) {
-    mobileAuthTokens.delete(sessionId);
-    console.log("❌ [/poll-token] SessionId expired:", sessionId);
+  // Check expired
+  if (authData.expires && Date.now() > authData.expires) {
+    await deleteMobileAuthSession(sessionId);
     return res.status(404).json({ success: false, message: "Session expired" });
   }
-  
-  // Remove token after successful retrieval
-  mobileAuthTokens.delete(sessionId);
-  
-  console.log("✅ [/poll-token] Token retrieved successfully for sessionId:", sessionId);
-  
+  // Remove token sau khi trả về (1 lần)
+  await deleteMobileAuthSession(sessionId);
   return res.json({
     success: true,
     token: authData.token,
@@ -1016,53 +759,16 @@ router.get("/microsoft/poll-token/:sessionId", (req, res) => {
   });
 });
 
-// API endpoint để mobile app lấy token mới nhất (fallback method)
-router.get("/microsoft/poll-latest-token", (req, res) => {
-  console.log("🔍 [/poll-latest-token] Polling for latest token");
-  
-  const now = Date.now();
-  const recentSessions = Array.from(mobileAuthTokens.entries())
-    .filter(([id, data]) => {
-      const ageInMs = now - data.timestamp;
-      const ageInMinutes = ageInMs / (1000 * 60);
-      return ageInMinutes <= 5 && now <= data.expires; // within 5 minutes and not expired
-    })
-    .sort((a, b) => b[1].timestamp - a[1].timestamp); // sort by newest first
-  
-  console.log("🔍 [/poll-latest-token] Recent sessions found:", recentSessions.map(([id, data]) => ({
-    id,
-    ageMinutes: Math.round((now - data.timestamp) / (1000 * 60) * 10) / 10,
-    userEmail: data.userData?.email
-  })));
-  
-  if (recentSessions.length === 0) {
-    console.log("❌ [/poll-latest-token] No recent sessions found");
-    return res.status(404).json({ success: false, message: "No recent authentication found" });
-  }
-  
-  const [latestSessionId, latestAuthData] = recentSessions[0];
-  console.log("✅ [/poll-latest-token] Using latest session:", latestSessionId);
-  
-  // Remove the session after successful retrieval
-  mobileAuthTokens.delete(latestSessionId);
-  
-  return res.json({
-    success: true,
-    token: latestAuthData.token,
-    user: latestAuthData.userData,
-    sessionId: latestSessionId,
-    note: "Retrieved latest token"
-  });
+// API endpoint: lấy token mới nhất (không còn fallback vì Redis không hỗ trợ scan theo timestamp)
+router.get("/microsoft/poll-latest-token", async (req, res) => {
+  // Not supported in Redis version (unless scan keys, which is not recommended for prod)
+  // Always return not found
+  return res.status(404).json({ success: false, message: "No recent authentication found (not supported in Redis mode)" });
 });
 
-// Debug endpoint để test mobile authentication flow
-router.get("/microsoft/test-mobile", (req, res) => {
-  console.log("🔍 [/test-mobile] Test mobile authentication flow");
-  
-  // Simulate mobile authentication success with sessionId
+// Debug endpoint: test mobile authentication flow (Redis)
+router.get("/microsoft/test-mobile", async (req, res) => {
   const sessionId = `test_mobile_auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  // Create test token and user data
   const testToken = "test_token_123456";
   const testUserData = {
     _id: "test_user_id",
@@ -1075,22 +781,25 @@ router.get("/microsoft/test-mobile", (req, res) => {
     jobTitle: "Test Job",
     employeeCode: "TEST001",
   };
-  
-  // Store in memory for testing
-  mobileAuthTokens.set(sessionId, {
+  const sessionData = {
     token: testToken,
     userData: testUserData,
     timestamp: Date.now(),
-    expires: Date.now() + (5 * 60 * 1000) // 5 minutes
-  });
-  
-  console.log("📱 [TEST] Created test session:", sessionId);
-  
-  // Redirect to staffportal with sessionId
+    expires: Date.now() + (5 * 60 * 1000)
+  };
+  await saveMobileAuthSession(sessionId, sessionData, 300);
   const redirectUrl = `staffportal://auth/success?sessionId=${sessionId}`;
-  console.log("📱 [TEST] Redirecting to:", redirectUrl);
-  
   return res.redirect(redirectUrl);
+});
+
+// Debug endpoint: clear all mobile auth sessions in Redis
+router.get("/microsoft/debug-clear-all-sessions", async (req, res) => {
+  try {
+    const deleted = await deleteAllMobileAuthSessions();
+    return res.json({ success: true, deleted });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 module.exports = router;

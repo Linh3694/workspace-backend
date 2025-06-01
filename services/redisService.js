@@ -902,3 +902,61 @@ process.on('SIGTERM', async () => {
     await redisService.quit();
     process.exit(0);
 }); 
+
+
+// --- MOBILE AUTH SESSION SUPPORT ---
+
+const fallbackMobileAuthMap = new Map();
+
+const isRedisAvailable = !!(module.exports.client && typeof module.exports.client.setEx === 'function');
+
+// Lưu mobile auth sessionId (Redis hoặc Map), TTL giây (default 5 phút)
+module.exports.setMobileAuthSession = async (sessionId, data, ttlSeconds = 300) => {
+  if (!isRedisAvailable) {
+    fallbackMobileAuthMap.set(sessionId, {
+      ...data,
+      _local: true,
+      expires: Date.now() + ttlSeconds * 1000,
+    });
+    return;
+  }
+  await module.exports.client.setEx(`mobile_auth_${sessionId}`, ttlSeconds, JSON.stringify(data));
+};
+
+module.exports.getMobileAuthSession = async (sessionId) => {
+  if (!isRedisAvailable) {
+    const data = fallbackMobileAuthMap.get(sessionId);
+    if (!data) return null;
+    if (data.expires && Date.now() > data.expires) {
+      fallbackMobileAuthMap.delete(sessionId);
+      return null;
+    }
+    return data;
+  }
+  const raw = await module.exports.client.get(`mobile_auth_${sessionId}`);
+  return raw ? JSON.parse(raw) : null;
+};
+
+module.exports.deleteMobileAuthSession = async (sessionId) => {
+  if (!isRedisAvailable) {
+    fallbackMobileAuthMap.delete(sessionId);
+    return;
+  }
+  await module.exports.client.del(`mobile_auth_${sessionId}`);
+};
+
+// Xoá tất cả session mobile auth
+module.exports.deleteAllMobileAuthSessions = async () => {
+  if (!isRedisAvailable) {
+    const count = fallbackMobileAuthMap.size;
+    fallbackMobileAuthMap.clear();
+    return count;
+  }
+  // Redis: scan & del theo prefix
+  const keys = [];
+  for await (const key of module.exports.client.scanIterator({ MATCH: 'mobile_auth_*' })) {
+    keys.push(key);
+  }
+  if (keys.length > 0) await module.exports.client.del(keys);
+  return keys.length;
+};
