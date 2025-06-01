@@ -308,11 +308,11 @@ router.get("/microsoft/callback", (req, res, next) => {
       
       console.log("🔍 [/callback] Mobile detection:", {
         isMobileUserAgent,
-        originalMobile: mobile,
+        originalMobile: isMobile,
         userAgent: req.headers['user-agent']?.substring(0, 100)
       });
       
-      if (mobile === "true" || isMobileUserAgent) {
+      if (isMobile === true || isMobileUserAgent) {
         console.log("📱 [SUCCESS] Mobile detected (flag or User-Agent), creating sessionId for mobile app");
         
         // Tạo sessionId để mobile app poll token
@@ -979,6 +979,44 @@ router.get("/microsoft/poll-latest-token", (req, res) => {
     sessionId: latestSessionId,
     note: "Retrieved latest token"
   });
+});
+
+// Debug endpoint để test mobile authentication flow
+router.get("/microsoft/test-mobile", (req, res) => {
+  console.log("🔍 [/test-mobile] Test mobile authentication flow");
+  
+  // Simulate mobile authentication success with sessionId
+  const sessionId = `test_mobile_auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Create test token and user data
+  const testToken = "test_token_123456";
+  const testUserData = {
+    _id: "test_user_id",
+    fullname: "Test User",
+    email: "test@wellspring.edu.vn",
+    role: "user",
+    avatar: null,
+    department: "Test Department",
+    needProfileUpdate: false,
+    jobTitle: "Test Job",
+    employeeCode: "TEST001",
+  };
+  
+  // Store in memory for testing
+  mobileAuthTokens.set(sessionId, {
+    token: testToken,
+    userData: testUserData,
+    timestamp: Date.now(),
+    expires: Date.now() + (5 * 60 * 1000) // 5 minutes
+  });
+  
+  console.log("📱 [TEST] Created test session:", sessionId);
+  
+  // Redirect to staffportal with sessionId
+  const redirectUrl = `staffportal://auth/success?sessionId=${sessionId}`;
+  console.log("📱 [TEST] Redirecting to:", redirectUrl);
+  
+  return res.redirect(redirectUrl);
 });
 
 module.exports = router;
