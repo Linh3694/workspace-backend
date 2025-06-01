@@ -335,14 +335,9 @@ router.get("/microsoft/callback", (req, res, next) => {
           expires: Date.now() + (5 * 60 * 1000)
         };
         await saveMobileAuthSession(sessionId, sessionData, 300);
-        // Prefer deep‑linking straight back to the app so that the in‑app
-        // browser (SFSafariView / Chrome Custom Tab) closes immediately.
-        if (redirectUri && redirectUri.startsWith('staffportal://')) {
-          return res.redirect(`${redirectUri}?sessionId=${sessionId}`);
-        }
-
-        // Fallback deep link if redirectUri is missing (should rarely happen)
-        return res.redirect(`staffportal://auth/success?sessionId=${sessionId}`);
+        // Always serve minimal HTML that immediately triggers the deep‑link.
+        const baseUrl = req.protocol + '://' + req.get('host');
+        return res.redirect(`${baseUrl}/api/auth/microsoft/mobile-success?sessionId=${sessionId}&auto=1`);
       }
 
       // 3. Web/Frontend redirect
@@ -574,6 +569,7 @@ router.get("/microsoft/success", async (req, res) => {
 // Route để hiển thị trang thành công cho mobile (thay vì deep link)
 router.get("/microsoft/mobile-success", async (req, res) => {
   const { sessionId } = req.query;
+  const auto = req.query.auto === '1';
   if (!sessionId) {
     return res.status(400).send(`
       <html>
@@ -588,7 +584,7 @@ router.get("/microsoft/mobile-success", async (req, res) => {
       </html>
     `);
   }
-  
+
   // Lấy session từ Redis
   const authData = await getMobileAuthSession(sessionId);
   if (!authData) {
@@ -626,7 +622,22 @@ router.get("/microsoft/mobile-success", async (req, res) => {
       </html>
     `);
   }
-  // Show success page
+  // If auto mode, serve minimal HTML that instantly redirects and closes the window
+  if (auto) {
+    return res.send(`
+      <html>
+        <head>
+          <meta http-equiv="refresh" content="0;url=staffportal://auth/success?sessionId=${sessionId}">
+          <script>
+            window.location.href = 'staffportal://auth/success?sessionId=${sessionId}';
+            setTimeout(() => window.close(), 100);
+          </script>
+        </head>
+        <body></body>
+      </html>
+    `);
+  }
+  // Show success page (original, big version)
   res.send(`
     <html>
       <head>
