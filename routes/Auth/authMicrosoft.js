@@ -345,10 +345,11 @@ router.get("/microsoft/callback", (req, res, next) => {
         
         console.log("📱 [SUCCESS] Token saved with sessionId:", sessionId);
         
-        // Try to redirect directly to staffportal with sessionId
-        const defaultMobileRedirectUri = 'staffportal://auth/success';
-        console.log("📱 [SUCCESS] Redirecting to mobile app with sessionId");
-        return res.redirect(`${defaultMobileRedirectUri}?sessionId=${sessionId}`);
+        // ALWAYS redirect to web success page instead of trying URL scheme
+        const baseUrl = req.protocol + '://' + req.get('host');
+        const mobileSuccessUrl = `${baseUrl}/api/auth/microsoft/mobile-success?sessionId=${sessionId}`;
+        console.log("📱 [SUCCESS] Redirecting to mobile success page:", mobileSuccessUrl);
+        return res.redirect(mobileSuccessUrl);
       }
 
       // 3. Nếu từ web hoặc không có valid mobile redirect, chuyển hướng về frontend hoặc success route
@@ -534,10 +535,11 @@ router.get("/microsoft/success", async (req, res) => {
       
       console.log("📱 [SUCCESS] Token saved with sessionId:", sessionId);
       
-      // Try to redirect directly to staffportal with sessionId
-      const defaultMobileRedirectUri = 'staffportal://auth/success';
-      console.log("📱 [SUCCESS] Redirecting to mobile app with sessionId");
-      return res.redirect(`${defaultMobileRedirectUri}?sessionId=${sessionId}`);
+      // ALWAYS redirect to web success page instead of trying URL scheme
+      const baseUrl = req.protocol + '://' + req.get('host');
+      const mobileSuccessUrl = `${baseUrl}/api/auth/microsoft/mobile-success?sessionId=${sessionId}`;
+      console.log("📱 [SUCCESS] Redirecting to mobile success page:", mobileSuccessUrl);
+      return res.redirect(mobileSuccessUrl);
     }
 
     // 3. Nếu có frontend URL riêng, redirect về frontend
@@ -711,6 +713,26 @@ router.get("/microsoft/mobile-success", (req, res) => {
                 border-radius: 10px;
                 margin-top: 20px;
               }
+              .open-app-btn {
+                background: #4CAF50;
+                color: white;
+                padding: 15px 30px;
+                border: none;
+                border-radius: 25px;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+                margin: 20px 0;
+                text-decoration: none;
+                display: inline-block;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+                transition: all 0.3s ease;
+              }
+              .open-app-btn:hover {
+                background: #45a049;
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+              }
               .debug {
                 font-size: 12px;
                 opacity: 0.7;
@@ -723,10 +745,16 @@ router.get("/microsoft/mobile-success", (req, res) => {
               <div class="success-icon">✅</div>
               <h2>Đăng nhập Microsoft thành công!</h2>
               <p>Bạn đã được xác thực thành công.</p>
+              
+              <a href="staffportal://auth/success?sessionId=${fallbackSessionId}" class="open-app-btn">
+                🚀 Mở ứng dụng Wiswork
+              </a>
+              
               <div class="instruction">
                 <p><strong>Hướng dẫn:</strong></p>
-                <p>Vui lòng đóng trang này và quay lại ứng dụng.</p>
-                <p>Ứng dụng sẽ tự động hoàn tất quá trình đăng nhập.</p>
+                <p>1. Nhấn nút "Mở ứng dụng" ở trên</p>
+                <p>2. Hoặc mở ứng dụng Wiswork thủ công</p>
+                <p>3. Ứng dụng sẽ tự động đăng nhập</p>
               </div>
               <div class="debug">
                 <p>SessionId: ${fallbackSessionId} (fallback)</p>
@@ -735,14 +763,24 @@ router.get("/microsoft/mobile-success", (req, res) => {
               </div>
             </div>
             <script>
-              // Auto close sau 3 giây nếu có thể
+              // Try to open app automatically after 2 seconds
+              setTimeout(function() {
+                try {
+                  // Attempt to open the app
+                  window.location.href = 'staffportal://auth/success?sessionId=${fallbackSessionId}';
+                } catch (e) {
+                  console.log('Cannot auto open app:', e);
+                }
+              }, 2000);
+              
+              // Auto close window after 30 seconds if possible
               setTimeout(function() {
                 try {
                   window.close();
                 } catch (e) {
                   console.log('Cannot auto close window');
                 }
-              }, 3000);
+              }, 30000);
             </script>
           </body>
         </html>
@@ -833,6 +871,26 @@ router.get("/microsoft/mobile-success", (req, res) => {
             border-radius: 10px;
             margin-top: 20px;
           }
+          .open-app-btn {
+            background: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 20px 0;
+            text-decoration: none;
+            display: inline-block;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+          }
+          .open-app-btn:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+          }
           .debug {
             font-size: 12px;
             opacity: 0.7;
@@ -845,10 +903,16 @@ router.get("/microsoft/mobile-success", (req, res) => {
           <div class="success-icon">✅</div>
           <h2>Đăng nhập Microsoft thành công!</h2>
           <p>Bạn đã được xác thực thành công.</p>
+          
+          <a href="staffportal://auth/success?sessionId=${sessionId}" class="open-app-btn">
+            🚀 Mở ứng dụng Wiswork
+          </a>
+          
           <div class="instruction">
             <p><strong>Hướng dẫn:</strong></p>
-            <p>Vui lòng đóng trang này và quay lại ứng dụng.</p>
-            <p>Ứng dụng sẽ tự động hoàn tất quá trình đăng nhập.</p>
+            <p>1. Nhấn nút "Mở ứng dụng" ở trên</p>
+            <p>2. Hoặc mở ứng dụng Wiswork thủ công</p>
+            <p>3. Ứng dụng sẽ tự động đăng nhập</p>
           </div>
           <div class="debug">
             <p>SessionId: ${sessionId}</p>
@@ -856,14 +920,24 @@ router.get("/microsoft/mobile-success", (req, res) => {
           </div>
         </div>
         <script>
-          // Auto close sau 3 giây nếu có thể
+          // Try to open app automatically after 2 seconds
+          setTimeout(function() {
+            try {
+              // Attempt to open the app
+              window.location.href = 'staffportal://auth/success?sessionId=${sessionId}';
+            } catch (e) {
+              console.log('Cannot auto open app:', e);
+            }
+          }, 2000);
+          
+          // Auto close window after 30 seconds if possible
           setTimeout(function() {
             try {
               window.close();
             } catch (e) {
               console.log('Cannot auto close window');
             }
-          }, 3000);
+          }, 30000);
         </script>
       </body>
     </html>
