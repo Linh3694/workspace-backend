@@ -11,7 +11,12 @@ const commentSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   content: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
-  reactions: [reactionSchema], // Nếu muốn reaction cho comment luôn
+  reactions: [reactionSchema],
+  // Thêm support cho replies (nested comments)
+  parentComment: { type: mongoose.Schema.Types.ObjectId, default: null },
+  replies: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }],
+  // Đánh dấu comment đã bị xóa
+  isDeleted: { type: Boolean, default: false }
 });
 
 const postSchema = new mongoose.Schema(

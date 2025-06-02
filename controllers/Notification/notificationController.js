@@ -811,4 +811,106 @@ exports.sendPostCommentNotification = async (post, commenterName, commentContent
     } catch (error) {
         console.error('Lỗi khi gửi thông báo comment bài viết:', error);
     }
+};
+
+/**
+ * Gửi thông báo khi có người reaction comment
+ */
+exports.sendCommentReactionNotification = async (post, commentId, reactorName, reactionType) => {
+    try {
+        // Tìm comment được reaction
+        const comment = post.comments.find(c => c._id.toString() === commentId.toString());
+        if (!comment) {
+            console.log('Không tìm thấy comment');
+            return;
+        }
+
+        // Tìm thông tin tác giả comment
+        const commentAuthor = await User.findById(comment.user._id || comment.user);
+
+        if (!commentAuthor) {
+            console.log('Không tìm thấy tác giả comment');
+            return;
+        }
+
+        // Kiểm tra thiết bị token
+        if (!commentAuthor.deviceToken) {
+            console.log('Tác giả comment không đăng ký thiết bị nhận thông báo');
+            return;
+        }
+
+        // Tạo nội dung thông báo
+        const title = `${reactorName} đã ${reactionType} bình luận của bạn`;
+        const body = comment.content.length > 50
+            ? `${comment.content.substring(0, 50)}...`
+            : comment.content;
+
+        const data = {
+            postId: post._id.toString(),
+            commentId: commentId.toString(),
+            reactorName: reactorName,
+            reactionType: reactionType,
+            type: 'comment_reaction'
+        };
+
+        // Lưu thông báo vào cơ sở dữ liệu
+        await saveNotificationToDatabase([commentAuthor._id], title, body, data, "post");
+
+        // Gửi thông báo đẩy
+        await sendPushNotifications([commentAuthor.deviceToken], title, body, data);
+        console.log(`Đã gửi thông báo reaction comment đến ${commentAuthor.fullname}`);
+    } catch (error) {
+        console.error('Lỗi khi gửi thông báo reaction comment:', error);
+    }
+};
+
+/**
+ * Gửi thông báo khi có người reply comment
+ */
+exports.sendCommentReplyNotification = async (post, parentCommentId, replierName, replyContent) => {
+    try {
+        // Tìm parent comment
+        const parentComment = post.comments.find(c => c._id.toString() === parentCommentId.toString());
+        if (!parentComment) {
+            console.log('Không tìm thấy parent comment');
+            return;
+        }
+
+        // Tìm thông tin tác giả parent comment
+        const parentCommentAuthor = await User.findById(parentComment.user._id || parentComment.user);
+
+        if (!parentCommentAuthor) {
+            console.log('Không tìm thấy tác giả parent comment');
+            return;
+        }
+
+        // Kiểm tra thiết bị token
+        if (!parentCommentAuthor.deviceToken) {
+            console.log('Tác giả parent comment không đăng ký thiết bị nhận thông báo');
+            return;
+        }
+
+        // Tạo nội dung thông báo
+        const title = `${replierName} đã trả lời bình luận của bạn`;
+        const body = replyContent.length > 50
+            ? `${replyContent.substring(0, 50)}...`
+            : replyContent;
+
+        const data = {
+            postId: post._id.toString(),
+            parentCommentId: parentCommentId.toString(),
+            replierName: replierName,
+            replyContent: replyContent,
+            type: 'comment_reply'
+        };
+
+        // Lưu thông báo vào cơ sở dữ liệu
+        await saveNotificationToDatabase([parentCommentAuthor._id], title, body, data, "post");
+
+        // Gửi thông báo đẩy
+        await sendPushNotifications([parentCommentAuthor.deviceToken], title, body, data);
+        console.log(`Đã gửi thông báo reply comment đến ${parentCommentAuthor.fullname}`);
+    } catch (error) {
+        console.error('Lỗi khi gửi thông báo reply comment:', error);
+    }
 }; 

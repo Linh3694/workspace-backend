@@ -992,4 +992,260 @@ exports.getPopularPostsByDepartment = async (req, res) => {
             message: error.message 
         });
     }
+};
+
+// ========== CÁC CONTROLLERS MỚI CHO COMMENT FEATURES ==========
+
+// Thêm reaction cho comment
+exports.addCommentReaction = async (req, res) => {
+    try {
+        const { postId, commentId } = req.params;
+        const { type } = req.body;
+        const userId = req.user._id;
+
+        // Validate inputs
+        if (!mongoose.Types.ObjectId.isValid(postId) || !mongoose.Types.ObjectId.isValid(commentId)) {
+            return res.status(400).json({ 
+                success: false,
+                message: 'ID không hợp lệ' 
+            });
+        }
+
+        if (!type || type.trim() === '') {
+            return res.status(400).json({ 
+                success: false,
+                message: 'Loại reaction không được để trống' 
+            });
+        }
+
+        // Tìm post và comment
+        const post = await Post.findById(postId);
+        if (!post) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Không tìm thấy bài viết' 
+            });
+        }
+
+        const comment = post.comments.id(commentId);
+        if (!comment) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Không tìm thấy comment' 
+            });
+        }
+
+        // Kiểm tra xem user đã reaction comment này chưa
+        const existingReactionIndex = comment.reactions.findIndex(
+            reaction => reaction.user.toString() === userId.toString()
+        );
+
+        if (existingReactionIndex > -1) {
+            // Nếu cùng loại reaction thì remove, khác loại thì update
+            if (comment.reactions[existingReactionIndex].type === type) {
+                comment.reactions.splice(existingReactionIndex, 1);
+            } else {
+                comment.reactions[existingReactionIndex].type = type;
+                comment.reactions[existingReactionIndex].createdAt = new Date();
+            }
+        } else {
+            // Thêm reaction mới
+            comment.reactions.push({
+                user: userId,
+                type: type.trim(),
+                createdAt: new Date()
+            });
+        }
+
+        await post.save();
+
+        // Populate và return updated post
+        const updatedPost = await Post.findById(postId)
+            .populate('author', 'fullname avatarUrl email')
+            .populate('comments.user', 'fullname avatarUrl email')
+            .populate('comments.reactions.user', 'fullname avatarUrl email')
+            .populate('reactions.user', 'fullname avatarUrl email');
+
+        // Gửi notification cho tác giả comment (nếu không phải chính mình)
+        if (comment.user.toString() !== userId.toString()) {
+            await notificationController.sendCommentReactionNotification(
+                updatedPost,
+                commentId,
+                req.user.fullname,
+                type
+            );
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Reaction comment thành công',
+            data: updatedPost
+        });
+    } catch (error) {
+        console.error('Error adding comment reaction:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Lỗi server khi reaction comment',
+            error: error.message 
+        });
+    }
+};
+
+// Xóa reaction khỏi comment
+exports.removeCommentReaction = async (req, res) => {
+    try {
+        const { postId, commentId } = req.params;
+        const userId = req.user._id;
+
+        // Validate inputs
+        if (!mongoose.Types.ObjectId.isValid(postId) || !mongoose.Types.ObjectId.isValid(commentId)) {
+            return res.status(400).json({ 
+                success: false,
+                message: 'ID không hợp lệ' 
+            });
+        }
+
+        // Tìm post và comment
+        const post = await Post.findById(postId);
+        if (!post) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Không tìm thấy bài viết' 
+            });
+        }
+
+        const comment = post.comments.id(commentId);
+        if (!comment) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Không tìm thấy comment' 
+            });
+        }
+
+        // Tìm và xóa reaction của user
+        const reactionIndex = comment.reactions.findIndex(
+            reaction => reaction.user.toString() === userId.toString()
+        );
+
+        if (reactionIndex === -1) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Không tìm thấy reaction để xóa' 
+            });
+        }
+
+        comment.reactions.splice(reactionIndex, 1);
+        await post.save();
+
+        // Populate và return updated post
+        const updatedPost = await Post.findById(postId)
+            .populate('author', 'fullname avatarUrl email')
+            .populate('comments.user', 'fullname avatarUrl email')
+            .populate('comments.reactions.user', 'fullname avatarUrl email')
+            .populate('reactions.user', 'fullname avatarUrl email');
+
+        res.status(200).json({
+            success: true,
+            message: 'Xóa reaction comment thành công',
+            data: updatedPost
+        });
+    } catch (error) {
+        console.error('Error removing comment reaction:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Lỗi server khi xóa reaction comment',
+            error: error.message 
+        });
+    }
+};
+
+// Reply comment
+exports.replyComment = async (req, res) => {
+    try {
+        const { postId, commentId } = req.params;
+        const { content } = req.body;
+        const userId = req.user._id;
+
+        // Validate inputs
+        if (!mongoose.Types.ObjectId.isValid(postId) || !mongoose.Types.ObjectId.isValid(commentId)) {
+            return res.status(400).json({ 
+                success: false,
+                message: 'ID không hợp lệ' 
+            });
+        }
+
+        if (!content || content.trim() === '') {
+            return res.status(400).json({ 
+                success: false,
+                message: 'Nội dung reply không được để trống' 
+            });
+        }
+
+        // Tìm post và parent comment
+        const post = await Post.findById(postId);
+        if (!post) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Không tìm thấy bài viết' 
+            });
+        }
+
+        const parentComment = post.comments.id(commentId);
+        if (!parentComment) {
+            return res.status(404).json({ 
+                success: false,
+                message: 'Không tìm thấy comment để reply' 
+            });
+        }
+
+        // Kiểm tra nếu đây đã là reply thì không cho reply tiếp (chỉ 1 level)
+        if (parentComment.parentComment) {
+            return res.status(400).json({ 
+                success: false,
+                message: 'Không thể reply vào một reply. Hãy reply vào comment gốc.' 
+            });
+        }
+
+        // Tạo reply comment mới
+        const replyComment = {
+            user: userId,
+            content: content.trim(),
+            createdAt: new Date(),
+            reactions: [],
+            parentComment: commentId
+        };
+
+        post.comments.push(replyComment);
+        await post.save();
+
+        // Populate và return updated post
+        const updatedPost = await Post.findById(postId)
+            .populate('author', 'fullname avatarUrl email')
+            .populate('comments.user', 'fullname avatarUrl email')
+            .populate('comments.reactions.user', 'fullname avatarUrl email')
+            .populate('reactions.user', 'fullname avatarUrl email');
+
+        // Gửi notification cho tác giả comment gốc (nếu không phải chính mình)
+        if (parentComment.user.toString() !== userId.toString()) {
+            await notificationController.sendCommentReplyNotification(
+                updatedPost,
+                parentComment._id,
+                req.user.fullname,
+                content.trim()
+            );
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Reply comment thành công',
+            data: updatedPost
+        });
+    } catch (error) {
+        console.error('Error replying to comment:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Lỗi server khi reply comment',
+            error: error.message 
+        });
+    }
 }; 

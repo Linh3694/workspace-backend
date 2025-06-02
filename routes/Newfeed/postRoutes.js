@@ -69,6 +69,11 @@ router.delete('/:postId/reactions', postController.removeReaction);
 router.post('/:postId/comments', postController.addComment);
 router.delete('/:postId/comments/:commentId', postController.deleteComment);
 
+// Routes mới cho comment reactions và replies
+router.post('/:postId/comments/:commentId/reactions', postController.addCommentReaction);
+router.delete('/:postId/comments/:commentId/reactions', postController.removeCommentReaction);
+router.post('/:postId/comments/:commentId/replies', postController.replyComment);
+
 // Routes for pin/unpin (admin only)
 router.patch('/:postId/pin', postController.togglePinPost);
 
