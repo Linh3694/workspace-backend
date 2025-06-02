@@ -607,21 +607,46 @@ exports.sendNewChatMessageNotification = async (message, senderName, chat) => {
             return;
         }
 
-        // Tạo nội dung thông báo
-        let title = `${senderName}`;
-        let body = '';
-
-        // Tùy chỉnh nội dung tùy theo loại tin nhắn
-        if (message.type === 'text') {
-            body = message.content.length > 30
-                ? `${message.content.substring(0, 30)}...`
-                : message.content;
-        } else if (message.type === 'image') {
-            body = 'Đã gửi một hình ảnh';
-        } else if (message.type === 'multiple-images') {
-            body = `Đã gửi ${message.fileUrls.length} hình ảnh`;
-        } else if (message.type === 'file') {
-            body = 'Đã gửi một tệp đính kèm';
+        // Tạo nội dung thông báo dựa trên loại chat
+        let title, body;
+        
+        if (chat.isGroup) {
+            // Cho group chat: title = "Nhóm: <Tên nhóm>", body = "Tên người chat: <nội dung>"
+            title = `Nhóm: ${chat.name || 'Nhóm không tên'}`;
+            
+            // Tùy chỉnh nội dung tùy theo loại tin nhắn
+            if (message.type === 'text') {
+                const messageContent = message.content.length > 30
+                    ? `${message.content.substring(0, 30)}...`
+                    : message.content;
+                body = `${senderName}: ${messageContent}`;
+            } else if (message.type === 'image') {
+                body = `${senderName}: Đã gửi một hình ảnh`;
+            } else if (message.type === 'multiple-images') {
+                body = `${senderName}: Đã gửi ${message.fileUrls.length} hình ảnh`;
+            } else if (message.type === 'file') {
+                body = `${senderName}: Đã gửi một tệp đính kèm`;
+            } else {
+                body = `${senderName}: Đã gửi một tin nhắn`;
+            }
+        } else {
+            // Cho chat 1-1: giữ nguyên format cũ
+            title = `${senderName}`;
+            
+            // Tùy chỉnh nội dung tùy theo loại tin nhắn
+            if (message.type === 'text') {
+                body = message.content.length > 30
+                    ? `${message.content.substring(0, 30)}...`
+                    : message.content;
+            } else if (message.type === 'image') {
+                body = 'Đã gửi một hình ảnh';
+            } else if (message.type === 'multiple-images') {
+                body = `Đã gửi ${message.fileUrls.length} hình ảnh`;
+            } else if (message.type === 'file') {
+                body = 'Đã gửi một tệp đính kèm';
+            } else {
+                body = 'Đã gửi một tin nhắn';
+            }
         }
 
         const data = {
