@@ -17,18 +17,23 @@ exports.createOrGetChat = async (req, res) => {
         let chat = await redisService.getChatData(cacheKey);
 
         if (!chat) {
-            // Nếu không có trong cache, truy vấn database
+            // Nếu không có trong cache, truy vấn database - chỉ tìm chat 1-1 (không phải group)
             chat = await Chat.findOne({
                 participants: {
                     $all: [currentUserId, participantId],
                     $size: 2
-                }
+                },
+                $or: [
+                    { isGroup: false },
+                    { isGroup: { $exists: false } }
+                ]
             }).populate('participants', 'fullname avatarUrl email department');
 
             if (!chat) {
-                // Tạo chat mới nếu chưa có
+                // Tạo chat mới nếu chưa có - đảm bảo set isGroup: false cho chat 1-1
                 chat = await Chat.create({
-                    participants: [currentUserId, participantId]
+                    participants: [currentUserId, participantId],
+                    isGroup: false
                 });
                 chat = await chat.populate('participants', 'fullname avatarUrl email department');
             }

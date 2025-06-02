@@ -1,0 +1,14 @@
+# Cấu hình máy chấm công HIKVISION
+# Copy file này và đổi tên thành config thực tế (ví dụ: device_001.txt)
+
+# Thông tin kết nối thiết bị
+DEVICE_IP=10.1.4.17
+USERNAME=admin
+PASSWORD=Wellspring#2024
+# Thông tin tracker (tùy chọn)
+TRACKER_ID=device_005
+
+
+# Ghi chú về thiết bị
+# DEVICE_NAME=Cổng chính
+# LOCATION=Tầng 1 
