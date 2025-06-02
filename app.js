@@ -259,6 +259,9 @@ require("./cronEmail");
 
 // Khởi động scheduled jobs
 const AttendanceCleanupJob = require('./jobs/attendanceCleanupJob');
+const ChatCleanupJob = require('./jobs/chatCleanupJob');
+
 AttendanceCleanupJob.start();
+ChatCleanupJob.start();
 
 module.exports = app;

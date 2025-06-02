@@ -99,6 +99,11 @@ router.post('/message/forward', authenticate, chatController.forwardMessage);
 // API thu hồi tin nhắn
 router.delete('/message/:messageId/revoke', authenticate, chatController.revokeMessage);
 
+// === CLEANUP ROUTES ===
+
+// API xóa chat rỗng (không có tin nhắn)
+router.delete('/cleanup/empty', authenticate, chatController.cleanupEmptyChats);
+
 // Lấy thông tin chi tiết của một chat
 router.get('/:chatId', authenticate, async (req, res) => {
     try {

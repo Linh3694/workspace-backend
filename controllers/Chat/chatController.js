@@ -82,6 +82,43 @@ exports.getUserChats = async (req, res) => {
                 })
                 .sort({ updatedAt: -1 });
 
+            // Lọc chat theo điều kiện:
+            // 1. Chat 1-1: Chỉ hiển thị khi có tin nhắn
+            // 2. Group chat: Hiển thị khi có tin nhắn HOẶC được tạo trong vòng 24h gần đây
+            if (chats && Array.isArray(chats)) {
+                const now = new Date();
+                const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 giờ trước
+                
+                const filteredChats = chats.filter(chat => {
+                    // Chat 1-1: Chỉ giữ những chat có tin nhắn
+                    if (!chat.isGroup) {
+                        return chat.lastMessage;
+                    }
+                    
+                    // Group chat: Giữ những chat có tin nhắn HOẶC được tạo gần đây
+                    if (chat.isGroup) {
+                        const hasMessages = chat.lastMessage;
+                        const isRecentlyCreated = new Date(chat.createdAt) > oneDayAgo;
+                        
+                        // Luôn hiển thị group chat nếu:
+                        // - Có tin nhắn, HOẶC
+                        // - Được tạo trong vòng 24h (group mới có thể chưa có tin nhắn)
+                        return hasMessages || isRecentlyCreated;
+                    }
+                    
+                    return true; // Fallback
+                });
+                
+                console.log('getUserChats - Filtered chats:', {
+                    originalCount: chats.length,
+                    filteredCount: filteredChats.length,
+                    removedChats: chats.length - filteredChats.length,
+                    userId: userId.toString()
+                });
+                
+                chats = filteredChats;
+            }
+
             // Log chats details for debugging
             console.log('getUserChats - Found chats count:', chats?.length, 'chats type:', typeof chats);
 
@@ -1896,5 +1933,187 @@ exports.searchGroups = async (req, res) => {
     } catch (error) {
         console.error('Error searching groups:', error);
         res.status(500).json({ message: error.message });
+    }
+};
+
+// Xóa các chat rỗng (không có tin nhắn) khỏi database
+exports.cleanupEmptyChats = async (req, res) => {
+    try {
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 ngày trước
+        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 1 ngày trước
+        
+        // Tìm các chat rỗng cần xóa:
+        // 1. Chat 1-1 rỗng được tạo cách đây hơn 1 giờ
+        // 2. Group chat rỗng được tạo cách đây hơn 7 ngày
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000); // 1 giờ trước
+        
+        const emptyChats = await Chat.find({
+            $and: [
+                // Điều kiện 1: Chat rỗng (không có lastMessage)
+                {
+                    $or: [
+                        { lastMessage: { $exists: false } },
+                        { lastMessage: null }
+                    ]
+                },
+                // Điều kiện 2: Thời gian tạo phù hợp
+                {
+                    $or: [
+                        // Chat 1-1 rỗng cũ hơn 1 giờ
+                        {
+                            isGroup: { $ne: true },
+                            createdAt: { $lt: oneHourAgo }
+                        },
+                        // Group chat rỗng cũ hơn 7 ngày
+                        {
+                            isGroup: true,
+                            createdAt: { $lt: oneWeekAgo }
+                        }
+                    ]
+                }
+            ]
+        });
+
+        if (emptyChats.length === 0) {
+            return res.status(200).json({ 
+                message: 'Không có chat rỗng nào cần xóa',
+                deletedCount: 0 
+            });
+        }
+
+        console.log(`🗑️ [Cleanup] Found ${emptyChats.length} empty chats to delete:`, {
+            oneToOneChats: emptyChats.filter(chat => !chat.isGroup).length,
+            groupChats: emptyChats.filter(chat => chat.isGroup).length
+        });
+
+        // Phân loại để log chi tiết
+        const oneToOneChats = emptyChats.filter(chat => !chat.isGroup);
+        const groupChats = emptyChats.filter(chat => chat.isGroup);
+        
+        console.log(`🗑️ [Cleanup] Will delete:`, {
+            '1-1 chats': oneToOneChats.length + ' (older than 1 hour)',
+            'group chats': groupChats.length + ' (older than 7 days)'
+        });
+
+        // Xóa các chat rỗng
+        const result = await Chat.deleteMany({
+            _id: { $in: emptyChats.map(chat => chat._id) }
+        });
+
+        // Invalidate cache cho tất cả users có trong các chat bị xóa
+        const affectedUsers = new Set();
+        emptyChats.forEach(chat => {
+            chat.participants.forEach(participant => {
+                affectedUsers.add(participant.toString());
+            });
+        });
+
+        // Xóa cache cho các user bị ảnh hưởng
+        for (const userId of affectedUsers) {
+            await invalidateUserChatCache(userId);
+        }
+
+        console.log(`🗑️ [Cleanup] Deleted ${result.deletedCount} empty chats:`, {
+            oneToOneDeleted: oneToOneChats.length,
+            groupChatsDeleted: groupChats.length,
+            affectedUsers: affectedUsers.size
+        });
+
+        res.status(200).json({ 
+            message: `Đã xóa ${result.deletedCount} chat rỗng (${oneToOneChats.length} chat 1-1, ${groupChats.length} group chat)`,
+            deletedCount: result.deletedCount,
+            oneToOneChats: oneToOneChats.length,
+            groupChats: groupChats.length,
+            affectedUsers: affectedUsers.size
+        });
+    } catch (error) {
+        console.error('Error cleaning up empty chats:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Hàm cleanup tự động (có thể gọi bằng cron job)
+exports.autoCleanupEmptyChats = async () => {
+    try {
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 ngày trước
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000); // 1 giờ trước
+        
+        // Tìm các chat rỗng cần xóa:
+        // 1. Chat 1-1 rỗng được tạo cách đây hơn 1 giờ
+        // 2. Group chat rỗng được tạo cách đây hơn 7 ngày
+        const emptyChats = await Chat.find({
+            $and: [
+                // Điều kiện 1: Chat rỗng (không có lastMessage)
+                {
+                    $or: [
+                        { lastMessage: { $exists: false } },
+                        { lastMessage: null }
+                    ]
+                },
+                // Điều kiện 2: Thời gian tạo phù hợp
+                {
+                    $or: [
+                        // Chat 1-1 rỗng cũ hơn 1 giờ
+                        {
+                            isGroup: { $ne: true },
+                            createdAt: { $lt: oneHourAgo }
+                        },
+                        // Group chat rỗng cũ hơn 7 ngày
+                        {
+                            isGroup: true,
+                            createdAt: { $lt: oneWeekAgo }
+                        }
+                    ]
+                }
+            ]
+        });
+
+        if (emptyChats.length === 0) {
+            console.log('🗑️ [Auto Cleanup] No empty chats to delete');
+            return { deletedCount: 0 };
+        }
+
+        // Phân loại để log chi tiết
+        const oneToOneChats = emptyChats.filter(chat => !chat.isGroup);
+        const groupChats = emptyChats.filter(chat => chat.isGroup);
+
+        console.log(`🗑️ [Auto Cleanup] Found ${emptyChats.length} empty chats to delete:`, {
+            '1-1 chats': oneToOneChats.length + ' (older than 1 hour)',
+            'group chats': groupChats.length + ' (older than 7 days)'
+        });
+
+        const result = await Chat.deleteMany({
+            _id: { $in: emptyChats.map(chat => chat._id) }
+        });
+
+        // Invalidate cache cho tất cả users có trong các chat bị xóa
+        const affectedUsers = new Set();
+        emptyChats.forEach(chat => {
+            chat.participants.forEach(participant => {
+                affectedUsers.add(participant.toString());
+            });
+        });
+
+        for (const userId of affectedUsers) {
+            await invalidateUserChatCache(userId);
+        }
+
+        console.log(`🗑️ [Auto Cleanup] Deleted ${result.deletedCount} empty chats:`, {
+            oneToOneDeleted: oneToOneChats.length,
+            groupChatsDeleted: groupChats.length,
+            affectedUsers: affectedUsers.size
+        });
+        
+        return { 
+            deletedCount: result.deletedCount,
+            oneToOneChats: oneToOneChats.length,
+            groupChats: groupChats.length,
+            affectedUsers: affectedUsers.size 
+        };
+    } catch (error) {
+        console.error('Error in auto cleanup empty chats:', error);
+        return { error: error.message };
     }
 };
