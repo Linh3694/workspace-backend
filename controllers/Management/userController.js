@@ -20,12 +20,12 @@ const Parent = require("../../models/Parent");
 // Tạo người dùng mới
 exports.createUser = async (req, res) => {
   try {
-    const { username, password, email, role, fullname, active } = req.body;
+    const { password, email, role, fullname, active } = req.body;
     const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : null;
 
     // Kiểm tra dữ liệu đầu vào
-    if (!username || !password || !email || !role || !fullname) {
-      return res.status(400).json({ message: "Username, password, email, role, and fullname are required" });
+    if (!password || !email || !role || !fullname) {
+      return res.status(400).json({ message: "Password, email, role, and fullname are required" });
     }
 
     // Kiểm tra role hợp lệ
@@ -35,16 +35,15 @@ exports.createUser = async (req, res) => {
     }
 
     // Kiểm tra trùng username hoặc email
-    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
+    const existingUser = await User.findOne({ $or: [{ email }] });
     if (existingUser) {
-      return res.status(400).json({ message: "Username or email already exists" });
+      return res.status(400).json({ message: "Email already exists" });
     }
 
     // Mã hóa mật khẩu
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await User.create({
-      username,
       password: hashedPassword,
       email,
       role,
@@ -73,7 +72,6 @@ exports.createUser = async (req, res) => {
 
     return res.status(201).json({
       _id: newUser._id,
-      username: newUser.username,
       email: newUser.email,
       role: newUser.role,
       fullname: newUser.fullname,
@@ -163,7 +161,7 @@ exports.getUserById = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, email, role, fullname, active } = req.body;
+    const { email, role, fullname, active } = req.body;
     const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : undefined;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -179,13 +177,13 @@ exports.updateUser = async (req, res) => {
     }
 
     // Kiểm tra trùng username hoặc email (nếu thay đổi)
-    if (username || email) {
+    if (email) {
       const existingUser = await User.findOne({
-        $or: [{ username }, { email }],
+        $or: [{ email }],
         _id: { $ne: id },
       });
       if (existingUser) {
-        return res.status(400).json({ message: "Username or email already exists" });
+        return res.status(400).json({ message: "Email already exists" });
       }
     }
 
@@ -198,7 +196,6 @@ exports.updateUser = async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       id,
       {
-        username,
         email,
         role,
         fullname,
@@ -342,24 +339,24 @@ exports.bulkUploadUsers = async (req, res) => {
     const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
 
     for (const row of data) {
-      const { Username, Password, Email, Role, Fullname, Active } = row;
+      const { Password, Email, Role, Fullname, Active } = row;
 
       // Kiểm tra dữ liệu bắt buộc
-      if (!Username || !Password || !Email || !Role || !Fullname) {
+      if (!Password || !Email || !Role || !Fullname) {
         errors.push(`Thiếu thông tin bắt buộc ở dòng: ${JSON.stringify(row)}`);
         continue;
       }
 
       // Kiểm tra role hợp lệ
       if (!validRoles.includes(Role)) {
-        errors.push(`Role không hợp lệ ở dòng ${Username}: ${Role}. Role phải là một trong: ${validRoles.join(", ")}`);
+        errors.push(`Role không hợp lệ ở dòng ${Email}: ${Role}. Role phải là một trong: ${validRoles.join(", ")}`);
         continue;
       }
 
       // Kiểm tra trùng username hoặc email
-      const existingUser = await User.findOne({ $or: [{ username: Username }, { email: Email }] });
+      const existingUser = await User.findOne({ $or: [{ email: Email }] });
       if (existingUser) {
-        errors.push(`Username hoặc email đã tồn tại: ${Username}, ${Email}`);
+        errors.push(`Email đã tồn tại: ${Email}`);
         continue;
       }
 
@@ -367,7 +364,6 @@ exports.bulkUploadUsers = async (req, res) => {
       const hashedPassword = await bcrypt.hash(Password, 10);
 
       usersToInsert.push({
-        username: Username,
         password: hashedPassword,
         email: Email,
         role: Role,
@@ -433,7 +429,6 @@ exports.searchUsers = async (req, res) => {
     let query = {
       $or: [
         { fullname: searchRegex },
-        { username: searchRegex },
         { email: searchRegex },
       ],
     };
@@ -511,30 +506,26 @@ exports.createBatchUsers = async (req, res) => {
     const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
     const errors = [];
     const usersToInsert = [];
-    const existingUsernames = new Set();
     const existingEmails = new Set();
 
     // Kiểm tra trùng lặp trong danh sách
-    const usernames = users.map(u => u.username);
     const emails = users.map(u => u.email);
     const existingUsers = await User.find({
       $or: [
-        { username: { $in: usernames } },
         { email: { $in: emails } }
       ]
-    }).select('username email');
+    }).select('email');
 
     existingUsers.forEach(user => {
-      existingUsernames.add(user.username);
       existingEmails.add(user.email);
     });
 
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
-      const { username, password, email, role, fullname, active } = user;
+      const { password, email, role, fullname, active } = user;
 
       // Kiểm tra dữ liệu bắt buộc
-      if (!username || !password || !email || !role || !fullname) {
+      if (!password || !email || !role || !fullname) {
         errors.push(`Dòng ${i + 1}: Thiếu thông tin bắt buộc`);
         continue;
       }
@@ -545,25 +536,18 @@ exports.createBatchUsers = async (req, res) => {
         continue;
       }
 
-      // Kiểm tra trùng username hoặc email
-      if (existingUsernames.has(username)) {
-        errors.push(`Dòng ${i + 1}: Username '${username}' đã tồn tại`);
-        continue;
-      }
       if (existingEmails.has(email)) {
         errors.push(`Dòng ${i + 1}: Email '${email}' đã tồn tại`);
         continue;
       }
 
       // Thêm vào danh sách chờ và đánh dấu đã sử dụng
-      existingUsernames.add(username);
       existingEmails.add(email);
 
       // Mã hóa mật khẩu
       const hashedPassword = await bcrypt.hash(password, 10);
 
       usersToInsert.push({
-        username,
         password: hashedPassword,
         email,
         role,
@@ -605,7 +589,6 @@ exports.createBatchUsers = async (req, res) => {
       message: `Đã tạo thành công ${createdUsers.length} người dùng`,
       users: createdUsers.map(user => ({
         _id: user._id,
-        username: user.username,
         email: user.email,
         role: user.role,
         fullname: user.fullname,

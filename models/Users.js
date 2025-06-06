@@ -43,10 +43,7 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: [
-      // Từ SIS.js
-      "admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service",
-      // Từ Users.js gốc
-      "superadmin", "technical", "marcom", "hr", "bod", "user"
+      "admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"
     ],
     default: "user",
   },
