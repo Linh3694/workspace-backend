@@ -116,10 +116,7 @@ exports.getAllUsers = async (req, res) => {
 
     // Đảm bảo luôn trả về một array, ngay cả khi users là null/undefined
     const responseUsers = users || [];
-    return res.json({
-      data: responseUsers,
-      message: "Lấy danh sách người dùng thành công"
-    });
+    return res.json(responseUsers);
   } catch (err) {
     console.error("Error fetching users:", err.message);
     return res.status(500).json({ 
@@ -421,15 +418,18 @@ exports.bulkUploadUsers = async (req, res) => {
 // Tìm kiếm người dùng theo fullname, username, email
 exports.searchUsers = async (req, res) => {
   try {
-    const { q, role } = req.query;
+    const { q, query: searchQuery, role } = req.query;
+    
+    // Chấp nhận cả 'q' và 'query' parameter để đảm bảo tương thích
+    const searchTerm = q || searchQuery;
 
     // Kiểm tra tham số tìm kiếm
-    if (!q) {
-      return res.status(400).json({ message: "Search query (q) is required" });
+    if (!searchTerm) {
+      return res.status(400).json({ message: "Search query (q or query) is required" });
     }
 
     // Tạo query tìm kiếm
-    const searchRegex = new RegExp(q, "i"); // Không phân biệt hoa thường
+    const searchRegex = new RegExp(searchTerm, "i"); // Không phân biệt hoa thường
     let query = {
       $or: [
         { fullname: searchRegex },
