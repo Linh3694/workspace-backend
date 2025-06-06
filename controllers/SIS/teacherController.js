@@ -4,7 +4,7 @@ const User = require("../../models/Users");
 const Subject = require("../../models/Subject");
 const {
   syncTimetableAfterAssignment,
-} = require("../services/timetableSync.service");
+} = require("../../services/timetableSync.service");
 
 // Lấy tất cả giáo viên
 exports.getAllTeachers = async (req, res) => {

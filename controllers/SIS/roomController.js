@@ -3,7 +3,7 @@ const Room = require("../../models/Room");
 const Subject = require("../../models/Subject");
 const {
   syncTimetableAfterRoomUpdate,
-} = require("../services/timetableSync.service");
+} = require("../../services/timetableSync.service");
 
 // Lấy tất cả phòng học
 exports.getAllRooms = async (req, res) => {

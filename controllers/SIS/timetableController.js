@@ -7,7 +7,7 @@ const Room = require("../../models/Room");
 const GradeLevel = require("../../models/GradeLevel");
 const PeriodDefinition = require("../../models/PeriodDefinition");
 const Teacher = require("../../models/Teacher");
-const timetableService = require("../services/timetable.service");
+const timetableService = require("../../services/timetable.service");
 
 // Lấy tất cả thời khóa biểu
 exports.getAllTimetables = async (req, res) => {

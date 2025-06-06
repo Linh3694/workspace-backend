@@ -6,7 +6,7 @@ const GradeLevel = require("../../models/GradeLevel");
 const School = require("../../models/School");
 const {
   syncTimetableAfterRoomUpdate,
-} = require("../services/timetableSync.service");
+} = require("../../services/timetableSync.service");
 
 // Lấy tất cả môn học
 exports.getAllSubjects = async (req, res) => {
