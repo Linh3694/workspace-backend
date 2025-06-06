@@ -1,31 +1,17 @@
 const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
 
-const RoomSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    location: [
-      {
-        building: { type: String, required: true },
-        floor: { type: Number ,required: true },
-      },
-    ],
-    capacity: {
-      type: Number,
-    },
-    status: {
-      type: String,
-      enum: ["Lớp học", "Phòng chức năng", "Phòng họp", "Phòng máy ICT", "Phòng giáo viên", "Khác", "Phòng làm việc"],
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { versionKey: false }, { timestamps: true }
-);
+// Room Model
+const RoomSchema = new Schema({
+  name: { type: String, required: true, unique: true },
+  type: { type: String, enum: ["classroom", "lab", "library", "other"], required: true },
+  capacity: { type: Number },
+  periodsPerDay: { type: Number, default: 10 },
+  isHomeroom: { type: Boolean, default: false },
+  description: { type: String },
+  subjects: [{ type: Schema.Types.ObjectId, ref: "Subject" }],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
 
 module.exports = mongoose.model("Room", RoomSchema);

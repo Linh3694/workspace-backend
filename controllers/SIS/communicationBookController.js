@@ -1,60 +1,112 @@
-// controllers/communicationBookController.js
-const CommunicationBook = require("../../models/CommunicationBook");
+const asyncHandler = require('express-async-handler');
+const CommunicationBook = require('../../models/CommunicationBook');
 
-// Tạo ghi chú sổ liên lạc
-exports.createCommunication = async (req, res) => {
-  try {
-    const { student, date, content, teacher, parent } = req.body;
-    const newCommunication = await CommunicationBook.create({
-      student,
-      date,
-      content,
-      teacher,
-      parent,
+// Lấy danh sách tất cả các bản ghi sổ liên lạc
+exports.getCommunicationBooks = asyncHandler(async (req, res) => {
+    const communicationBooks = await CommunicationBook.find()
+        .populate('student', 'name studentCode')
+        .populate('teacher', 'fullname')
+
+        .sort({ date: -1 });
+    console.log('Kết quả truy vấn:', communicationBooks);
+    res.json(communicationBooks);
+});
+
+// Lấy tất cả bản ghi sổ liên lạc của một học sinh
+exports.getCommunicationBooksByStudent = asyncHandler(async (req, res) => {
+    console.log('req.params.studentId:', req.params.studentId);
+    const studentId = req.params.studentId;
+    const communicationBooks = await CommunicationBook.find({ student: studentId })
+        .populate('student', 'name studentCode')
+        .populate('teacher', 'fullname')
+
+        .sort({ date: -1 });
+    console.log('Kết quả truy vấn:', communicationBooks);
+    res.json(communicationBooks);
+});
+
+// Lấy một bản ghi sổ liên lạc theo ID
+exports.getCommunicationBookById = asyncHandler(async (req, res) => {
+    const communicationBook = await CommunicationBook.findById(req.params.id)
+        .populate('student', 'name studentCode')
+        .populate('teacher', 'fullname')
+
+
+    if (!communicationBook) {
+        return res.status(404).json({ message: 'Không tìm thấy bản ghi sổ liên lạc' });
+    }
+
+    res.json(communicationBook);
+});
+
+// Tạo một bản ghi sổ liên lạc mới
+exports.createCommunicationBook = asyncHandler(async (req, res) => {
+    // Lấy thông tin người dùng hiện tại từ req.user (giả sử middleware xác thực đã thêm)
+    const teacherId = req.user?.teacherId || req.body.teacher;
+
+    // Đảm bảo có teacherId, nếu không thì trả về lỗi
+    if (!teacherId) {
+        return res.status(400).json({ message: 'Cần cung cấp ID giáo viên' });
+    }
+
+    const { ratings, ...rest } = req.body;
+    // Normalize date to midnight for lookup
+    const providedDate = req.body.date ? new Date(req.body.date) : new Date();
+    const start = new Date(providedDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(providedDate);
+    end.setHours(23, 59, 59, 999);
+    // Check for existing entry
+    const existing = await CommunicationBook.findOne({
+        student: rest.student,
+        date: { $gte: start, $lt: end }
     });
-    return res.status(201).json(newCommunication);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
-
-// Lấy ghi chú của học sinh
-exports.getCommunicationsByStudent = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-    const communications = await CommunicationBook.find({ student: studentId })
-      .populate("teacher")
-      .populate("parent");
-    return res.json(communications);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
-
-// Cập nhật ghi chú
-exports.updateCommunication = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updated = await CommunicationBook.findByIdAndUpdate(id, req.body, { new: true });
-    if (!updated) {
-      return res.status(404).json({ message: "Communication not found" });
+    if (existing) {
+        return res.status(400).json({ message: 'Đã tạo sổ liên lạc cho học sinh này trong ngày.' });
     }
-    return res.json(updated);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
 
-// Xóa ghi chú
-exports.deleteCommunication = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const deleted = await CommunicationBook.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ message: "Communication not found" });
+    const communicationBook = new CommunicationBook({
+        ...rest,
+        ratings,
+        teacher: teacherId,
+        date: providedDate
+    });
+
+    const newCommunicationBook = await communicationBook.save();
+
+    // Populate thông tin chi tiết trước khi trả về
+    const populatedCommunicationBook = await CommunicationBook.findById(newCommunicationBook._id)
+        .populate('student', 'name studentCode')
+        .populate('teacher', 'fullname')
+
+
+    res.status(201).json(populatedCommunicationBook);
+});
+
+// Cập nhật một bản ghi sổ liên lạc
+exports.updateCommunicationBook = asyncHandler(async (req, res) => {
+    const communicationBook = await CommunicationBook.findByIdAndUpdate(
+        req.params.id,
+        req.body,
+        { new: true }
+    )
+        .populate('student', 'name studentCode')
+        .populate('teacher', 'fullname')
+
+    if (!communicationBook) {
+        return res.status(404).json({ message: 'Không tìm thấy bản ghi sổ liên lạc' });
     }
-    return res.json({ message: "Communication deleted successfully" });
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
+
+    res.json(communicationBook);
+});
+
+// Xóa một bản ghi sổ liên lạc
+exports.deleteCommunicationBook = asyncHandler(async (req, res) => {
+    const communicationBook = await CommunicationBook.findByIdAndDelete(req.params.id);
+
+    if (!communicationBook) {
+        return res.status(404).json({ message: 'Không tìm thấy bản ghi sổ liên lạc' });
+    }
+
+    res.json({ message: 'Đã xóa bản ghi sổ liên lạc thành công' });
+}); 

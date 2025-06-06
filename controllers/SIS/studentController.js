@@ -1,231 +1,293 @@
-// controllers/studentController.js
+const asyncHandler = require('express-async-handler');
+const Student = require('../../models/Student');
+const User = require('../../models/Users');
+const Family = require('../../models/Family');
+const Parent = require('../../models/Parent');
 
-const Student = require("../../models/Students");
-const Family = require("../../models/Parent");
-const StudentClassEnrollment = require("../../models/StudentClassEnrollment");
-const SchoolYear = require("../../models/SchoolYear");
-const Photo = require("../../models/Photo");
-const xlsx = require("xlsx");
-const fs = require("fs");
+// Display list of all Students
+exports.getStudents = asyncHandler(async (req, res) => {
+  let query = Student.find();
 
-/** Tạo 1 student */
-exports.createStudent = async (req, res) => {
-  try {
-    const newStudent = await Student.create(req.body);
-    return res.status(201).json(newStudent);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
+  // Kiểm tra các query parameters để populate các trường liên quan
+  if (req.query.populate) {
+    const fieldsToPopulate = req.query.populate.split(',');
 
-/** Lấy tất cả student */
-exports.getAllStudents = async (req, res) => {
-  try {
-    const students = await Student.find();
-    return res.json(students);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
-
-/** Lấy 1 student theo id */
-exports.getStudentById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const student = await Student.findById(id);
-    if (!student) {
-      return res.status(404).json({ message: "Student not found" });
+    if (fieldsToPopulate.includes('family')) {
+      query = query.populate('family', 'familyCode address');
     }
-    return res.json(student);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
 
-/** Update 1 student */
-exports.updateStudent = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updated = await Student.findByIdAndUpdate(id, req.body, { new: true });
-    if (!updated) {
-      return res.status(404).json({ message: "Student not found" });
+    if (fieldsToPopulate.includes('class')) {
+      query = query.populate('class');
     }
-    // Nếu family thay đổi => cập nhật 2 chiều
-    // ...
-    return res.json(updated);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
+  } else {
+    // Mặc định vẫn populate class
+    query = query.populate('class');
   }
-};
 
-/** Xoá 1 student */
-exports.deleteStudent = async (req, res) => {
+  const students = await query;
+  res.json(students);
+});
+
+// Get a single Student by ID
+exports.getStudentById = asyncHandler(async (req, res) => {
+  const student = await Student.findById(req.params.id).populate('class');
+  if (!student) {
+    return res.status(404).json({ message: 'Student not found' });
+  }
+  res.json(student);
+});
+
+// Create a new Student
+exports.createStudent = asyncHandler(async (req, res) => {
+  if (!req.body.data) {
+    return res.status(400).json({ message: 'Thiếu trường data trong request' });
+  }
+  let studentData;
   try {
-    const { id } = req.params;
-    const deleted = await Student.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ message: "Student not found" });
-    }
-    // Gỡ student khỏi Family.students (nếu xài 2 chiều)
-    if (deleted.family) {
-      await Family.findByIdAndUpdate(deleted.family, {
-        $pull: { students: deleted._id },
+    studentData = JSON.parse(req.body.data);
+  } catch (err) {
+    return res.status(400).json({ message: 'Dữ liệu data không phải JSON hợp lệ' });
+  }
+
+  // Xử lý avatar
+  if (req.file) {
+    studentData.avatarUrl = `/uploads/Student/${req.file.filename}`;
+    console.log('avatarUrl:', studentData.avatarUrl);
+  }
+
+  // Xử lý tạo parent nếu có parentAccounts
+  let parentIds = [];
+  if (req.body.parentAccounts) {
+    const parentAccounts = JSON.parse(req.body.parentAccounts);
+    for (const acc of parentAccounts) {
+      // 1. Tạo user
+      const user = await User.create({
+        username: acc.username,
+        password: acc.password,
+        email: acc.email,
+        role: 'parent',
+        fullname: acc.fullname,
+        active: true,
       });
+      // 2. Tạo parent
+      const parent = await Parent.create({
+        user: user._id,
+        fullname: acc.fullname,
+        phone: acc.phone,
+        email: acc.email,
+      });
+      parentIds.push(parent._id);
     }
-    return res.json({ message: "Student deleted successfully" });
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
-
-exports.bulkUploadStudents = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
-
-    // Đọc Excel
-    const workbook = xlsx.readFile(req.file.path);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
-
-    for (const row of rows) {
-      // Lấy mã học sinh
-      const studentCode = row["ID học sinh"]?.toString().trim();
-      if (!studentCode) continue; // Bỏ qua nếu ko có ID
-
-      // Tìm student
-      let student = await Student.findOne({ studentCode });
-      if (!student) {
-        // Create
-        student = new Student({
-          studentCode,
-          name: row["Họ tên HS"] || "Unknown",
-          birthDate: parseExcelDate(row["Ngày sinh(DD/MM/YYYY)"]),
-          email: row["Email"] || "",
-        });
-      } else {
-        // Update
-        student.name = row["Họ tên HS"] || student.name;
-        const newBD = parseExcelDate(row["Ngày sinh(DD/MM/YYYY)"]);
-        if (newBD) student.birthDate = newBD;
-        const newEmail = row["Email"];
-        if (newEmail) student.email = newEmail;
-      }
-      await student.save();
-      
-    }
-
-    return res.json({ message: "Bulk upload Students success!" });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
-  } finally {
-  }
-};
-
-/**
- * parseExcelDate:
- * - Nếu là number => parse bằng xlsx.SSF.parse_date_code (Excel serial date).
- * - Nếu là string => parse DD/MM/YYYY
- */
-function parseExcelDate(value) {
-  if (!value) return null;
-
-  // Trường hợp value là số => Excel date code
-  if (typeof value === "number") {
-    // Xài xlsx.SSF.parse_date_code
-    const dateObj = xlsx.SSF.parse_date_code(value);
-    if (dateObj) {
-      return new Date(dateObj.y, dateObj.m - 1, dateObj.d);
-    }
-    return null;
   }
 
-  // Nếu là string => parse dd/MM/yyyy
-  if (typeof value === "string") {
-    const parts = value.split("/");
-    if (parts.length === 3) {
-      const d = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      const y = parseInt(parts[2], 10);
-      if (d && m && y) {
-        return new Date(y, m - 1, d);
+  // Nếu không có parentIds, lấy từ studentData.parents (nếu đã là ObjectId)
+  if (parentIds.length === 0 && Array.isArray(studentData.parents)) {
+    parentIds = studentData.parents.filter(p => typeof p === 'string' || typeof p === 'object' && p._id).map(p => typeof p === 'string' ? p : p._id);
+  }
+
+  studentData.parents = parentIds;
+
+  // Xử lý Family
+  let familyId = studentData.family;
+  if (familyId) {
+    // Nếu có familyId, thêm student vào family
+    const family = await Family.findById(familyId);
+    if (family) {
+      family.students.push(studentData._id);
+      await family.save();
+      // Thêm student vào students của từng parent trong family
+      for (const parentObj of family.parents) {
+        const parent = await Parent.findById(parentObj.parent);
+        if (parent && !parent.students.includes(studentData._id)) {
+          parent.students.push(studentData._id);
+          await parent.save();
+        }
       }
     }
-  }
-  return null;
-}
-
-exports.searchStudents = async (req, res) => {
-  try {
-    const q = req.query.q?.trim() || "";
-    if (!q) {
-      return res.json([]); // Trả về mảng rỗng nếu query trống
-    }
-
-    // 1) Tìm students
-    const students = await Student.find({
-      $or: [
-        { studentCode: { $regex: q, $options: "i" } },
-        { name: { $regex: q, $options: "i" } },
-      ],
-    })
-      .limit(20)
-      .lean();
-
-    if (!students.length) {
-      return res.json([]); // Trả về mảng rỗng nếu không tìm thấy
-    }
-
-    // 2) Lấy current school year
-    const now = new Date();
-    let currentSchoolYear = await SchoolYear.findOne({
-      startDate: { $lte: now },
-      endDate: { $gte: now },
-    }).sort({ startDate: -1 }).lean();
-
-    if (!currentSchoolYear) {
-      currentSchoolYear = await SchoolYear.findOne().sort({ startDate: -1 }).lean();
-    }
-
-    if (!currentSchoolYear) {
-      return res.status(500).json({ error: "No school year found" });
-    }
-
-    // 3) Tối ưu hóa: Query enrollment và photo cùng lúc
-    const studentIds = students.map((s) => s._id);
-    const [enrollments, photos] = await Promise.all([
-      StudentClassEnrollment.find({
-        student: { $in: studentIds },
-        schoolYear: currentSchoolYear._id,
-      })
-        .populate("class")
-        .lean(),
-      Photo.find({
-        student: { $in: studentIds },
-        schoolYear: currentSchoolYear._id,
-      }).lean(),
-    ]);
-
-    // 4) Map dữ liệu
-    const results = students.map((s) => {
-      const enrollment = enrollments.find((e) => e.student.toString() === s._id.toString());
-      const photo = photos.find((p) => p.student.toString() === s._id.toString());
-
-      return {
-        _id: s._id,
-        studentId: s.studentCode || "",
-        fullName: s.name || "",
-        email: s.email || "",
-        className: enrollment?.class?.className || "",
-        photoUrl: photo?.photoUrl || "",
-      };
+  } else if (parentIds.length > 0) {
+    // Nếu không có familyId nhưng có parents, tạo family mới
+    const family = new Family({
+      familyCode: `FAM${Date.now()}`,
+      parents: parentIds.map(parentId => ({
+        parent: parentId,
+        relationship: 'Khác' // Mặc định là 'Khác', có thể cập nhật sau
+      })),
+      students: [studentData._id]
     });
-
-    return res.json(results);
-  } catch (err) {
-    console.error("Error searching students:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    const newFamily = await family.save();
+    familyId = newFamily._id;
+    studentData.family = familyId;
   }
-};
+
+  console.log('Final studentData:', studentData);
+
+  const student = new Student(studentData);
+  const newStudent = await student.save();
+  res.status(201).json(newStudent);
+});
+
+// Update a Student
+exports.updateStudent = asyncHandler(async (req, res) => {
+  if (!req.body.data) {
+    return res.status(400).json({ message: 'Thiếu trường data trong request' });
+  }
+  let studentData;
+  try {
+    studentData = JSON.parse(req.body.data);
+  } catch (err) {
+    return res.status(400).json({ message: 'Dữ liệu data không phải JSON hợp lệ' });
+  }
+
+  // Xử lý avatar mới (nếu có)
+  if (req.file) {
+    studentData.avatarUrl = `/uploads/Student/${req.file.filename}`;
+  }
+
+  // Xử lý tạo parent mới nếu có parentAccounts
+  let parentIds = [];
+  if (req.body.parentAccounts) {
+    const parentAccounts = JSON.parse(req.body.parentAccounts);
+    for (const acc of parentAccounts) {
+      // 1. Tạo user
+      const user = await User.create({
+        username: acc.username,
+        password: acc.password,
+        email: acc.email,
+        role: 'parent',
+        fullname: acc.fullname,
+        active: true,
+      });
+      // 2. Tạo parent
+      const parent = await Parent.create({
+        user: user._id,
+        fullname: acc.fullname,
+        phone: acc.phone,
+        email: acc.email,
+      });
+      parentIds.push(parent._id);
+    }
+  }
+
+  // Nếu không có parentIds mới, giữ lại các parent cũ (nếu có)
+  if (parentIds.length === 0 && Array.isArray(studentData.parents)) {
+    parentIds = studentData.parents.filter(p => typeof p === 'string' || (typeof p === 'object' && p._id)).map(p => typeof p === 'string' ? p : p._id);
+  }
+
+  studentData.parents = parentIds;
+
+  // Lấy thông tin student hiện tại
+  const currentStudent = await Student.findById(req.params.id);
+  if (!currentStudent) {
+    return res.status(404).json({ message: 'Student not found' });
+  }
+
+  // Xử lý Family
+  let familyId = studentData.family;
+  if (familyId) {
+    // Nếu có familyId mới
+    if (currentStudent.family && currentStudent.family.toString() !== familyId) {
+      // Xóa student khỏi family cũ
+      const oldFamily = await Family.findById(currentStudent.family);
+      if (oldFamily) {
+        oldFamily.students = oldFamily.students.filter(s => s.toString() !== req.params.id);
+        await oldFamily.save();
+        // Xóa student khỏi students của từng parent trong family cũ
+        for (const parentObj of oldFamily.parents) {
+          const parent = await Parent.findById(parentObj.parent);
+          if (parent) {
+            parent.students = parent.students.filter(s => s.toString() !== req.params.id);
+            await parent.save();
+          }
+        }
+      }
+    }
+
+    // Thêm student vào family mới
+    const newFamily = await Family.findById(familyId);
+    if (newFamily) {
+      if (!newFamily.students.includes(req.params.id)) {
+        newFamily.students.push(req.params.id);
+        await newFamily.save();
+      }
+      // Thêm student vào students của từng parent trong family mới
+      for (const parentObj of newFamily.parents) {
+        const parent = await Parent.findById(parentObj.parent);
+        if (parent && !parent.students.includes(req.params.id)) {
+          parent.students.push(req.params.id);
+          await parent.save();
+        }
+      }
+    }
+  } else if (parentIds.length > 0) {
+    // Nếu không có familyId nhưng có parents, tạo family mới
+    const family = new Family({
+      familyCode: `FAM${Date.now()}`,
+      parents: parentIds.map(parentId => ({
+        parent: parentId,
+        relationship: 'Khác'
+      })),
+      students: [req.params.id]
+    });
+    const newFamily = await family.save();
+    familyId = newFamily._id;
+    studentData.family = familyId;
+
+    // Xóa student khỏi family cũ nếu có
+    if (currentStudent.family) {
+      const oldFamily = await Family.findById(currentStudent.family);
+      if (oldFamily) {
+        oldFamily.students = oldFamily.students.filter(s => s.toString() !== req.params.id);
+        await oldFamily.save();
+        // Xóa student khỏi students của từng parent trong family cũ
+        for (const parentObj of oldFamily.parents) {
+          const parent = await Parent.findById(parentObj.parent);
+          if (parent) {
+            parent.students = parent.students.filter(s => s.toString() !== req.params.id);
+            await parent.save();
+          }
+        }
+      }
+    }
+  }
+
+  // Cập nhật student
+  const student = await Student.findByIdAndUpdate(req.params.id, studentData, { new: true });
+  res.json(student);
+});
+
+// Bỏ gia đình khỏi học sinh (PATCH /students/:id/remove-family)
+exports.removeFamilyFromStudent = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // 1. Lấy thông tin Student
+  const student = await Student.findById(id);
+  if (!student) {
+    return res.status(404).json({ message: 'Student not found' });
+  }
+
+  if (!student.family) {
+    return res.status(400).json({ message: 'Học sinh hiện không thuộc gia đình nào' });
+  }
+
+  // 2. Gỡ student ra khỏi Family.students
+  const family = await Family.findById(student.family);
+  if (family) {
+    family.students = family.students.filter(s => s.toString() !== id);
+    await family.save();
+  }
+
+  // 3. Xoá liên kết ở phía Student
+  student.family = undefined;
+  await student.save();
+
+  res.json({ message: 'Đã bỏ gia đình khỏi học sinh', student });
+});
+
+// Delete a Student
+exports.deleteStudent = asyncHandler(async (req, res) => {
+  const student = await Student.findByIdAndDelete(req.params.id);
+  if (!student) {
+    return res.status(404).json({ message: 'Student not found' });
+  }
+  res.json({ message: 'Student deleted successfully' });
+});

@@ -1,12 +1,625 @@
-const User = require("../../models/Users"); // Correct import path for User model
-const Laptop = require("../../models/Laptop"); // Import model Laptop
-const Monitor = require("../../models/Monitor");
-const Projector = require("../../models/Projector");
-const Printer = require("../../models/Printer");
-const Tool = require("../../models/Tool");
-const bcrypt = require("bcryptjs"); // Import bcrypt for password hashing
-const redisService = require('../../services/redisService');
+const mongoose = require("mongoose");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const xlsx = require("xlsx");
+const User = require ("../../models/Users");
+const Teacher = require("../../models/Teacher");
+const Parent = require("../../models/Parent");
 
+// Thêm import cho Redis service và các models thiết bị (cần tạo sau)
+// const redisService = require('../services/redisService');
+// const Laptop = require("../models/Laptop");
+// const Monitor = require("../models/Monitor");
+// const Projector = require("../models/Projector");
+// const Printer = require("../models/Printer");
+// const Tool = require("../models/Tool");
+
+// Đăng nhập
+
+
+// Tạo người dùng mới
+exports.createUser = async (req, res) => {
+  try {
+    const { username, password, email, role, fullname, active } = req.body;
+    const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : null;
+
+    // Kiểm tra dữ liệu đầu vào
+    if (!username || !password || !email || !role || !fullname) {
+      return res.status(400).json({ message: "Username, password, email, role, and fullname are required" });
+    }
+
+    // Kiểm tra role hợp lệ
+    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
+    }
+
+    // Kiểm tra trùng username hoặc email
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
+    if (existingUser) {
+      return res.status(400).json({ message: "Username or email already exists" });
+    }
+
+    // Mã hóa mật khẩu
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = await User.create({
+      username,
+      password: hashedPassword,
+      email,
+      role,
+      fullname,
+      active: active !== undefined ? active : true,
+      avatarUrl
+    });
+
+    await newUser.save();
+
+    // Nếu role là teacher, tạo bản ghi Teacher tương ứng
+    if (role === "teacher") {
+      await Teacher.create({
+        user: newUser._id,
+        fullname: newUser.fullname,
+        email: newUser.email,
+        avatarUrl: newUser.avatarUrl,
+        subjects: [],
+        classes: [],
+        school: req.body.school || req.user?.school
+      });
+    }
+
+    // Xóa cache danh sách users (nếu có Redis)
+    // await redisService.deleteAllUsersCache();
+
+    return res.status(201).json({
+      _id: newUser._id,
+      username: newUser.username,
+      email: newUser.email,
+      role: newUser.role,
+      fullname: newUser.fullname,
+      avatarUrl: newUser.avatarUrl,
+      active: newUser.active,
+      message: "Tạo người dùng thành công"
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Lấy tất cả người dùng
+exports.getAllUsers = async (req, res) => {
+  try {
+    const { role } = req.query;
+    let query = {};
+
+    // Lọc theo role nếu có
+    if (role) {
+      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
+      }
+      query.role = role;
+    }
+
+    // Kiểm tra cache trước (nếu có Redis service)
+    // let users = await redisService.getAllUsers();
+    
+    // if (!users) {
+      // Nếu không có trong cache, truy vấn database
+      const users = await User.find(query).select("-password").sort({ createdAt: -1 });
+      
+      // Chỉ lưu vào cache nếu users không phải là undefined/null và có dữ liệu
+      // if (users && Array.isArray(users)) {
+      //   await redisService.setAllUsers(users);
+      // }
+    // }
+
+    // Đảm bảo luôn trả về một array, ngay cả khi users là null/undefined
+    const responseUsers = users || [];
+    return res.json({
+      data: responseUsers,
+      message: "Lấy danh sách người dùng thành công"
+    });
+  } catch (err) {
+    console.error("Error fetching users:", err.message);
+    return res.status(500).json({ 
+      message: "Error fetching users", 
+      error: err.message 
+    });
+  }
+};
+
+// Lấy người dùng theo ID
+exports.getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = id === "me" ? req.user?.id : id;
+    
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    // Kiểm tra cache trước (nếu có Redis)
+    // let user = await redisService.getUserData(userId);
+    
+    // if (!user) {
+      // Nếu không có trong cache, truy vấn database
+      const user = await User.findById(userId).select("-password");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      // Lưu vào cache (nếu có Redis)
+      // await redisService.setUserData(userId, user);
+    // }
+
+    return res.json(user);
+  } catch (err) {
+    console.error("Error fetching user by ID:", err.message);
+    return res.status(500).json({ 
+      message: "Server error", 
+      error: err.message 
+    });
+  }
+};
+
+// Cập nhật người dùng
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { username, email, role, fullname, active } = req.body;
+    const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : undefined;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    // Kiểm tra role hợp lệ (nếu thay đổi)
+    if (role) {
+      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
+      }
+    }
+
+    // Kiểm tra trùng username hoặc email (nếu thay đổi)
+    if (username || email) {
+      const existingUser = await User.findOne({
+        $or: [{ username }, { email }],
+        _id: { $ne: id },
+      });
+      if (existingUser) {
+        return res.status(400).json({ message: "Username or email already exists" });
+      }
+    }
+
+    // Lấy thông tin user cũ để kiểm tra role
+    const oldUser = await User.findById(id);
+    if (!oldUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      {
+        username,
+        email,
+        role,
+        fullname,
+        active,
+        avatarUrl,
+        updatedAt: Date.now(),
+      },
+      { new: true, omitUndefined: true }
+    ).select("-password");
+
+    // Xử lý thay đổi role
+    if (role && role !== oldUser.role) {
+      // Nếu role cũ là teacher, xóa bản ghi teacher
+      if (oldUser.role === "teacher") {
+        await Teacher.findOneAndDelete({ user: id });
+      }
+
+      // Nếu role mới là teacher, tạo bản ghi teacher mới
+      if (role === "teacher") {
+        await Teacher.create({
+          user: id,
+          fullname: updatedUser.fullname,
+          email: updatedUser.email,
+          avatarUrl: updatedUser.avatarUrl,
+          subjects: [],
+          classes: []
+        });
+      }
+    } else if (role === "teacher") {
+      // Nếu role không thay đổi và là teacher, cập nhật thông tin teacher
+      await Teacher.findOneAndUpdate(
+        { user: id },
+        {
+          fullname: updatedUser.fullname,
+          email: updatedUser.email,
+          avatarUrl: updatedUser.avatarUrl,
+          updatedAt: Date.now()
+        }
+      );
+    }
+
+    // Xóa cache user (nếu có Redis)
+    // await redisService.deleteUserCache(updatedUser._id);
+
+    return res.json(updatedUser);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Xóa người dùng
+exports.deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Không cho xóa admin chính (giả định admin đầu tiên)
+    if (user.role === "admin" && (await User.countDocuments({ role: "admin" })) === 1) {
+      return res.status(400).json({ message: "Cannot delete the last admin" });
+    }
+
+    // Xóa bản ghi teacher nếu user là teacher
+    if (user.role === "teacher") {
+      await Teacher.findOneAndDelete({ user: id });
+    }
+
+    await User.findByIdAndDelete(id);
+
+    // Xóa cache liên quan (nếu có Redis)
+    // await redisService.deleteUserCache(id);
+    // await redisService.deleteAllUsersCache();
+
+    return res.json({ message: "User deleted successfully" });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Thay đổi mật khẩu
+exports.changePassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { oldPassword, newPassword } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Old password and new password are required" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Kiểm tra mật khẩu cũ
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Incorrect old password" });
+    }
+
+    // Mã hóa mật khẩu mới
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.updatedAt = Date.now();
+    await user.save();
+
+    return res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Nhập hàng loạt người dùng từ Excel
+exports.bulkUploadUsers = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Vui lòng tải lên file Excel" });
+    }
+
+    // Đọc file Excel từ buffer
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    if (!data || data.length === 0) {
+      return res.status(400).json({ message: "Không có dữ liệu trong file Excel" });
+    }
+
+    const usersToInsert = [];
+    const errors = [];
+    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+
+    for (const row of data) {
+      const { Username, Password, Email, Role, Fullname, Active } = row;
+
+      // Kiểm tra dữ liệu bắt buộc
+      if (!Username || !Password || !Email || !Role || !Fullname) {
+        errors.push(`Thiếu thông tin bắt buộc ở dòng: ${JSON.stringify(row)}`);
+        continue;
+      }
+
+      // Kiểm tra role hợp lệ
+      if (!validRoles.includes(Role)) {
+        errors.push(`Role không hợp lệ ở dòng ${Username}: ${Role}. Role phải là một trong: ${validRoles.join(", ")}`);
+        continue;
+      }
+
+      // Kiểm tra trùng username hoặc email
+      const existingUser = await User.findOne({ $or: [{ username: Username }, { email: Email }] });
+      if (existingUser) {
+        errors.push(`Username hoặc email đã tồn tại: ${Username}, ${Email}`);
+        continue;
+      }
+
+      // Mã hóa mật khẩu
+      const hashedPassword = await bcrypt.hash(Password, 10);
+
+      usersToInsert.push({
+        username: Username,
+        password: hashedPassword,
+        email: Email,
+        role: Role,
+        fullname: Fullname,
+        active: Active === true || Active === "true" || Active === 1,
+      });
+    }
+
+    // Thêm vào database
+    if (usersToInsert.length > 0) {
+      const createdUsers = await User.insertMany(usersToInsert);
+
+      // Tạo bản ghi Teacher cho các user có role là teacher
+      const teachersToCreate = createdUsers.filter(user => user.role === 'teacher');
+      if (teachersToCreate.length > 0) {
+        const teacherRecords = teachersToCreate.map(user => ({
+          user: user._id,
+          fullname: user.fullname,
+          email: user.email,
+          subjects: [],
+          classes: []
+        }));
+        await Teacher.insertMany(teacherRecords);
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(207).json({
+        message: `Đã import ${usersToInsert.length} người dùng, có ${errors.length} lỗi`,
+        errors,
+      });
+    }
+
+    return res.json({
+      message: `Đã import thành công ${usersToInsert.length} người dùng`,
+      success: true
+    });
+  } catch (err) {
+    console.error('Error in bulkUploadUsers:', err);
+    return res.status(500).json({
+      message: "Lỗi khi xử lý file Excel",
+      error: err.message
+    });
+  }
+};
+
+
+// Tìm kiếm người dùng theo fullname, username, email
+exports.searchUsers = async (req, res) => {
+  try {
+    const { q, role } = req.query;
+
+    // Kiểm tra tham số tìm kiếm
+    if (!q) {
+      return res.status(400).json({ message: "Search query (q) is required" });
+    }
+
+    // Tạo query tìm kiếm
+    const searchRegex = new RegExp(q, "i"); // Không phân biệt hoa thường
+    let query = {
+      $or: [
+        { fullname: searchRegex },
+        { username: searchRegex },
+        { email: searchRegex },
+      ],
+    };
+
+    // Lọc theo role nếu có
+    if (role) {
+      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
+      }
+      query.role = role;
+    }
+
+    const users = await User.find(query)
+      .select("-password")
+      .sort({ fullname: 1 })
+      .limit(50); // Giới hạn kết quả để tối ưu
+
+    return res.json(users);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Reset mật khẩu (chỉ dành cho admin)
+exports.resetPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    if (!newPassword) {
+      return res.status(400).json({ message: "New password is required" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Mã hóa mật khẩu mới
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.updatedAt = Date.now();
+    await user.save();
+
+    return res.json({ message: "Password reset successfully" });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Tạo nhiều người dùng cùng lúc
+exports.createBatchUsers = async (req, res) => {
+  try {
+    console.log('createBatchUsers raw body:', JSON.stringify(req.body));
+    // Chấp nhận cả hai định dạng: mảng thuần **hoặc** { users: [...] }
+    const usersPayload = Array.isArray(req.body) ? req.body : req.body.users;
+    console.log('createBatchUsers usersPayload:', JSON.stringify(usersPayload));
+    if (!Array.isArray(usersPayload) || usersPayload.length === 0) {
+      return res
+        .status(400)
+        .json({
+          message: 'Dữ liệu không hợp lệ. Yêu cầu một mảng người dùng.',
+          payload: req.body,
+          usersPayload
+        });
+    }
+    const users = usersPayload; 
+    const defaultSchool = req.user?.school || req.body.defaultSchool || null;
+
+    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+    const errors = [];
+    const usersToInsert = [];
+    const existingUsernames = new Set();
+    const existingEmails = new Set();
+
+    // Kiểm tra trùng lặp trong danh sách
+    const usernames = users.map(u => u.username);
+    const emails = users.map(u => u.email);
+    const existingUsers = await User.find({
+      $or: [
+        { username: { $in: usernames } },
+        { email: { $in: emails } }
+      ]
+    }).select('username email');
+
+    existingUsers.forEach(user => {
+      existingUsernames.add(user.username);
+      existingEmails.add(user.email);
+    });
+
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i];
+      const { username, password, email, role, fullname, active } = user;
+
+      // Kiểm tra dữ liệu bắt buộc
+      if (!username || !password || !email || !role || !fullname) {
+        errors.push(`Dòng ${i + 1}: Thiếu thông tin bắt buộc`);
+        continue;
+      }
+
+      // Kiểm tra role hợp lệ
+      if (!validRoles.includes(role)) {
+        errors.push(`Dòng ${i + 1}: Role không hợp lệ. Role phải là một trong: ${validRoles.join(", ")}`);
+        continue;
+      }
+
+      // Kiểm tra trùng username hoặc email
+      if (existingUsernames.has(username)) {
+        errors.push(`Dòng ${i + 1}: Username '${username}' đã tồn tại`);
+        continue;
+      }
+      if (existingEmails.has(email)) {
+        errors.push(`Dòng ${i + 1}: Email '${email}' đã tồn tại`);
+        continue;
+      }
+
+      // Thêm vào danh sách chờ và đánh dấu đã sử dụng
+      existingUsernames.add(username);
+      existingEmails.add(email);
+
+      // Mã hóa mật khẩu
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      usersToInsert.push({
+        username,
+        password: hashedPassword,
+        email,
+        role,
+        fullname,
+        active: active !== undefined ? active : true,
+        // Assign school for teachers
+        ...(role === 'teacher' && { school: user.school || defaultSchool }),
+      });
+    }
+
+    // Nếu có lỗi, trả về danh sách lỗi
+    if (errors.length > 0) {
+      return res.status(400).json({
+        message: "Có lỗi trong dữ liệu",
+        errors
+      });
+    }
+
+    // Thêm users vào database
+    const createdUsers = await User.insertMany(usersToInsert);
+
+    // Tạo bản ghi Teacher cho các user có role là teacher
+    const teachersToCreate = createdUsers
+      .filter(user => user.role === 'teacher')
+      .map(user => ({
+        user: user._id,
+        fullname: user.fullname,
+        email: user.email,
+        subjects: [],
+        classes: [],
+        school: defaultSchool  // use defaultSchool for required field
+      }));
+
+    if (teachersToCreate.length > 0) {
+      await Teacher.insertMany(teachersToCreate);
+    }
+
+    return res.status(201).json({
+      message: `Đã tạo thành công ${createdUsers.length} người dùng`,
+      users: createdUsers.map(user => ({
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        fullname: user.fullname,
+        active: user.active,
+      }))
+    });
+  } catch (err) {
+    console.error('Error in createBatchUsers:', err);
+    return res.status(500).json({
+      message: "Lỗi khi tạo người dùng",
+      error: err.message
+    });
+  }
+};
 // Gán thiết bị cho người dùng
 exports.getAssignedItems = async (req, res) => {
   try {
@@ -17,7 +630,6 @@ exports.getAssignedItems = async (req, res) => {
     }
 
     // Chuyển userId sang ObjectId
-    const mongoose = require("mongoose");
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
     // Kiểm tra user có tồn tại không
@@ -26,17 +638,25 @@ exports.getAssignedItems = async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    // Truy vấn danh sách thiết bị
+    // Trả về kết quả (sẽ cần import các model thiết bị)
+    /*
     const laptops = await Laptop.find({ assigned: userObjectId }).lean();
     const monitors = await Monitor.find({ assigned: userObjectId }).lean();
     const projectors = await Projector.find({ assigned: userObjectId }).lean();
     const printers = await Printer.find({ assigned: userObjectId }).lean();
     const tools = await Tool.find({ assigned: userObjectId }).lean();
 
-    // Trả về kết quả
     res.status(200).json({
       message: "Assigned items fetched successfully.",
       items: { laptops, monitors, projectors, printers, tools },
+    });
+    */
+    
+    // Tạm thời trả về thông báo
+    res.status(200).json({
+      message: "Assigned items feature ready - need to implement device models",
+      userId: userId,
+      user: user.fullname
     });
   } catch (error) {
     console.error("Error fetching assigned items:", error.message);
@@ -44,169 +664,7 @@ exports.getAssignedItems = async (req, res) => {
   }
 };
 
-// Get Users
-exports.getUsers = async (req, res) => {
-  try {
-    // Kiểm tra cache trước
-    let users = await redisService.getAllUsers();
-
-    if (!users) {
-      // Nếu không có trong cache, truy vấn database
-      users = await User.find({}, "-password"); // Exclude password for security
-      
-      // Chỉ lưu vào cache nếu users không phải là undefined/null và có dữ liệu
-      if (users && Array.isArray(users)) {
-        await redisService.setAllUsers(users);
-      }
-    }
-
-    // Đảm bảo luôn trả về một array, ngay cả khi users là null/undefined
-    const responseUsers = users || [];
-    res.status(200).json(responseUsers);
-  } catch (error) {
-    console.error("Error fetching users:", error.message);
-    res.status(500).json({ message: "Error fetching users", error: error.message });
-  }
-};
-
-exports.createUser = async (req, res) => {
-  try {
-    const { fullname, email, password, role, employeeCode, avatar, active = false } = req.body;
-    let hashedPassword = null;
-    if (password) {
-      hashedPassword = await bcrypt.hash(password, 10);
-    }
-
-    const newUser = new User({
-      fullname,
-      email,
-      password: hashedPassword,
-      role,
-      employeeCode,
-      avatarUrl: avatar,
-      active,
-    });
-
-    await newUser.save();
-
-    // Xóa cache danh sách users
-    await redisService.deleteAllUsersCache();
-
-    res.status(201).json({ message: "Tạo người dùng thành công", user: newUser });
-  } catch (error) {
-    console.error("Error creating user:", error.message);
-    res.status(500).json({ message: "Server error", error });
-  }
-};
-
-// Update User
-exports.updateUser = async (req, res) => {
-  console.log("PUT /users/:id =>", req.params.id);
-  try {
-    const { id } = req.params;
-    const {
-      fullname,
-      disabled,
-      department,
-      jobTitle,
-      role,
-      employeeCode,
-      password,
-      newPassword,
-      email,
-      status,
-    } = req.body;
-
-    // Tìm user theo id
-    const user = await User.findById(id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
-    // Nếu gửi file avatar => cập nhật avatarUrl
-    if (req.file) {
-      user.avatarUrl = `/uploads/Avatar/${req.file.filename}`;
-    }
-
-    // Cập nhật thông tin cơ bản
-    if (fullname) user.fullname = fullname;
-    if (email) user.email = email;
-    if (department) user.department = department;
-    if (jobTitle) user.jobTitle = jobTitle;
-    if (role) user.role = role;
-
-    // Kiểm tra trùng mã nhân viên (nếu truyền lên)
-    if (employeeCode) {
-      const existingUser = await User.findOne({
-        employeeCode,
-        _id: { $ne: id },
-      });
-      if (existingUser) {
-        return res
-          .status(400)
-          .json({ message: "Mã nhân viên đã tồn tại với người dùng khác." });
-      }
-      user.employeeCode = employeeCode;
-    }
-
-    // disabled: string => boolean
-    if (typeof disabled === "string") {
-      user.disabled = disabled === "true";
-    } else if (typeof disabled === "boolean") {
-      user.disabled = disabled;
-    }
-
-    // Nếu có newPassword => hash
-    if (newPassword) {
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(newPassword, salt);
-    } else if (password) {
-      // Trường hợp FE vẫn dùng field 'password'
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(password, salt);
-    }
-
-    await user.save();
-
-    // Xóa cache liên quan
-    await redisService.deleteUserCache(id);
-    await redisService.deleteAllUsersCache();
-
-    console.log("Đã cập nhật user thành công:", user.fullname);
-
-    // Ẩn password
-    const userObj = user.toObject();
-    delete userObj.password;
-
-    return res.status(200).json(userObj);
-  } catch (error) {
-    console.error("Error updating user:", error);
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
-  }
-};
-
-// Delete User
-exports.deleteUser = async (req, res) => {
-  try {
-    const deletedUser = await User.findByIdAndDelete(req.params.id);
-
-    if (!deletedUser) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
-    // Xóa cache liên quan
-    await redisService.deleteUserCache(req.params.id);
-    await redisService.deleteAllUsersCache();
-
-    res.status(200).json({ message: "User deleted successfully!" });
-  } catch (error) {
-    console.error("Error deleting user:", error.message);
-    res.status(400).json({ message: "Error deleting user", error: error.message });
-  }
-};
-
+// Cập nhật chấm công
 exports.updateAttendance = async (req, res) => {
   try {
     const { employeeCode, attendanceLog } = req.body;
@@ -226,68 +684,115 @@ exports.updateAttendance = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy nhân viên" });
     }
 
-    // Xóa cache user
-    await redisService.deleteUserCache(user._id);
+    // Xóa cache user (nếu có Redis)
+    // await redisService.deleteUserCache(user._id);
 
-    return res.status(200).json({ message: "Cập nhật thành công", user });
+    return res.status(200).json({ message: "Cập nhật chấm công thành công", user });
   } catch (error) {
     console.error("Error updating attendance:", error.message);
     return res.status(500).json({ message: "Lỗi máy chủ.", error: error.message });
   }
 };
 
-// Thêm hàm này ở cuối file userController.js (hoặc vị trí thích hợp)
+// Upload avatar hàng loạt
 exports.bulkAvatarUpload = async (req, res) => {
-  req.files = req.files.filter(file => file.fieldname === "avatars");
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: "Không có file nào được upload." });
+    // Lọc chỉ lấy các file avatar
+    const avatarFiles = req.files ? req.files.filter(file => file.fieldname === "avatars") : [];
+    
+    if (!avatarFiles || avatarFiles.length === 0) {
+      return res.status(400).json({ message: "Không có file avatar nào được upload." });
     }
 
     let updatedCount = 0;
+    const errors = [];
 
-    for (const file of req.files) {
-      const originalName = file.originalname;
-      const parts = originalName.split("_");
-      if (parts.length < 2) {
-        continue;
-      }
+    for (const file of avatarFiles) {
+      try {
+        const originalName = file.originalname;
+        const parts = originalName.split("_");
+        
+        if (parts.length < 2) {
+          errors.push(`File ${originalName}: Tên file không đúng định dạng (cần có _)`);
+          continue;
+        }
 
-      const lastPart = parts[parts.length - 1];
-      const employeeCode = lastPart.split(".")[0];
+        const lastPart = parts[parts.length - 1];
+        const employeeCode = lastPart.split(".")[0];
 
-      if (!employeeCode) {
-        continue;
-      }
+        if (!employeeCode) {
+          errors.push(`File ${originalName}: Không tìm thấy mã nhân viên`);
+          continue;
+        }
 
-      const user = await User.findOneAndUpdate(
-        { employeeCode: employeeCode },
-        { avatarUrl: file.filename },
-        { new: true }
-      );
+        const user = await User.findOneAndUpdate(
+          { employeeCode: employeeCode },
+          { avatarUrl: `/uploads/Avatar/${file.filename}` },
+          { new: true }
+        );
 
-      if (user) {
-        // Xóa cache user
-        await redisService.deleteUserCache(user._id);
-        updatedCount++;
+        if (user) {
+          // Xóa cache user (nếu có Redis)
+          // await redisService.deleteUserCache(user._id);
+          updatedCount++;
+        } else {
+          errors.push(`File ${originalName}: Không tìm thấy nhân viên với mã ${employeeCode}`);
+        }
+      } catch (fileError) {
+        errors.push(`File ${file.originalname}: ${fileError.message}`);
       }
     }
 
-    // Xóa cache danh sách users
-    await redisService.deleteAllUsersCache();
+    // Xóa cache danh sách users (nếu có Redis)
+    // await redisService.deleteAllUsersCache();
 
     return res.status(200).json({
-      message: "Bulk avatar upload thành công",
+      message: "Bulk avatar upload hoàn thành",
       updated: updatedCount,
+      total: avatarFiles.length,
+      errors: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
     console.error("Error bulk uploading avatars:", error);
-    return res
-      .status(500)
-      .json({ message: "Lỗi khi upload avatar hàng loạt", error });
+    return res.status(500).json({ 
+      message: "Lỗi khi upload avatar hàng loạt", 
+      error: error.message 
+    });
   }
 };
 
+// Lấy danh sách người dùng trong cùng phòng ban
+exports.getUsersByDepartment = async (req, res) => {
+  try {
+    const { department } = req.params;
+    
+    if (!department) {
+      return res.status(400).json({ message: "Department parameter is required" });
+    }
+
+    console.log('Fetching users for department:', department);
+
+    const users = await User.find(
+      { department },
+      "fullname avatarUrl email department role active"
+    ).sort({ fullname: 1 });
+
+    res.status(200).json({ 
+      department,
+      users,
+      count: users.length,
+      message: "Lấy danh sách nhân viên theo phòng ban thành công"
+    });
+  } catch (error) {
+    console.error("Error fetching department users:", error.message);
+    res.status(500).json({ 
+      message: "Error fetching department users", 
+      error: error.message 
+    });
+  }
+};
+
+// Cập nhật hàng loạt thông tin user
 exports.bulkUpdateUsers = async (req, res) => {
   try {
     const { users } = req.body;
@@ -299,97 +804,68 @@ exports.bulkUpdateUsers = async (req, res) => {
       });
     }
 
-    // Lặp và cập nhật
-    const updatePromises = users.map(async (user) => {
-      if (!user.email) throw new Error("Email là bắt buộc");
-      const updatedUser = await User.findOneAndUpdate(
-        { email: user.email },
-        { $set: user },
-        { new: true, upsert: false }
-      );
-      if (updatedUser) {
-        // Xóa cache user
-        await redisService.deleteUserCache(updatedUser._id);
+    const updateResults = [];
+    const errors = [];
+
+    // Lặp và cập nhật từng user
+    for (const userData of users) {
+      try {
+        if (!userData.email) {
+          errors.push("Email là bắt buộc cho mỗi user");
+          continue;
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+          { email: userData.email },
+          { 
+            $set: {
+              ...userData,
+              updatedAt: Date.now()
+            }
+          },
+          { new: true, upsert: false }
+        ).select("-password");
+
+        if (updatedUser) {
+          // Xóa cache user (nếu có Redis)
+          // await redisService.deleteUserCache(updatedUser._id);
+          updateResults.push(updatedUser);
+        } else {
+          errors.push(`Không tìm thấy user với email: ${userData.email}`);
+        }
+      } catch (userError) {
+        errors.push(`Lỗi cập nhật user ${userData.email}: ${userError.message}`);
       }
-      return updatedUser;
+    }
+
+    // Xóa cache danh sách users (nếu có Redis)
+    // await redisService.deleteAllUsersCache();
+
+    res.json({ 
+      message: "Cập nhật hàng loạt hoàn thành!",
+      updated: updateResults.length,
+      total: users.length,
+      errors: errors.length > 0 ? errors : undefined,
+      results: updateResults
     });
-
-    await Promise.all(updatePromises);
-
-    // Xóa cache danh sách users
-    await redisService.deleteAllUsersCache();
-
-    res.json({ message: "Cập nhật thành công!" });
   } catch (error) {
-    console.error("Lỗi khi cập nhật:", error.message);
-    res.status(500).json({ message: "Lỗi server", error: error.message });
+    console.error("Lỗi khi cập nhật hàng loạt:", error.message);
+    res.status(500).json({ 
+      message: "Lỗi server", 
+      error: error.message 
+    });
   }
 };
 
-exports.searchUsers = async (req, res) => {
+// Thêm vào cuối file hoặc vị trí phù hợp
+exports.getCurrentUser = async (req, res) => {
   try {
-    const { query } = req.query;
-    if (!query || query.trim() === "") {
-      return res.status(400).json({ message: "Query không hợp lệ." });
+    // req.user đã được gán bởi middleware authenticateToken
+    if (!req.user) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
-
-    const condition = {
-      $or: [
-        { fullname: { $regex: query, $options: "i" } },
-        { email: { $regex: query, $options: "i" } },
-      ],
-    };
-
-    const users = await User.find(condition, "-password");
-    if (users.length === 0) {
-      return res.status(404).json({ message: "Không tìm thấy kết quả nào." });
-    }
-    res.json(users);
+    res.json(req.user);
   } catch (err) {
-    console.error("Error in search API:", err);
-    res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-};
-
-exports.getUserById = async (req, res) => {
-  try {
-    const userId = req.params.id === "me" ? req.user.id : req.params.id;
-
-    // Kiểm tra cache trước
-    let user = await redisService.getUserData(userId);
-
-    if (!user) {
-      // Nếu không có trong cache, truy vấn database
-      user = await User.findById(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      // Lưu vào cache
-      await redisService.setUserData(userId, user);
-    }
-
-    res.json(user);
-  } catch (error) {
-    console.error("Error fetching user by ID:", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-// Lấy danh sách người dùng trong cùng phòng ban
-exports.getUsersByDepartment = async (req, res) => {
-  console.log('Received params:', req.params);
-  console.log('Department param:', req.params.department);
-  try {
-    const { department } = req.params;
-
-    const users = await User.find(
-      { department },
-      "fullname avatarUrl email department"
-    );
-
-    res.status(200).json({ users });
-  } catch (error) {
-    console.error("Error fetching department users:", error.message);
-    res.status(500).json({ message: "Error fetching department users", error: error.message });
+    res.status(500).json({ message: err.message });
   }
 };

@@ -1,14 +1,25 @@
 const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
 
-const communicationBookSchema = new mongoose.Schema(
-  {
-    student: { type: mongoose.Schema.Types.ObjectId, ref: "Students", required: true },
-    date: { type: Date, required: true },
-    content: { type: String, required: true },
-    teacher: { type: mongoose.Schema.Types.ObjectId, ref: "Teacher", required: true },
-    parent: { type: mongoose.Schema.Types.ObjectId, ref: "Parent" },
+// CommunicationBook Model
+const CommunicationBookSchema = new Schema({
+  student: { type: Schema.Types.ObjectId, ref: "Student", required: true },
+  teacher: { type: Schema.Types.ObjectId, ref: "Teacher", required: true },
+  date: { type: Date, required: true },
+  ratings: {
+    study: { type: String, enum: ['A', 'B', 'C'], required: true },
+    discipline: { type: String, enum: ['A', 'B', 'C'], required: true },
+    extracurricular: { type: String, enum: ['A', 'B', 'C'], required: true },
   },
-  { timestamps: true }
+  content: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+// Ensure one entry per student per calendar date
+CommunicationBookSchema.index(
+  { student: 1, date: 1 },
+  { unique: true }
 );
 
-module.exports = mongoose.model("CommunicationBook", communicationBookSchema);
+module.exports = mongoose.model("CommunicationBook", CommunicationBookSchema); 

@@ -1,38 +1,16 @@
 const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
 
-/**
- * Mô hình để lưu ảnh. 
- * Giờ có thêm field "class" để lưu ảnh của lớp theo năm học.
- */
-const photoSchema = new mongoose.Schema(
-  {
-    student: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Student",
-      // Bỏ `required: true` để tùy trường hợp:
-      // 1) Ảnh học sinh => student != null
-      // 2) Ảnh lớp => student có thể là null
-    },
-    class: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Class",
-      // Tương tự, có thể null nếu là ảnh cá nhân
-    },
-    schoolYear: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "SchoolYear",
-      required: true, // Ảnh luôn gắn với 1 năm học
-    },
-    photoUrl: {
-      type: String,
-      required: true,
-    },
-    uploadedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { timestamps: true }
-);
+// Photo Model
+const PhotoSchema = new Schema({
+  student: { type: Schema.Types.ObjectId, ref: "Student" },
+  class: { type: Schema.Types.ObjectId, ref: "Class" },
+  schoolYear: { type: Schema.Types.ObjectId, ref: "SchoolYear", required: true },
+  photoUrl: { type: String, required: true },
+  description: { type: String },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
 
-module.exports = mongoose.model("Photo", photoSchema);
+module.exports = mongoose.model("Photo", PhotoSchema); 
+ 

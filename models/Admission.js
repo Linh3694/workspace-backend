@@ -1,41 +1,49 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
 
-const admissionSchema = new mongoose.Schema(
-    {
-        schoolYear: {
-            type: String,
-            required: true,
-            default: '2025-2026',
-            trim: true
-        },
-        newStudents: {
-            type: Number,
-            required: true,
-            default: 0
-        },
-        returningStudents: {
-            type: Number,
-            required: true,
-            default: 0
-        },
-        totalStudents: {
-            type: Number,
-            default: 0
-        },
-        lastUpdated: {
-            type: Date,
-            default: Date.now
-        }
+// Admission Model
+const AdmissionSchema = new Schema({
+  fullName: { type: String, required: true },
+  dateOfBirth: { type: String, required: true },
+  gender: { type: String },
+  currentClass: { type: String },
+  appliedClass: { type: String, required: true },
+  currentSchool: { type: String },
+  ace: [{ type: String }],
+  isChildOfStaff: { type: Boolean, default: false },
+  parents: [{
+    fullName: { type: String, required: true },
+    phone: { type: String, required: true },
+    email: { type: String },
+    relationship: { type: String },
+    address: { type: String }
+  }],
+  howParentLearned: { type: String },
+  expectedSemester: { type: String },
+  admissionSupport: { type: String },
+  notes: { type: String },
+  status: {
+    type: String,
+    enum: ['Follow up', 'Test', 'After test', 'Offer', 'Paid', 'Lost'],
+    default: 'Follow up'
+  },
+  followUpType: {
+    type: String,
+    enum: ['Cold', 'Warm', 'Hot'],
+    default: 'Cold'
+  },
+  followUpNote: { type: String },
+  entranceTests: [{
+    testDate: { type: String, required: true },
+    result: {
+      type: String,
+      enum: ['Đạt', 'Không đạt'],
+      required: true
     },
-    { timestamps: true }
-);
-
-// Pre-save middleware để tự động tính tổng số học sinh
-admissionSchema.pre('save', function (next) {
-    this.totalStudents = this.newStudents + this.returningStudents;
-    next();
+    note: { type: String }
+  }],
+}, {
+  timestamps: true
 });
 
-const Admission = mongoose.model('Admission', admissionSchema);
-
-module.exports = Admission;
+module.exports = mongoose.model("Admission", AdmissionSchema); 

@@ -1,102 +1,82 @@
-// controllers/attendanceController.js
-const Attendance = require("../../models/Attendance");
+const asyncHandler = require('express-async-handler');
+const Attendance = require('../../models/Attendance');
+const Class = require('../../models/Class');
+const Student = require('../../models/Student');
+const Timetable = require('../../models/Timetable');
+const Teacher = require('../../models/Teacher');
 
-// Ghi nhận điểm danh
-exports.createAttendance = async (req, res) => {
-  try {
-    const { student, class: classId, date, status, teacher, note } = req.body;
-    const newAttendance = await Attendance.create({
-      student,
-      class: classId,
-      date,
-      status,
-      teacher,
-      note,
-    });
-    return res.status(201).json(newAttendance);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
+// Display list of all Attendances
+exports.getAttendances = asyncHandler(async (req, res) => {
+  const { class: classId, date } = req.query;
+  let filter = {};
+  if (classId) filter.class = classId;
+  if (date) filter.date = date;
+  const attendances = await Attendance.find(filter).populate('student class teacher');
+  res.json(attendances);
+});
+
+// Get a single Attendance by ID
+exports.getAttendanceById = asyncHandler(async (req, res) => {
+  const attendance = await Attendance.findById(req.params.id).populate('student class');
+  if (!attendance) {
+    return res.status(404).json({ message: 'Attendance not found' });
   }
-};
+  res.json(attendance);
+});
 
-// Lấy điểm danh của học sinh
-exports.getAttendanceByStudent = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-    const { startDate, endDate } = req.query;
-    const query = { student: studentId };
-    if (startDate && endDate) {
-      query.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+// Create a new Attendance
+exports.createAttendance = asyncHandler(async (req, res) => {
+  const attendance = new Attendance(req.body);
+  const newAttendance = await attendance.save();
+  res.status(201).json(newAttendance);
+});
+
+// Update a Attendance
+exports.updateAttendance = asyncHandler(async (req, res) => {
+  const attendance = await Attendance.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!attendance) {
+    return res.status(404).json({ message: 'Attendance not found' });
+  }
+  res.json(attendance);
+});
+
+// Delete a Attendance
+exports.deleteAttendance = asyncHandler(async (req, res) => {
+  const attendance = await Attendance.findByIdAndDelete(req.params.id);
+  if (!attendance) {
+    return res.status(404).json({ message: 'Attendance not found' });
+  }
+  res.json({ message: 'Attendance deleted successfully' });
+});
+
+// API: Lấy danh sách lớp theo role
+exports.getClassesByRole = asyncHandler(async (req, res) => {
+  const { role, teacherId } = req.query;
+  let classes = [];
+  if (role === 'admin') {
+    classes = await Class.find().populate('homeroomTeachers', 'fullname');
+  } else if (role === 'teacher' && teacherId) {
+    // Lấy lớp chủ nhiệm
+    const homeroomClasses = await Class.find({ homeroomTeachers: teacherId });
+    // Lấy lớp có tiết dạy
+    const teachingAssignments = await Teacher.findById(teacherId).select('teachingAssignments');
+    let teachingClassIds = [];
+    if (teachingAssignments && teachingAssignments.teachingAssignments) {
+      teachingClassIds = teachingAssignments.teachingAssignments.map(a => a.class);
     }
-    const attendance = await Attendance.find(query)
-      .populate("class")
-      .populate("teacher");
-    return res.json(attendance);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
+    const teachingClasses = await Class.find({ _id: { $in: teachingClassIds } });
+    // Gộp và loại trùng
+    const allClasses = [...homeroomClasses, ...teachingClasses];
+    const uniqueClasses = Array.from(new Map(allClasses.map(item => [item._id.toString(), item])).values());
+    classes = uniqueClasses;
   }
-};
+  res.json(classes);
+});
 
-// Lấy điểm danh của lớp
-exports.getAttendanceByClass = async (req, res) => {
-  try {
-    const { classId } = req.params;
-    const { date } = req.query;
-    const query = { class: classId };
-    if (date) query.date = new Date(date);
-    const attendance = await Attendance.find(query)
-      .populate("student")
-      .populate("teacher");
-    return res.json(attendance);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
-
-// Cập nhật điểm danh
-exports.updateAttendance = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updated = await Attendance.findByIdAndUpdate(id, req.body, { new: true });
-    if (!updated) {
-      return res.status(404).json({ message: "Attendance not found" });
-    }
-    return res.json(updated);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
-
-// Xóa điểm danh
-exports.deleteAttendance = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const deleted = await Attendance.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ message: "Attendance not found" });
-    }
-    return res.json({ message: "Attendance deleted successfully" });
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
-
-// Ghi nhận điểm danh hàng loạt
-exports.bulkCreateAttendance = async (req, res) => {
-  try {
-    const { classId, date, records } = req.body;
-    // records: [{ studentId, status, note }]
-    const attendanceToInsert = records.map(record => ({
-      student: record.studentId,
-      class: classId,
-      date,
-      status: record.status,
-      teacher: req.user._id, // Giả định người dùng hiện tại là giáo viên
-      note: record.note,
-    }));
-    await Attendance.insertMany(attendanceToInsert);
-    return res.json({ message: `Added ${attendanceToInsert.length} attendance records` });
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-};
+// API: Lấy danh sách học sinh theo classId
+exports.getStudentsByClass = asyncHandler(async (req, res) => {
+  const { classId } = req.query;
+  if (!classId) return res.status(400).json({ message: 'Missing classId' });
+  const students = await Student.find({ class: classId });
+  res.json(students);
+});

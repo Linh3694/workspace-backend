@@ -2,51 +2,102 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema({
+  // Trường từ SIS.js
+  username: {
+    type: String,
+    unique: true,
+    sparse: true, // Cho phép null/undefined và chỉ check unique khi có giá trị
+    trim: true
+  },
+  
   email: {
     type: String,
     required: true,
     unique: true,
     trim: true,
   },
+  
   password: {
     type: String,
     minlength: 8, // Đảm bảo mật khẩu có độ dài tối thiểu
     default: null
   },
+  
   fullname: {
     type: String,
     required: true,
   },
+  
+  // Trường từ cả hai file
   jobTitle: {
     type: String,
     default: "User",
   },
+  
   department: {
     type: String,
     default: "Unknown",
   },
+  
+  // Cập nhật role để hỗ trợ cả hai hệ thống
   role: {
     type: String,
-    enum: ["superadmin", "admin", "technical", "marcom", "hr", "bos","admission", "bod", "user"],
+    enum: [
+      // Từ SIS.js
+      "admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service",
+      // Từ Users.js gốc
+      "superadmin", "technical", "marcom", "hr", "bod", "user"
+    ],
     default: "user",
   },
+  
   disabled: {
     type: Boolean,
     default: false, // Tài khoản có thể bị vô hiệu hóa bởi admin
   },
+  
   active: { 
-    type: Boolean, default: false 
-  }, // Mặc định là inactive
+    type: Boolean, 
+    default: true // Đổi default thành true để tương thích với SIS.js
+  },
+  
   avatarUrl: { 
     type: String,
     default: "" 
-  }, // Add this field for the avatar URL
+  },
 
   lastLogin: {
     type: Date,
   },
+  
   resetPasswordToken: String,
   resetPasswordExpire: Date,
+  
+  employeeCode: { 
+    type: String, 
+    unique: true,
+    sparse: true // Cho phép null/undefined và chỉ check unique khi có giá trị
+  },
+    
+  lastSeen: { 
+    type: Date, 
+    default: Date.now 
+  },
+
+  // Trường chấm công từ Users.js gốc
+  attendanceLog: [
+    {
+      time: { type: String },
+      createdAt: { type: Date, default: Date.now },
+    },
+  ],
+
+  // Trường thiết bị từ Users.js gốc
+  deviceToken: { 
+    type: String 
+  },
+  
+  // Các trường timestamps
   createdAt: {
     type: Date,
     default: Date.now,
@@ -55,22 +106,16 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  employeeCode: { 
-    type: String, 
-    unique: true }, // Thêm trường Mã nhân viên
-    
-  lastSeen: { type: Date, default: Date.now },
+}, { 
+  timestamps: true // Tự động quản lý createdAt và updatedAt
+});
 
-  attendanceLog: [
-      {
-        time: { type: String },
-        createdAt: { type: Date, default: Date.now },
-      },
-  ],
-
-  deviceToken: { type: String }, // Thêm trường này để lưu token thiết bị
-}, { timestamps: true });
-
+// Index để tối ưu hiệu suất
+userSchema.index({ email: 1 });
+userSchema.index({ username: 1 });
+userSchema.index({ employeeCode: 1 });
+userSchema.index({ role: 1 });
+userSchema.index({ active: 1 });
 
 // Middleware: Hash mật khẩu trước khi lưu
 userSchema.pre('save', async function (next) {
@@ -98,5 +143,20 @@ userSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();
 });
+
+// Virtual để có thể sử dụng cả username và email để đăng nhập
+userSchema.virtual('loginIdentifier').get(function() {
+  return this.username || this.email;
+});
+
+// Method để tìm user bằng username hoặc email
+userSchema.statics.findByLogin = function(identifier) {
+  return this.findOne({
+    $or: [
+      { username: identifier },
+      { email: identifier }
+    ]
+  });
+};
 
 module.exports = mongoose.model("User", userSchema);

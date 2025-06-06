@@ -1,30 +1,26 @@
 const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
 
-const studentClassEnrollmentSchema = new mongoose.Schema(
-  {
-    student: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Student",
-      required: true,
-    },
-    class: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Class",
-      required: true,
-    },
-    schoolYear: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "SchoolYear",
-      required: true
-    },
-    status: { type: String, enum: ["active", "transferred", "dropped"] }, // Trạng thái trong lớp
-    
-    startDate: { type: Date },
-    endDate: { type: Date },
+// StudentClassEnrollment Model
+const StudentClassEnrollmentSchema = new Schema({
+  student: { type: Schema.Types.ObjectId, ref: "Student", required: true },
+  class: { type: Schema.Types.ObjectId, ref: "Class", required: true },
+  schoolYear: { type: Schema.Types.ObjectId, ref: "SchoolYear", required: true },
+  status: { type: String, enum: ["active", "transferred", "dropped"], default: "active" },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
 
-    // Tuỳ bạn thêm fields: "grade", "ranking", "score", ...
-  },
-  { timestamps: true }
+// Prevent duplicate enrollments per student per schoolYear
+StudentClassEnrollmentSchema.index(
+  { student: 1, schoolYear: 1 },
+  { unique: true }
 );
 
-module.exports = mongoose.model("StudentClassEnrollment", studentClassEnrollmentSchema);
+// Prevent duplicate enrollments per student per class per schoolYear
+StudentClassEnrollmentSchema.index(
+  { student: 1, class: 1, schoolYear: 1 },
+  { unique: true }
+);
+
+module.exports = mongoose.model("StudentClassEnrollment", StudentClassEnrollmentSchema); 

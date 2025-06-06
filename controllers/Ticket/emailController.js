@@ -10,11 +10,11 @@ const ticketController = require("./ticketController");
 const { convert } = require('html-to-text'); // Added import for html-to-text
 
 // Khởi tạo OAuth 2.0 credentials
-const credential = new ClientSecretCredential(
+const credential = process.env.TENANTTICKET_ID ? new ClientSecretCredential(
   process.env.TENANTTICKET_ID,
   process.env.CLIENTTICKET_ID,
   process.env.CLIENTTICKET_SECRET
-);
+) : null;
 
 const authProvider = new TokenCredentialAuthenticationProvider(credential, {
   scopes: ["https://graph.microsoft.com/.default"],
