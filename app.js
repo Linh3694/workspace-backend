@@ -257,7 +257,7 @@ app.use("/api/trips", tripRoutes);
 app.use("/api/daily-trips", dailyTripRoutes);
 app.use("/api/libraries", libraryRoutes);
 app.use("/api/email", require("./routes/Ticket/emailRoutes"));
-app.use("/api/admission", admissionRoutes);
+app.use("/api/admissions", admissionRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/emoji", emojiRoutes);
