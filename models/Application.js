@@ -16,8 +16,20 @@ const ApplicationSchema = new mongoose.Schema({
   expectedSalary: { type: String },
   profilePicture: { type: String },
   cvFile: { type: String, required: true },
-  appliedJob: { type: mongoose.Schema.Types.ObjectId, ref: "Job", required: true },
+  appliedJob: { type: mongoose.Schema.Types.ObjectId, ref: "Job" },
+  openPositionTitle: { type: String },
+  openPositionType: { type: String, enum: ["fulltime", "parttime", "intern"] },
   createdAt: { type: Date, default: Date.now },
+});
+
+ApplicationSchema.pre('save', function(next) {
+  if (!this.appliedJob && !this.openPositionTitle) {
+    next(new Error('Either appliedJob or openPositionTitle must be provided'));
+  } else if (this.appliedJob && this.openPositionTitle) {
+    next(new Error('Cannot specify both appliedJob and openPositionTitle'));
+  } else {
+    next();
+  }
 });
 
 module.exports = mongoose.model("Application", ApplicationSchema);

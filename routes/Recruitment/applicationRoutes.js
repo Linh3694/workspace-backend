@@ -12,7 +12,18 @@ router.post(
     ]),
     applicationController.submitApplication
 );
+
+router.post(
+    "/open-position",
+    uploadApplication.fields([
+        { name: "cvFile", maxCount: 1 },
+        { name: "profilePicture", maxCount: 1 }
+    ]),
+    applicationController.submitOpenPositionApplication
+);
+
 router.get("/", applicationController.getApplications);
 router.get("/job/:jobId", applicationController.getApplicationsByJob);
+router.get("/open-positions", applicationController.getOpenPositionApplications);
 
 module.exports = router;
