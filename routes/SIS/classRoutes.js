@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const classController = require("../../controllers/SIS/classController");
 const { authenticateToken, isAdmin } = require("../../middleware/auth");
+const uploadClass = require("../../middleware/uploadClass");
 
 // Áp dụng middleware xác thực cho tất cả các route
 router.use(authenticateToken);
@@ -22,5 +23,11 @@ router.put("/:id", isAdmin, classController.updateClass);
 
 // Route: Xóa lớp học
 router.delete("/:id", isAdmin, classController.deleteClass);
+
+// Route: Upload ảnh cho lớp học (đơn lẻ)
+router.post("/:id/upload-image", isAdmin, uploadClass.single("classImage"), classController.uploadClassImage);
+
+// Route: Upload hàng loạt ảnh lớp từ ZIP
+router.post("/bulk-upload-images", isAdmin, uploadClass.single("zipFile"), classController.bulkUploadClassImages);
 
 module.exports = router;

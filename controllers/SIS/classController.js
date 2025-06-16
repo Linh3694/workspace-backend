@@ -10,6 +10,8 @@ const GradeLevel = require("../../models/GradeLevel");
 const Teacher = require("../../models/Teacher");
 
 const xlsx = require("xlsx");
+const uploadClass = require("../../middleware/uploadClass");
+const AdmZip = require("adm-zip");
 
 // Tạo lớp học mới
 exports.createClass = async (req, res) => {
@@ -415,11 +417,158 @@ exports.bulkUploadClasses = async (req, res) => {
   }
 };
 
+// Upload ảnh cho lớp học
+exports.uploadClassImage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ message: "Không có file ảnh được upload" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID lớp không hợp lệ" });
+    }
+
+    // Kiểm tra lớp có tồn tại không
+    const classExists = await Class.findById(id);
+    if (!classExists) {
+      return res.status(404).json({ message: "Không tìm thấy lớp học" });
+    }
+
+    // Cập nhật đường dẫn ảnh vào database
+    const imagePath = `uploads/Classes/${req.file.filename}`;
+    const updatedClass = await Class.findByIdAndUpdate(
+      id,
+      { classImage: imagePath, updatedAt: Date.now() },
+      { new: true }
+    ).populate('schoolYear')
+     .populate('educationalSystem')
+     .populate('gradeLevel')
+     .populate({
+       path: 'homeroomTeachers',
+       populate: { path: 'user', select: 'fullname email' }
+     });
+
+    return res.json({ 
+      message: "Upload ảnh lớp thành công", 
+      data: updatedClass,
+      imagePath: imagePath
+    });
+  } catch (err) {
+    console.error('Error uploading class image:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Upload hàng loạt ảnh lớp từ file ZIP
+exports.bulkUploadClassImages = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Không có file ZIP được upload" });
+    }
+
+    const zipPath = req.file.path;
+    const zip = new AdmZip(zipPath);
+    const zipEntries = zip.getEntries();
+
+    const results = {
+      success: [],
+      errors: [],
+      total: zipEntries.length
+    };
+
+    for (const entry of zipEntries) {
+      try {
+        if (entry.isDirectory) continue;
+
+        const fileName = entry.entryName;
+        const fileExt = fileName.toLowerCase().split('.').pop();
+        
+        // Kiểm tra định dạng file
+        if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
+          results.errors.push(`File ${fileName}: Định dạng không được hỗ trợ`);
+          continue;
+        }
+
+        // Tên file phải có định dạng: className_schoolYearCode.ext
+        // Ví dụ: 12A1_2023-2024.jpg
+        const baseName = fileName.split('.')[0];
+        const parts = baseName.split('_');
+        
+        if (parts.length < 2) {
+          results.errors.push(`File ${fileName}: Tên file phải có định dạng className_schoolYearCode.ext`);
+          continue;
+        }
+
+        const className = parts[0];
+        const schoolYearCode = parts.slice(1).join('_');
+
+        // Tìm lớp học và năm học
+        const schoolYear = await SchoolYear.findOne({ code: schoolYearCode });
+        if (!schoolYear) {
+          results.errors.push(`File ${fileName}: Không tìm thấy năm học ${schoolYearCode}`);
+          continue;
+        }
+
+        const classRecord = await Class.findOne({ 
+          className: className, 
+          schoolYear: schoolYear._id 
+        });
+        
+        if (!classRecord) {
+          results.errors.push(`File ${fileName}: Không tìm thấy lớp ${className} trong năm học ${schoolYearCode}`);
+          continue;
+        }
+
+        // Trích xuất và lưu file
+        const timestamp = Date.now();
+        const newFileName = `class-${timestamp}-${className}-${schoolYearCode}.${fileExt}`;
+        const outputPath = `uploads/Classes/${newFileName}`;
+        const fullPath = `${__dirname}/../../${outputPath}`;
+
+        zip.extractEntryTo(entry, `${__dirname}/../../uploads/Classes/`, false, true, newFileName);
+
+        // Cập nhật database
+        await Class.findByIdAndUpdate(
+          classRecord._id,
+          { classImage: outputPath, updatedAt: Date.now() }
+        );
+
+        results.success.push(`${className} (${schoolYearCode}): Upload thành công`);
+
+      } catch (entryError) {
+        console.error(`Error processing ${entry.entryName}:`, entryError);
+        results.errors.push(`File ${entry.entryName}: ${entryError.message}`);
+      }
+    }
+
+    // Xóa file ZIP tạm
+    const fs = require('fs');
+    try {
+      fs.unlinkSync(zipPath);
+    } catch (cleanupError) {
+      console.error('Error cleaning up ZIP file:', cleanupError);
+    }
+
+    return res.json({
+      message: `Xử lý hoàn tất: ${results.success.length} thành công, ${results.errors.length} lỗi`,
+      results: results
+    });
+
+  } catch (err) {
+    console.error('Error in bulk upload class images:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   createClass: exports.createClass,
   getAllClasses: exports.getAllClasses,
   getClassById: exports.getClassById,
   updateClass: exports.updateClass,
   deleteClass: exports.deleteClass,
-  bulkUploadClasses: exports.bulkUploadClasses
+  bulkUploadClasses: exports.bulkUploadClasses,
+  uploadClassImage: exports.uploadClassImage,
+  bulkUploadClassImages: exports.bulkUploadClassImages
 };

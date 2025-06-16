@@ -10,6 +10,7 @@ const ClassSchema = new Schema({
   curriculum: { type: Schema.Types.ObjectId, ref: "Curriculum" },
   homeroomTeachers: [{ type: Schema.Types.ObjectId, ref: "Teacher" }],
   students: [{ type: Schema.Types.ObjectId, ref: "Student" }],
+  classImage: { type: String }, // Đường dẫn đến ảnh lớp
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
