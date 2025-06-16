@@ -176,6 +176,16 @@ if (!fs.existsSync(uploadPath)) {
   fs.mkdirSync(uploadPath, { recursive: true });
 }
 
+// Đảm bảo các thư mục con tồn tại
+const subDirs = ["CV", "Profile", "Avatar", "Chat", "Handovers", "Library", "Messages", "Pdf", "posts", "reports", "Tickets"];
+subDirs.forEach(dir => {
+  const dirPath = path.join(uploadPath, dir);
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+    console.log(`📁 Created directory: ${dirPath}`);
+  }
+});
+
 // Middlewares
 app.use(cors());
 app.use(express.json({ limit: "4096mb" }));

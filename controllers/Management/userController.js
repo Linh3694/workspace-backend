@@ -29,7 +29,7 @@ exports.createUser = async (req, res) => {
     }
 
     // Kiểm tra role hợp lệ
-    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
     }
@@ -92,7 +92,7 @@ exports.getAllUsers = async (req, res) => {
 
     // Lọc theo role nếu có
     if (role) {
-      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
       }
@@ -170,7 +170,7 @@ exports.updateUser = async (req, res) => {
 
     // Kiểm tra role hợp lệ (nếu thay đổi)
     if (role) {
-      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
       }
@@ -336,7 +336,7 @@ exports.bulkUploadUsers = async (req, res) => {
 
     const usersToInsert = [];
     const errors = [];
-    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"];
 
     for (const row of data) {
       const { Password, Email, Role, Fullname, Active } = row;
@@ -435,7 +435,7 @@ exports.searchUsers = async (req, res) => {
 
     // Lọc theo role nếu có
     if (role) {
-      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
       }
@@ -503,7 +503,7 @@ exports.createBatchUsers = async (req, res) => {
     const users = usersPayload; 
     const defaultSchool = req.user?.school || req.body.defaultSchool || null;
 
-    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service"];
+    const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"];
     const errors = [];
     const usersToInsert = [];
     const existingEmails = new Set();

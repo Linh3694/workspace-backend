@@ -283,6 +283,65 @@ exports.removeFamilyFromStudent = asyncHandler(async (req, res) => {
   res.json({ message: 'Đã bỏ gia đình khỏi học sinh', student });
 });
 
+// Search students by query (studentCode or name)
+exports.searchStudents = asyncHandler(async (req, res) => {
+  const { q, schoolYear } = req.query;
+  
+  if (!q || q.trim() === '') {
+    return res.json([]);
+  }
+
+  const searchQuery = q.trim();
+  
+  try {
+    // First find students
+    const students = await Student.find({
+      $or: [
+        { studentCode: { $regex: searchQuery, $options: 'i' } },
+        { name: { $regex: searchQuery, $options: 'i' } }
+      ]
+    })
+    .populate('class', 'className')
+    .select('_id studentCode name email')
+    .limit(10);
+
+    // Get current school year if not provided
+    let currentSchoolYear = schoolYear;
+    if (!currentSchoolYear) {
+      const SchoolYear = require('../../models/SchoolYear');
+      const currentYear = await SchoolYear.findOne({ isActive: true });
+      currentSchoolYear = currentYear ? currentYear._id : null;
+    }
+
+    // Get photos for these students in current school year
+    const Photo = require('../../models/Photo');
+    const studentIds = students.map(s => s._id);
+    const photos = await Photo.find({
+      student: { $in: studentIds },
+      schoolYear: currentSchoolYear
+    });
+
+    // Map data to match frontend expectations
+    const mappedStudents = students.map(student => {
+      const photo = photos.find(p => p.student.toString() === student._id.toString());
+      
+      return {
+        _id: student._id,
+        studentId: student.studentCode,
+        fullName: student.name,
+        email: student.email,
+        className: student.class && student.class.length > 0 ? student.class[0].className : 'N/A',
+        photoUrl: photo ? photo.photoUrl : null
+      };
+    });
+
+    res.json(mappedStudents);
+  } catch (error) {
+    console.error('Error searching students:', error);
+    res.status(500).json({ error: 'Lỗi khi tìm kiếm học sinh' });
+  }
+});
+
 // Delete a Student
 exports.deleteStudent = asyncHandler(async (req, res) => {
   const student = await Student.findByIdAndDelete(req.params.id);

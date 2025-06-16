@@ -7,6 +7,7 @@ const uploadStudentAvatar = require('../../middleware/uploadStudents');
 
 // Define routes for Students
 router.get('/', studentController.getStudents);
+router.get('/search', studentController.searchStudents);
 router.get('/:id', studentController.getStudentById);
 router.post('/', uploadStudentAvatar.single('avatar'), studentController.createStudent);
 router.put('/:id', uploadStudentAvatar.single('avatar'), studentController.updateStudent);
