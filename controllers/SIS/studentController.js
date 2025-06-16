@@ -51,7 +51,7 @@ exports.createStudent = asyncHandler(async (req, res) => {
 
   // Xử lý avatar
   if (req.file) {
-    studentData.avatarUrl = `/uploads/Student/${req.file.filename}`;
+    studentData.avatarUrl = `/uploads/Students/${req.file.filename}`;
     console.log('avatarUrl:', studentData.avatarUrl);
   }
 
@@ -140,7 +140,7 @@ exports.updateStudent = asyncHandler(async (req, res) => {
 
   // Xử lý avatar mới (nếu có)
   if (req.file) {
-    studentData.avatarUrl = `/uploads/Student/${req.file.filename}`;
+    studentData.avatarUrl = `/uploads/Students/${req.file.filename}`;
   }
 
   // Xử lý tạo parent mới nếu có parentAccounts
