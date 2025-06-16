@@ -488,6 +488,7 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
     }
     
     console.log('DEBUG: Found student:', student.name);
+    console.log('DEBUG: Student avatarUrl:', student.avatarUrl);
     
     // Lấy năm học hiện tại
     const currentSchoolYear = await getCurrentSchoolYear();
@@ -505,7 +506,7 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
       console.log('DEBUG: Photo for current school year:', !!photo);
     }
 
-    // Fallback: Nếu không có ảnh năm hiện tại, lấy ảnh mới nhất
+    // Fallback: Nếu không có ảnh năm hiện tại, lấy ảnh mới nhất từ Photo model
     if (!photo) {
       photo = await Photo.findOne({
         student: id
@@ -515,8 +516,22 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
       console.log('DEBUG: Latest photo fallback:', !!photo);
     }
 
+    // Fallback cuối cùng: Nếu không có ảnh trong Photo model, dùng Student.avatarUrl
+    if (!photo && student.avatarUrl) {
+      console.log('DEBUG: Using Student.avatarUrl as final fallback:', student.avatarUrl);
+      return res.json({
+        photoUrl: student.avatarUrl,
+        description: 'Avatar từ Student model',
+        student: {
+          _id: student._id,
+          name: student.name,
+          studentCode: student.studentCode
+        }
+      });
+    }
+
     if (!photo) {
-      console.log('DEBUG: No photo found for student:', id);
+      console.log('DEBUG: No photo found anywhere for student:', id);
       return res.status(404).json({ message: 'Không tìm thấy ảnh học sinh' });
     }
 
