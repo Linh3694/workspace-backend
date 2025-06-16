@@ -3,6 +3,7 @@ const Student = require('../../models/Student');
 const User = require('../../models/Users');
 const Family = require('../../models/Family');
 const Parent = require('../../models/Parent');
+const Photo = require('../../models/Photo');
 
 // Display list of all Students
 exports.getStudents = asyncHandler(async (req, res) => {
@@ -49,10 +50,20 @@ exports.createStudent = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Dữ liệu data không phải JSON hợp lệ' });
   }
 
-  // Xử lý avatar
-  if (req.file) {
-    studentData.avatarUrl = `/uploads/Students/${req.file.filename}`;
-    console.log('avatarUrl:', studentData.avatarUrl);
+  // Tạo student trước (không lưu avatarUrl vào Student)
+  const student = new Student(studentData);
+  const newStudent = await student.save();
+
+  // Xử lý avatar - Lưu vào Photo model nếu có
+  if (req.file && req.body.schoolYear) {
+    const photoData = {
+      student: newStudent._id,
+      schoolYear: req.body.schoolYear,
+      photoUrl: `/uploads/Students/${req.file.filename}`,
+      description: 'Avatar học sinh'
+    };
+    await Photo.create(photoData);
+    console.log('Đã tạo photo cho student:', newStudent._id);
   }
 
   // Xử lý tạo parent nếu có parentAccounts
@@ -85,7 +96,10 @@ exports.createStudent = asyncHandler(async (req, res) => {
     parentIds = studentData.parents.filter(p => typeof p === 'string' || typeof p === 'object' && p._id).map(p => typeof p === 'string' ? p : p._id);
   }
 
-  studentData.parents = parentIds;
+  if (parentIds.length > 0) {
+    newStudent.parents = parentIds;
+    await newStudent.save();
+  }
 
   // Xử lý Family
   let familyId = studentData.family;
@@ -93,13 +107,13 @@ exports.createStudent = asyncHandler(async (req, res) => {
     // Nếu có familyId, thêm student vào family
     const family = await Family.findById(familyId);
     if (family) {
-      family.students.push(studentData._id);
+      family.students.push(newStudent._id);
       await family.save();
       // Thêm student vào students của từng parent trong family
       for (const parentObj of family.parents) {
         const parent = await Parent.findById(parentObj.parent);
-        if (parent && !parent.students.includes(studentData._id)) {
-          parent.students.push(studentData._id);
+        if (parent && !parent.students.includes(newStudent._id)) {
+          parent.students.push(newStudent._id);
           await parent.save();
         }
       }
@@ -112,17 +126,16 @@ exports.createStudent = asyncHandler(async (req, res) => {
         parent: parentId,
         relationship: 'Khác' // Mặc định là 'Khác', có thể cập nhật sau
       })),
-      students: [studentData._id]
+      students: [newStudent._id]
     });
     const newFamily = await family.save();
     familyId = newFamily._id;
-    studentData.family = familyId;
+    newStudent.family = familyId;
+    await newStudent.save();
   }
 
-  console.log('Final studentData:', studentData);
+  console.log('Final student created:', newStudent);
 
-  const student = new Student(studentData);
-  const newStudent = await student.save();
   res.status(201).json(newStudent);
 });
 
@@ -138,9 +151,29 @@ exports.updateStudent = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Dữ liệu data không phải JSON hợp lệ' });
   }
 
-  // Xử lý avatar mới (nếu có)
-  if (req.file) {
-    studentData.avatarUrl = `/uploads/Students/${req.file.filename}`;
+  // Xử lý avatar mới (lưu vào Photo model)
+  if (req.file && req.body.schoolYear) {
+    // Kiểm tra xem đã có photo cho student trong năm học này chưa
+    const existingPhoto = await Photo.findOne({
+      student: req.params.id,
+      schoolYear: req.body.schoolYear
+    });
+
+    if (existingPhoto) {
+      // Cập nhật photo cũ
+      existingPhoto.photoUrl = `/uploads/Students/${req.file.filename}`;
+      existingPhoto.updatedAt = Date.now();
+      await existingPhoto.save();
+    } else {
+      // Tạo photo mới
+      const photoData = {
+        student: req.params.id,
+        schoolYear: req.body.schoolYear,
+        photoUrl: `/uploads/Students/${req.file.filename}`,
+        description: 'Avatar học sinh'
+      };
+      await Photo.create(photoData);
+    }
   }
 
   // Xử lý tạo parent mới nếu có parentAccounts
@@ -314,7 +347,6 @@ exports.searchStudents = asyncHandler(async (req, res) => {
     }
 
     // Get photos for these students in current school year
-    const Photo = require('../../models/Photo');
     const studentIds = students.map(s => s._id);
     const photos = await Photo.find({
       student: { $in: studentIds },
@@ -340,6 +372,85 @@ exports.searchStudents = asyncHandler(async (req, res) => {
     console.error('Error searching students:', error);
     res.status(500).json({ error: 'Lỗi khi tìm kiếm học sinh' });
   }
+});
+
+// Upload ảnh học sinh cho năm học cụ thể
+exports.uploadStudentPhoto = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { schoolYear } = req.body;
+
+  if (!req.file) {
+    return res.status(400).json({ message: 'Không có file ảnh được upload' });
+  }
+
+  if (!schoolYear) {
+    return res.status(400).json({ message: 'Thiếu thông tin năm học' });
+  }
+
+  // Kiểm tra student có tồn tại không
+  const student = await Student.findById(id);
+  if (!student) {
+    return res.status(404).json({ message: 'Student not found' });
+  }
+
+  // Kiểm tra xem đã có photo cho student trong năm học này chưa
+  const existingPhoto = await Photo.findOne({
+    student: id,
+    schoolYear: schoolYear
+  });
+
+  if (existingPhoto) {
+    // Cập nhật photo cũ
+    existingPhoto.photoUrl = `/uploads/Students/${req.file.filename}`;
+    existingPhoto.updatedAt = Date.now();
+    await existingPhoto.save();
+    res.json({ 
+      message: 'Cập nhật ảnh học sinh thành công', 
+      photo: existingPhoto 
+    });
+  } else {
+    // Tạo photo mới
+    const photoData = {
+      student: id,
+      schoolYear: schoolYear,
+      photoUrl: `/uploads/Students/${req.file.filename}`,
+      description: 'Avatar học sinh'
+    };
+    const newPhoto = await Photo.create(photoData);
+    res.json({ 
+      message: 'Upload ảnh học sinh thành công', 
+      photo: newPhoto 
+    });
+  }
+});
+
+// Lấy ảnh học sinh theo năm học
+exports.getStudentPhotoByYear = asyncHandler(async (req, res) => {
+  const { id, schoolYear } = req.params;
+
+  const photo = await Photo.findOne({
+    student: id,
+    schoolYear: schoolYear
+  }).populate('student', 'name studentCode')
+    .populate('schoolYear', 'code');
+
+  if (!photo) {
+    return res.status(404).json({ message: 'Không tìm thấy ảnh học sinh cho năm học này' });
+  }
+
+  res.json(photo);
+});
+
+// Lấy tất cả ảnh của học sinh (tất cả năm học)
+exports.getAllStudentPhotos = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const photos = await Photo.find({
+    student: id
+  }).populate('schoolYear', 'code')
+    .sort({ createdAt: -1 });
+
+  res.json(photos);
 });
 
 // Delete a Student

@@ -14,4 +14,9 @@ router.put('/:id', uploadStudentAvatar.single('avatar'), studentController.updat
 router.delete('/:id', studentController.deleteStudent);
 router.patch('/:id/remove-family', studentController.removeFamilyFromStudent);
 
+// Routes cho Photo management
+router.post('/:id/photo', uploadStudentAvatar.single('avatar'), studentController.uploadStudentPhoto);
+router.get('/:id/photo/:schoolYear', studentController.getStudentPhotoByYear);
+router.get('/:id/photos', studentController.getAllStudentPhotos);
+
 module.exports = router;
