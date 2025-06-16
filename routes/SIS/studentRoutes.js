@@ -16,6 +16,7 @@ router.patch('/:id/remove-family', studentController.removeFamilyFromStudent);
 
 // Routes cho Photo management
 router.post('/:id/photo', uploadStudentAvatar.single('avatar'), studentController.uploadStudentPhoto);
+router.get('/:id/photo/current', studentController.getCurrentStudentPhoto); // Lấy ảnh hiện tại
 router.get('/:id/photo/:schoolYear', studentController.getStudentPhotoByYear);
 router.get('/:id/photos', studentController.getAllStudentPhotos);
 

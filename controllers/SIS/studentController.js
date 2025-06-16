@@ -316,6 +316,13 @@ exports.removeFamilyFromStudent = asyncHandler(async (req, res) => {
   res.json({ message: 'Đã bỏ gia đình khỏi học sinh', student });
 });
 
+// Helper function to get current school year
+const getCurrentSchoolYear = async () => {
+  const SchoolYear = require('../../models/SchoolYear');
+  const currentYear = await SchoolYear.findOne({ isActive: true });
+  return currentYear ? currentYear._id : null;
+};
+
 // Search students by query (studentCode or name)
 exports.searchStudents = asyncHandler(async (req, res) => {
   const { q, schoolYear } = req.query;
@@ -338,20 +345,33 @@ exports.searchStudents = asyncHandler(async (req, res) => {
     .select('_id studentCode name email')
     .limit(10);
 
-    // Get current school year if not provided
+    // Get current school year if not provided (Tự động lấy năm học hiện tại)
     let currentSchoolYear = schoolYear;
     if (!currentSchoolYear) {
-      const SchoolYear = require('../../models/SchoolYear');
-      const currentYear = await SchoolYear.findOne({ isActive: true });
-      currentSchoolYear = currentYear ? currentYear._id : null;
+      currentSchoolYear = await getCurrentSchoolYear();
+      console.log('Auto-selected current school year:', currentSchoolYear);
     }
 
     // Get photos for these students in current school year
     const studentIds = students.map(s => s._id);
-    const photos = await Photo.find({
-      student: { $in: studentIds },
-      schoolYear: currentSchoolYear
-    });
+    let photos = [];
+    
+    if (currentSchoolYear) {
+      photos = await Photo.find({
+        student: { $in: studentIds },
+        schoolYear: currentSchoolYear
+      });
+    }
+
+    // Fallback: Nếu không có ảnh năm hiện tại, lấy ảnh mới nhất
+    if (photos.length === 0) {
+      const latestPhotos = await Photo.aggregate([
+        { $match: { student: { $in: studentIds } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$student', photoUrl: { $first: '$photoUrl' } } }
+      ]);
+      photos = latestPhotos.map(p => ({ student: p._id, photoUrl: p.photoUrl }));
+    }
 
     // Map data to match frontend expectations
     const mappedStudents = students.map(student => {
@@ -370,7 +390,7 @@ exports.searchStudents = asyncHandler(async (req, res) => {
     res.json(mappedStudents);
   } catch (error) {
     console.error('Error searching students:', error);
-    res.status(500).json({ error: 'Lỗi khi tìm kiếm học sinh' });
+    res.status(500).json({ error: 'L�gi khi tìm kiếm học sinh' });
   }
 });
 
@@ -451,6 +471,42 @@ exports.getAllStudentPhotos = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 });
 
   res.json(photos);
+});
+
+// Lấy ảnh hiện tại của học sinh (năm học hiện tại hoặc mới nhất)
+exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Lấy năm học hiện tại
+    const currentSchoolYear = await getCurrentSchoolYear();
+    let photo = null;
+
+    if (currentSchoolYear) {
+      // Tìm ảnh của năm học hiện tại
+      photo = await Photo.findOne({
+        student: id,
+        schoolYear: currentSchoolYear
+      }).populate('schoolYear', 'code');
+    }
+
+    // Fallback: Nếu không có ảnh năm hiện tại, lấy ảnh mới nhất
+    if (!photo) {
+      photo = await Photo.findOne({
+        student: id
+      }).populate('schoolYear', 'code')
+        .sort({ createdAt: -1 });
+    }
+
+    if (!photo) {
+      return res.status(404).json({ message: 'Không tìm thấy ảnh học sinh' });
+    }
+
+    res.json(photo);
+  } catch (error) {
+    console.error('Error getting current student photo:', error);
+    res.status(500).json({ error: 'Lỗi khi lấy ảnh học sinh' });
+  }
 });
 
 // Delete a Student
