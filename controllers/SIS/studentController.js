@@ -390,7 +390,7 @@ exports.searchStudents = asyncHandler(async (req, res) => {
     res.json(mappedStudents);
   } catch (error) {
     console.error('Error searching students:', error);
-    res.status(500).json({ error: 'L�gi khi tìm kiếm học sinh' });
+    res.status(500).json({ error: 'Lỗi khi tìm kiếm học sinh' });
   }
 });
 
@@ -476,10 +476,23 @@ exports.getAllStudentPhotos = asyncHandler(async (req, res) => {
 // Lấy ảnh hiện tại của học sinh (năm học hiện tại hoặc mới nhất)
 exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  
+  console.log('DEBUG: getCurrentStudentPhoto called with ID:', id);
 
   try {
+    // Kiểm tra student có tồn tại không
+    const student = await Student.findById(id);
+    if (!student) {
+      console.log('DEBUG: Student not found with ID:', id);
+      return res.status(404).json({ message: 'Student not found' });
+    }
+    
+    console.log('DEBUG: Found student:', student.name);
+    
     // Lấy năm học hiện tại
     const currentSchoolYear = await getCurrentSchoolYear();
+    console.log('DEBUG: Current school year:', currentSchoolYear);
+    
     let photo = null;
 
     if (currentSchoolYear) {
@@ -488,6 +501,8 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
         student: id,
         schoolYear: currentSchoolYear
       }).populate('schoolYear', 'code');
+      
+      console.log('DEBUG: Photo for current school year:', !!photo);
     }
 
     // Fallback: Nếu không có ảnh năm hiện tại, lấy ảnh mới nhất
@@ -496,15 +511,19 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
         student: id
       }).populate('schoolYear', 'code')
         .sort({ createdAt: -1 });
+        
+      console.log('DEBUG: Latest photo fallback:', !!photo);
     }
 
     if (!photo) {
+      console.log('DEBUG: No photo found for student:', id);
       return res.status(404).json({ message: 'Không tìm thấy ảnh học sinh' });
     }
 
+    console.log('DEBUG: Returning photo:', photo.photoUrl);
     res.json(photo);
   } catch (error) {
-    console.error('Error getting current student photo:', error);
+    console.error('DEBUG: Error getting current student photo:', error);
     res.status(500).json({ error: 'Lỗi khi lấy ảnh học sinh' });
   }
 });
