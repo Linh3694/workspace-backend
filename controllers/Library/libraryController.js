@@ -482,6 +482,48 @@ exports.getNewBooks = async (req, res) => {
   }
 };
 
+// GET /libraries/featured-books - Lấy danh sách sách nổi bật
+exports.getFeaturedBooks = async (req, res) => {
+  try {
+    const { limit = 4 } = req.query; // Default lấy 4 quyển
+    
+    const libraries = await Library.find(); 
+    const allBooks = libraries.reduce((acc, library) => {
+      const booksWithLibraryInfo = library.books.map(book => ({ 
+        ...book.toObject(), 
+        libraryId: library._id,
+        libraryTitle: library.libraryTitle || library.title, // fallback to title
+        libraryCode: library.libraryCode,
+        authors: library.authors, // Lấy authors từ library level
+        category: library.category || book.documentType, // Lấy category
+        coverImage: library.coverImage, // Lấy cover image từ library
+        publishYear: book.publishYear,
+        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
+        borrowCount: book.borrowCount || 0
+      }));
+      return acc.concat(booksWithLibraryInfo);
+    }, []);
+    
+    // Filter sách nổi bật - ưu tiên theo isFeaturedBook hoặc borrowCount cao
+    const featuredBooks = allBooks
+      .filter(book => book.isFeaturedBook === true || (book.borrowCount && book.borrowCount > 0))
+      .sort((a, b) => {
+        // Ưu tiên sách được đánh dấu isFeaturedBook
+        if (a.isFeaturedBook && !b.isFeaturedBook) return -1;
+        if (!a.isFeaturedBook && b.isFeaturedBook) return 1;
+        
+        // Sau đó sort theo borrowCount từ cao xuống thấp
+        return (b.borrowCount || 0) - (a.borrowCount || 0);
+      })
+      .slice(0, parseInt(limit));
+    
+    return res.status(200).json(featuredBooks);
+  } catch (error) {
+    console.error('Error fetching featured books:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // -------------------- Author Controllers -------------------- //
 
 // GET /libraries/authors - Lấy danh sách tất cả tác giả
