@@ -312,6 +312,11 @@ exports.addBookToLibrary = async (req, res) => {
     // Sinh mã mới theo cú pháp: <specialCode>.<LibraryCode>.<STT>
     req.body.generatedCode = `${specialCode}.${library.libraryCode}.${serialNumber}`;
     
+    // Đảm bảo các trường boolean được parse đúng
+    req.body.isNewBook = req.body.isNewBook === 'true' || req.body.isNewBook === true;
+    req.body.isFeaturedBook = req.body.isFeaturedBook === 'true' || req.body.isFeaturedBook === true;
+    req.body.isAudioBook = req.body.isAudioBook === 'true' || req.body.isAudioBook === true;
+    
     // Thêm sách mới vào mảng books và lưu Library
     library.books.push(req.body);
     await library.save();
@@ -334,6 +339,17 @@ exports.updateBookInLibrary = async (req, res) => {
 
     if (!library.books[bookIndex]) {
       return res.status(404).json({ error: 'Book detail not found in this library' });
+    }
+
+    // Đảm bảo các trường boolean được parse đúng
+    if (req.body.hasOwnProperty('isNewBook')) {
+      req.body.isNewBook = req.body.isNewBook === 'true' || req.body.isNewBook === true;
+    }
+    if (req.body.hasOwnProperty('isFeaturedBook')) {
+      req.body.isFeaturedBook = req.body.isFeaturedBook === 'true' || req.body.isFeaturedBook === true;
+    }
+    if (req.body.hasOwnProperty('isAudioBook')) {
+      req.body.isAudioBook = req.body.isAudioBook === 'true' || req.body.isAudioBook === true;
     }
 
     // Gộp thuộc tính cũ và mới

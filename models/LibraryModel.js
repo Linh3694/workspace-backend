@@ -157,6 +157,19 @@ const BookDetailSchema = new mongoose.Schema(
    type: Number,
    default: 0,
  },
+   // Đặc điểm sách
+   isNewBook: {
+     type: Boolean,
+     default: false,
+   },
+   isFeaturedBook: {
+     type: Boolean,
+     default: false,
+   },
+   isAudioBook: {
+     type: Boolean,
+     default: false,
+   },
   },
   { _id: false } // Không tạo _id riêng cho mỗi BookDetail
 );
