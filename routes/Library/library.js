@@ -32,6 +32,7 @@ router.delete("/authors/:id", libraryController.deleteAuthor);
 // -------------------- Add Book APIs -------------------- //
 router.post('/:libraryId/books', libraryController.addBookToLibrary);
 router.put('/:libraryId/books/:bookIndex', libraryController.updateBookInLibrary);
+router.put('/books/:bookCode', libraryController.updateBookByCode);
 router.delete("/books/:bookCode", libraryController.deleteBookByCode);
 router.get('/:libraryId/books', libraryController.getBooksFromLibrary);
 // -------------------- Borrows Books APIs -------------------- //

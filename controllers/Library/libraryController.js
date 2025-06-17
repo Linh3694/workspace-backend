@@ -366,19 +366,63 @@ exports.updateBookInLibrary = async (req, res) => {
   }
 };
 
+// PUT /libraries/books/:bookCode - Update book by generatedCode
+exports.updateBookByCode = async (req, res) => {
+  try {
+    const { bookCode } = req.params;
+    const decodedBookCode = decodeURIComponent(bookCode);
+
+    // Đảm bảo các trường boolean được parse đúng
+    if (req.body.hasOwnProperty('isNewBook')) {
+      req.body.isNewBook = req.body.isNewBook === 'true' || req.body.isNewBook === true;
+    }
+    if (req.body.hasOwnProperty('isFeaturedBook')) {
+      req.body.isFeaturedBook = req.body.isFeaturedBook === 'true' || req.body.isFeaturedBook === true;
+    }
+    if (req.body.hasOwnProperty('isAudioBook')) {
+      req.body.isAudioBook = req.body.isAudioBook === 'true' || req.body.isAudioBook === true;
+    }
+
+    // Tìm library có books.generatedCode = decodedBookCode
+    const library = await Library.findOne({ "books.generatedCode": decodedBookCode });
+    if (!library) {
+      return res.status(404).json({ error: "Book not found in any library" });
+    }
+
+    // Tìm book trong library
+    const bookIndex = library.books.findIndex(b => b.generatedCode === decodedBookCode);
+    if (bookIndex === -1) {
+      return res.status(404).json({ error: "Book not found in library" });
+    }
+
+    // Gộp thuộc tính cũ và mới
+    library.books[bookIndex] = {
+      ...library.books[bookIndex]._doc,
+      ...req.body,
+    };
+
+    await library.save();
+    return res.status(200).json({ message: "Updated book successfully", book: library.books[bookIndex] });
+  } catch (error) {
+    console.error("Error updating book by code:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 // DELETE /libraries/books/:bookCode
 exports.deleteBookByCode = async (req, res) => {
   try {
     const { bookCode } = req.params;
+    const decodedBookCode = decodeURIComponent(bookCode);
 
-    // Tìm library có books.generatedCode = bookCode
-    const library = await Library.findOne({ "books.generatedCode": bookCode });
+    // Tìm library có books.generatedCode = decodedBookCode
+    const library = await Library.findOne({ "books.generatedCode": decodedBookCode });
     if (!library) {
       return res.status(404).json({ error: "Book not found in any library" });
     }
 
     // Filter bỏ sách có generatedCode trùng
-    library.books = library.books.filter(b => b.generatedCode !== bookCode);
+    library.books = library.books.filter(b => b.generatedCode !== decodedBookCode);
 
     await library.save();
     return res.status(200).json({ message: "Deleted book successfully" });
