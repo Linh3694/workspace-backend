@@ -446,6 +446,42 @@ exports.getAllBooks = async (req, res) => {
   }
 };
 
+// GET /libraries/new-books - Lấy danh sách sách mới
+exports.getNewBooks = async (req, res) => {
+  try {
+    const { limit = 4 } = req.query; // Default lấy 4 quyển
+    
+    const libraries = await Library.find().sort({ createdAt: -1 }); // Sort theo thời gian tạo library
+    const allBooks = libraries.reduce((acc, library) => {
+      const booksWithLibraryInfo = library.books.map(book => ({ 
+        ...book.toObject(), 
+        libraryId: library._id,
+        libraryTitle: library.libraryTitle,
+        libraryCode: library.libraryCode
+      }));
+      return acc.concat(booksWithLibraryInfo);
+    }, []);
+    
+    // Filter sách mới và sort theo thời gian
+    const newBooks = allBooks
+      .filter(book => book.isNewBook === true)
+      .sort((a, b) => {
+        // Sort theo thời gian tạo (từ _id ObjectId) hoặc generatedCode
+        if (a._id && b._id) {
+          return new Date(parseInt(b._id.toString().substring(0, 8), 16) * 1000) - 
+                 new Date(parseInt(a._id.toString().substring(0, 8), 16) * 1000);
+        }
+        return (b.generatedCode || '').localeCompare(a.generatedCode || '');
+      })
+      .slice(0, parseInt(limit));
+    
+    return res.status(200).json(newBooks);
+  } catch (error) {
+    console.error('Error fetching new books:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // -------------------- Author Controllers -------------------- //
 
 // GET /libraries/authors - Lấy danh sách tất cả tác giả
