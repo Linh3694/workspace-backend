@@ -170,6 +170,17 @@ const BookDetailSchema = new mongoose.Schema(
      type: Boolean,
      default: false,
    },
+   // Thông tin đặc biệt cho sách nói
+   duration: {
+     // Thời lượng sách nói (ví dụ: "5h 30m")
+     type: String,
+     default: '',
+   },
+   narrator: {
+     // Người đọc sách nói
+     type: String,
+     default: '',
+   },
   },
   { _id: false } // Không tạo _id riêng cho mỗi BookDetail
 );

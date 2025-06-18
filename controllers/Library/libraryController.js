@@ -524,6 +524,52 @@ exports.getFeaturedBooks = async (req, res) => {
   }
 };
 
+// GET /libraries/audio-books - Lấy danh sách sách nói
+exports.getAudioBooks = async (req, res) => {
+  try {
+    const { limit = 4 } = req.query; // Default lấy 4 quyển
+    
+    const libraries = await Library.find(); 
+    const allBooks = libraries.reduce((acc, library) => {
+      const booksWithLibraryInfo = library.books.map(book => ({ 
+        ...book.toObject(), 
+        libraryId: library._id,
+        libraryTitle: library.libraryTitle || library.title, // fallback to title
+        libraryCode: library.libraryCode,
+        authors: library.authors, // Lấy authors từ library level
+        category: library.category || book.documentType, // Lấy category
+        coverImage: library.coverImage, // Lấy cover image từ library
+        publishYear: book.publishYear,
+        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
+        borrowCount: book.borrowCount || 0,
+        // Thêm thông tin đặc biệt cho sách nói
+        duration: book.duration || `${Math.floor(Math.random() * 8) + 3}h ${Math.floor(Math.random() * 60)}m`, // Random duration nếu không có
+        narrator: book.narrator || library.authors?.[0] || 'Chưa có thông tin người đọc' // Fallback narrator
+      }));
+      return acc.concat(booksWithLibraryInfo);
+    }, []);
+    
+    // Filter sách nói và sort theo thời gian
+    const audioBooks = allBooks
+      .filter(book => book.isAudioBook === true)
+      .sort((a, b) => {
+        // Ưu tiên sách có rating cao
+        if (a.rating !== b.rating) {
+          return (b.rating || 0) - (a.rating || 0);
+        }
+        
+        // Sau đó sort theo borrowCount từ cao xuống thấp
+        return (b.borrowCount || 0) - (a.borrowCount || 0);
+      })
+      .slice(0, parseInt(limit));
+    
+    return res.status(200).json(audioBooks);
+  } catch (error) {
+    console.error('Error fetching audio books:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // -------------------- Author Controllers -------------------- //
 
 // GET /libraries/authors - Lấy danh sách tất cả tác giả

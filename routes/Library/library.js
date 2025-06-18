@@ -44,6 +44,7 @@ router.post("/borrow-multiple", libraryController.borrowMultipleBooks);
 router.get('/books', libraryController.getAllBooks);
 router.get('/new-books', libraryController.getNewBooks);
 router.get('/featured-books', libraryController.getFeaturedBooks);
+router.get('/audio-books', libraryController.getAudioBooks);
 
 router.post("/", uploadLibraryImage.upload.single("file"), async (req, res) => {
   try {
