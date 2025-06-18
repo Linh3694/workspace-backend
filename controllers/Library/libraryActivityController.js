@@ -1,4 +1,6 @@
 const LibraryActivity = require('../../models/LibraryActivity');
+const { convertToWebp } = require('../../middleware/uploadLibraryImage');
+const path = require('path');
 
 // Lấy tất cả hoạt động thư viện
 exports.getAllActivities = async (req, res) => {
@@ -177,5 +179,103 @@ exports.removeImage = async (req, res) => {
   } catch (error) {
     console.error('Error removing image:', error);
     res.status(500).json({ message: 'Lỗi khi xóa ảnh', error: error.message });
+  }
+};
+
+// Upload ảnh (không gắn vào hoạt động cụ thể)
+exports.uploadImages = async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'Không có file nào được upload' });
+    }
+
+    const uploadedImages = [];
+    
+    for (const file of req.files) {
+      try {
+        // Convert ảnh sang WebP và lưu
+        const filePath = await convertToWebp(file.buffer, file.originalname);
+        
+        // Tạo URL để truy cập ảnh
+        const imageUrl = `/uploads/Library/${path.basename(filePath)}`;
+        
+        uploadedImages.push({
+          url: imageUrl,
+          originalName: file.originalname,
+          size: file.size
+        });
+      } catch (convertError) {
+        console.error('Error converting image:', convertError);
+        continue; // Bỏ qua ảnh lỗi, tiếp tục với ảnh khác
+      }
+    }
+
+    if (uploadedImages.length === 0) {
+      return res.status(400).json({ message: 'Không thể xử lý ảnh nào' });
+    }
+
+    res.status(200).json({
+      message: `Upload thành công ${uploadedImages.length} ảnh`,
+      images: uploadedImages
+    });
+  } catch (error) {
+    console.error('Error uploading images:', error);
+    res.status(500).json({ message: 'Lỗi khi upload ảnh', error: error.message });
+  }
+};
+
+// Upload ảnh và gắn vào hoạt động cụ thể
+exports.uploadImagesForActivity = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'Không có file nào được upload' });
+    }
+
+    // Kiểm tra hoạt động có tồn tại không
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+
+    const uploadedImages = [];
+    
+    for (const file of req.files) {
+      try {
+        // Convert ảnh sang WebP và lưu
+        const filePath = await convertToWebp(file.buffer, file.originalname);
+        
+        // Tạo URL để truy cập ảnh
+        const imageUrl = `/uploads/Library/${path.basename(filePath)}`;
+        
+        const imageData = {
+          url: imageUrl,
+          caption: req.body.caption || '',
+          uploadedAt: new Date()
+        };
+        
+        uploadedImages.push(imageData);
+      } catch (convertError) {
+        console.error('Error converting image:', convertError);
+        continue; // Bỏ qua ảnh lỗi, tiếp tục với ảnh khác
+      }
+    }
+
+    if (uploadedImages.length === 0) {
+      return res.status(400).json({ message: 'Không thể xử lý ảnh nào' });
+    }
+
+    // Thêm ảnh vào hoạt động
+    activity.images.push(...uploadedImages);
+    await activity.save();
+
+    res.status(200).json({
+      message: `Upload thành công ${uploadedImages.length} ảnh`,
+      activity
+    });
+  } catch (error) {
+    console.error('Error uploading images for activity:', error);
+    res.status(500).json({ message: 'Lỗi khi upload ảnh cho hoạt động', error: error.message });
   }
 }; 
