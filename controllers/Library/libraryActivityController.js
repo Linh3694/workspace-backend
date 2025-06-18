@@ -196,7 +196,7 @@ exports.uploadImages = async (req, res) => {
         // Convert ảnh sang WebP và lưu
         const filePath = await convertToWebp(file.buffer, file.originalname);
         
-        // Tạo URL để truy cập ảnh
+        // Tạo URL để truy cập ảnh - sử dụng relative path
         const imageUrl = `/uploads/Library/${path.basename(filePath)}`;
         
         uploadedImages.push({
@@ -246,7 +246,7 @@ exports.uploadImagesForActivity = async (req, res) => {
         // Convert ảnh sang WebP và lưu
         const filePath = await convertToWebp(file.buffer, file.originalname);
         
-        // Tạo URL để truy cập ảnh
+        // Tạo URL để truy cập ảnh - sử dụng relative path
         const imageUrl = `/uploads/Library/${path.basename(filePath)}`;
         
         const imageData = {
