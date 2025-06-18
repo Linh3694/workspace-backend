@@ -51,6 +51,7 @@ const vehicleRoutes = require("./routes/Bus/vehicleRoutes");
 const tripRoutes = require("./routes/Bus/tripRoutes");
 const dailyTripRoutes = require("./routes/Bus/dailyTripRoutes");
 const libraryRoutes = require("./routes/Library/library");
+const libraryActivityRoutes = require("./routes/Library/libraryActivityRoutes");
 const admissionRoutes = require("./routes/SIS/admissionRoutes");
 const chatRoutes = require("./routes/Chat/chatRoutes");
 const chatSocket = require('./socketChat');
@@ -177,7 +178,7 @@ if (!fs.existsSync(uploadPath)) {
 }
 
 // Đảm bảo các thư mục con tồn tại
-const subDirs = ["CV", "Profile", "Avatar", "Chat", "Handovers", "Library", "Messages", "Pdf", "posts", "reports", "Tickets"];
+const subDirs = ["CV", "Profile", "Avatar", "Chat", "Handovers", "Library", "Activities", "Messages", "Pdf", "posts", "reports", "Tickets"];
 subDirs.forEach(dir => {
   const dirPath = path.join(uploadPath, dir);
   if (!fs.existsSync(dirPath)) {
@@ -266,6 +267,7 @@ app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/daily-trips", dailyTripRoutes);
 app.use("/api/libraries", libraryRoutes);
+app.use("/api/library-activities", libraryActivityRoutes);
 app.use("/api/email", require("./routes/Ticket/emailRoutes"));
 app.use("/api/admissions", admissionRoutes);
 app.use("/api/chats", chatRoutes);
