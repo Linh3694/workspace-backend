@@ -18,6 +18,9 @@ router.put('/:id', libraryActivityController.updateActivity);
 // DELETE /api/library-activities/:id - Xóa hoạt động
 router.delete('/:id', libraryActivityController.deleteActivity);
 
+// PATCH /api/library-activities/:id/toggle-published - Toggle trạng thái xuất bản
+router.patch('/:id/toggle-published', libraryActivityController.togglePublished);
+
 // POST /api/library-activities/:id/images - Thêm ảnh vào hoạt động
 router.post('/:id/images', libraryActivityController.addImages);
 

@@ -141,6 +141,32 @@ exports.deleteActivity = async (req, res) => {
   }
 };
 
+// Toggle trạng thái xuất bản
+exports.togglePublished = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isPublished } = req.body;
+    
+    const updatedActivity = await LibraryActivity.findByIdAndUpdate(
+      id,
+      { isPublished },
+      { new: true, runValidators: true }
+    );
+    
+    if (!updatedActivity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    res.status(200).json({
+      message: `${isPublished ? 'Xuất bản' : 'Ẩn'} hoạt động thành công`,
+      activity: updatedActivity
+    });
+  } catch (error) {
+    console.error('Error toggling published status:', error);
+    res.status(500).json({ message: 'Lỗi khi cập nhật trạng thái xuất bản', error: error.message });
+  }
+};
+
 // Thêm ảnh vào hoạt động
 exports.addImages = async (req, res) => {
   try {
