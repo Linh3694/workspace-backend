@@ -555,6 +555,8 @@ exports.getNewBooks = async (req, res) => {
         authors: library.authors,
         category: library.category,
         coverImage: library.coverImage,
+        documentType: library.documentType,
+        seriesName: library.seriesName,
         isNewBook: library.isNewBook,
         isFeaturedBook: library.isFeaturedBook,
         isAudioBook: library.isAudioBook,
@@ -575,97 +577,94 @@ exports.getNewBooks = async (req, res) => {
   }
 };
 
-// GET /libraries/featured-books - Lấy danh sách thư viện nổi bật
+// GET /libraries/featured-books - Lấy danh sách sách nổi bật
 exports.getFeaturedBooks = async (req, res) => {
   try {
     const { limit = 4 } = req.query; // Default lấy 4 quyển
     
-    const libraries = await Library.find({ isFeaturedBook: true }).sort({ createdAt: -1 }).limit(parseInt(limit)); // Lấy libraries có isFeaturedBook = true
-    
-    // Chuyển đổi libraries thành format cho frontend
-    const featuredLibraries = libraries.map(library => {
-      const libraryData = {
-        _id: library._id,
+    const libraries = await Library.find({ isFeaturedBook: true }); // Lấy libraries có isFeaturedBook = true
+    const allBooks = libraries.reduce((acc, library) => {
+      const booksWithLibraryInfo = library.books.map(book => ({ 
+        ...book.toObject(), 
         libraryId: library._id,
-        libraryCode: library.libraryCode,
         libraryTitle: library.title,
-        bookTitle: library.title, // Fallback cho compatibility
-        title: library.title,
-        authors: library.authors,
-        category: library.category,
-        coverImage: library.coverImage,
-        isNewBook: library.isNewBook,
-        isFeaturedBook: library.isFeaturedBook,
-        isAudioBook: library.isAudioBook,
-        totalBooks: library.books ? library.books.length : 0,
+        libraryCode: library.libraryCode,
+        authors: library.authors, // Lấy authors từ library level
+        category: library.category || book.documentType, // Lấy category
+        coverImage: library.coverImage, // Lấy cover image từ library
+        publishYear: book.publishYear,
         rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
-        borrowCount: Math.floor(Math.random() * 50) + 10, // Random borrow count cho featured
-        publishYear: new Date(library.createdAt).getFullYear(),
-        generatedCode: library.libraryCode,
-      };
-      
-      return libraryData;
-    });
+        borrowCount: book.borrowCount || 0,
+        isNewBook: library.isNewBook, // Lấy từ library level
+        isFeaturedBook: library.isFeaturedBook,
+        isAudioBook: library.isAudioBook
+      }));
+      return acc.concat(booksWithLibraryInfo);
+    }, []);
     
-    // Sort theo borrowCount từ cao xuống thấp
-    const sortedFeatured = featuredLibraries.sort((a, b) => (b.borrowCount || 0) - (a.borrowCount || 0));
+    // Sort sách nổi bật theo borrowCount và thời gian tạo
+    const featuredBooks = allBooks
+      .sort((a, b) => {
+        // Ưu tiên sách được đánh dấu isFeaturedBook
+        if (a.isFeaturedBook && !b.isFeaturedBook) return -1;
+        if (!a.isFeaturedBook && b.isFeaturedBook) return 1;
+        
+        // Sau đó sort theo borrowCount từ cao xuống thấp
+        return (b.borrowCount || 0) - (a.borrowCount || 0);
+      })
+      .slice(0, parseInt(limit));
     
-    return res.status(200).json(sortedFeatured);
+    return res.status(200).json(featuredBooks);
   } catch (error) {
-    console.error('Error fetching featured libraries:', error);
+    console.error('Error fetching featured books:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// GET /libraries/audio-books - Lấy danh sách thư viện sách nói
+// GET /libraries/audio-books - Lấy danh sách sách nói
 exports.getAudioBooks = async (req, res) => {
   try {
     const { limit = 4 } = req.query; // Default lấy 4 quyển
     
-    const libraries = await Library.find({ isAudioBook: true }).sort({ createdAt: -1 }).limit(parseInt(limit)); // Lấy libraries có isAudioBook = true
-    
-    // Chuyển đổi libraries thành format cho frontend
-    const audioLibraries = libraries.map(library => {
-      const libraryData = {
-        _id: library._id,
+    const libraries = await Library.find({ isAudioBook: true }); // Lấy libraries có isAudioBook = true 
+    const allBooks = libraries.reduce((acc, library) => {
+      const booksWithLibraryInfo = library.books.map(book => ({ 
+        ...book.toObject(), 
         libraryId: library._id,
-        libraryCode: library.libraryCode,
         libraryTitle: library.title,
-        bookTitle: library.title, // Fallback cho compatibility
-        title: library.title,
-        authors: library.authors,
-        category: library.category,
-        coverImage: library.coverImage,
-        isNewBook: library.isNewBook,
+        libraryCode: library.libraryCode,
+        authors: library.authors, // Lấy authors từ library level
+        category: library.category || book.documentType, // Lấy category
+        coverImage: library.coverImage, // Lấy cover image từ library
+        publishYear: book.publishYear,
+        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
+        borrowCount: book.borrowCount || 0,
+        isNewBook: library.isNewBook, // Lấy từ library level
         isFeaturedBook: library.isFeaturedBook,
         isAudioBook: library.isAudioBook,
-        totalBooks: library.books ? library.books.length : 0,
-        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
-        borrowCount: Math.floor(Math.random() * 30) + 5, // Random borrow count cho audio
-        publishYear: new Date(library.createdAt).getFullYear(),
-        generatedCode: library.libraryCode,
-        // Thông tin đặc biệt cho sách nói
-        duration: `${Math.floor(Math.random() * 8) + 3}h ${Math.floor(Math.random() * 60)}m`, // Random duration
-        narrator: library.authors?.[0] || 'Chưa có thông tin người đọc' // Fallback narrator
-      };
-      
-      return libraryData;
-    });
+        // Thêm thông tin đặc biệt cho sách nói
+        duration: book.duration || `${Math.floor(Math.random() * 8) + 3}h ${Math.floor(Math.random() * 60)}m`, // Random duration nếu không có
+        narrator: book.narrator || library.authors?.[0] || 'Chưa có thông tin người đọc' // Fallback narrator
+      }));
+      return acc.concat(booksWithLibraryInfo);
+    }, []);
     
-    // Sort theo rating cao và borrowCount
-    const sortedAudio = audioLibraries.sort((a, b) => {
-      // Ưu tiên sách có rating cao
-      if (a.rating !== b.rating) {
-        return (b.rating || 0) - (a.rating || 0);
-      }
-      
-      // Sau đó sort theo borrowCount từ cao xuống thấp
-      return (b.borrowCount || 0) - (a.borrowCount || 0);
-    });
+    // Sort sách nói theo rating và borrowCount
+    const audioBooks = allBooks
+      .sort((a, b) => {
+        // Ưu tiên sách có rating cao
+        if (a.rating !== b.rating) {
+          return (b.rating || 0) - (a.rating || 0);
+        }
+        
+        // Sau đó sort theo borrowCount từ cao xuống thấp
+        return (b.borrowCount || 0) - (a.borrowCount || 0);
+      })
+      .slice(0, parseInt(limit));
     
-    return res.status(200).json(sortedAudio);
+    return res.status(200).json(audioBooks);
   } catch (error) {
-    console.error('Error fetching audio libraries:', error);
+    console.error('Error fetching audio books:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
