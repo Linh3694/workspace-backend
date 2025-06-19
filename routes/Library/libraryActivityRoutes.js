@@ -43,6 +43,9 @@ router.put('/:id/days/:dayId', libraryActivityController.updateDay);
 // DELETE /api/library-activities/:id/days/:dayId - Xóa ngày khỏi hoạt động
 router.delete('/:id/days/:dayId', libraryActivityController.deleteDay);
 
+// PATCH /api/library-activities/:id/days/:dayId/toggle-published - Toggle trạng thái xuất bản của ngày
+router.patch('/:id/days/:dayId/toggle-published', libraryActivityController.toggleDayPublished);
+
 // POST /api/library-activities/:id/days/:dayId/images - Thêm ảnh vào ngày cụ thể
 router.post('/:id/days/:dayId/images', libraryActivityController.addImagesToDay);
 

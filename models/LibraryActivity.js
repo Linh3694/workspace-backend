@@ -15,6 +15,7 @@ const libraryActivitySchema = new mongoose.Schema({
     date: { type: Date, required: true },
     title: { type: String, default: '' }, // Tiêu đề cho ngày cụ thể (ví dụ: "Ngày 1 - Khai mạc")
     description: { type: String, default: '' },
+    isPublished: { type: Boolean, default: true }, // Trạng thái xuất bản của từng ngày
     images: [{
       url: { type: String, required: true },
       caption: { type: String },

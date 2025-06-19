@@ -411,12 +411,13 @@ exports.deleteDay = async (req, res) => {
       return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
     }
     
-    const dayIndex = activity.days.findIndex(day => day._id.toString() === dayId);
-    if (dayIndex === -1) {
+    const initialLength = activity.days.length;
+    activity.days = activity.days.filter(day => day._id.toString() !== dayId);
+    
+    if (activity.days.length === initialLength) {
       return res.status(404).json({ message: 'Không tìm thấy ngày' });
     }
     
-    activity.days.splice(dayIndex, 1);
     await activity.save();
     
     res.status(200).json({
@@ -426,6 +427,36 @@ exports.deleteDay = async (req, res) => {
   } catch (error) {
     console.error('Error deleting day:', error);
     res.status(500).json({ message: 'Lỗi khi xóa ngày', error: error.message });
+  }
+};
+
+// Toggle trạng thái xuất bản của ngày
+exports.toggleDayPublished = async (req, res) => {
+  try {
+    const { id, dayId } = req.params;
+    const { isPublished } = req.body;
+    
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    const dayIndex = activity.days.findIndex(day => day._id.toString() === dayId);
+    if (dayIndex === -1) {
+      return res.status(404).json({ message: 'Không tìm thấy ngày' });
+    }
+    
+    activity.days[dayIndex].isPublished = isPublished;
+    await activity.save();
+    
+    res.status(200).json({
+      message: `${isPublished ? 'Xuất bản' : 'Ẩn'} ngày thành công`,
+      activity,
+      updatedDay: activity.days[dayIndex]
+    });
+  } catch (error) {
+    console.error('Error toggling day published status:', error);
+    res.status(500).json({ message: 'Lỗi khi cập nhật trạng thái xuất bản ngày', error: error.message });
   }
 };
 
