@@ -16,6 +16,27 @@ async function syncAuthors(authorsArray) {
 // CREATE - Tạo mới Library
 exports.createLibrary = async (req, res) => {
   try {
+    // Parse authors từ FormData nếu là string JSON
+    if (typeof req.body.authors === 'string') {
+      try {
+        req.body.authors = JSON.parse(req.body.authors);
+      } catch (e) {
+        // Nếu không parse được JSON, thử split bằng dấu phẩy (fallback)
+        req.body.authors = req.body.authors.split(',').map(author => author.trim()).filter(Boolean);
+      }
+    }
+    
+    // Convert string boolean values từ FormData về boolean
+    if (typeof req.body.isNewBook === 'string') {
+      req.body.isNewBook = req.body.isNewBook === 'true';
+    }
+    if (typeof req.body.isFeaturedBook === 'string') {
+      req.body.isFeaturedBook = req.body.isFeaturedBook === 'true';
+    }
+    if (typeof req.body.isAudioBook === 'string') {
+      req.body.isAudioBook = req.body.isAudioBook === 'true';
+    }
+
     const newLibrary = new Library(req.body);
  
     // If there is a books array, remove any book with a null/undefined or duplicate generatedCode
@@ -83,6 +104,28 @@ exports.updateLibrary = async (req, res) => {
 
   try {
     const { id } = req.params;
+    
+    // Parse authors từ FormData nếu là string JSON
+    if (typeof req.body.authors === 'string') {
+      try {
+        req.body.authors = JSON.parse(req.body.authors);
+      } catch (e) {
+        // Nếu không parse được JSON, thử split bằng dấu phẩy (fallback)
+        req.body.authors = req.body.authors.split(',').map(author => author.trim()).filter(Boolean);
+      }
+    }
+    
+    // Convert string boolean values từ FormData về boolean
+    if (typeof req.body.isNewBook === 'string') {
+      req.body.isNewBook = req.body.isNewBook === 'true';
+    }
+    if (typeof req.body.isFeaturedBook === 'string') {
+      req.body.isFeaturedBook = req.body.isFeaturedBook === 'true';
+    }
+    if (typeof req.body.isAudioBook === 'string') {
+      req.body.isAudioBook = req.body.isAudioBook === 'true';
+    }
+    
     const updatedLibrary = await Library.findByIdAndUpdate(id, req.body, {
       new: true, 
     });
@@ -489,40 +532,42 @@ exports.getAllBooks = async (req, res) => {
   }
 };
 
-// GET /libraries/new-books - Lấy danh sách sách mới
+// GET /libraries/new-books - Lấy danh sách thư viện mới
 exports.getNewBooks = async (req, res) => {
   try {
     const { limit = 4 } = req.query; // Default lấy 4 quyển
     
-    const libraries = await Library.find({ isNewBook: true }).sort({ createdAt: -1 }); // Lấy libraries có isNewBook = true
-    const allBooks = libraries.reduce((acc, library) => {
-      const booksWithLibraryInfo = library.books.map(book => ({ 
-        ...book.toObject(), 
+    const libraries = await Library.find({ isNewBook: true }).sort({ createdAt: -1 }).limit(parseInt(limit)); // Lấy libraries có isNewBook = true
+    
+    // Chuyển đổi libraries thành format cho frontend
+    const newLibraries = libraries.map(library => {
+      // Tạo dữ liệu cho mỗi library (có thể có nhiều books hoặc không có book nào)
+      const libraryData = {
+        _id: library._id,
         libraryId: library._id,
-        libraryTitle: library.title,
         libraryCode: library.libraryCode,
-        isNewBook: library.isNewBook, // Lấy từ library level
+        libraryTitle: library.title,
+        bookTitle: library.title, // Fallback cho compatibility
+        title: library.title,
+        authors: library.authors,
+        category: library.category,
+        coverImage: library.coverImage,
+        isNewBook: library.isNewBook,
         isFeaturedBook: library.isFeaturedBook,
-        isAudioBook: library.isAudioBook
-      }));
-      return acc.concat(booksWithLibraryInfo);
-    }, []);
+        isAudioBook: library.isAudioBook,
+        totalBooks: library.books ? library.books.length : 0,
+        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
+        borrowCount: 0, // Default
+        publishYear: new Date(library.createdAt).getFullYear(), // Lấy năm tạo library
+        generatedCode: library.libraryCode, // Để tránh lỗi khi frontend map
+      };
+      
+      return libraryData;
+    });
     
-    // Sort theo thời gian tạo
-    const newBooks = allBooks
-      .sort((a, b) => {
-        // Sort theo thời gian tạo (từ _id ObjectId) hoặc generatedCode
-        if (a._id && b._id) {
-          return new Date(parseInt(b._id.toString().substring(0, 8), 16) * 1000) - 
-                 new Date(parseInt(a._id.toString().substring(0, 8), 16) * 1000);
-        }
-        return (b.generatedCode || '').localeCompare(a.generatedCode || '');
-      })
-      .slice(0, parseInt(limit));
-    
-    return res.status(200).json(newBooks);
+    return res.status(200).json(newLibraries);
   } catch (error) {
-    console.error('Error fetching new books:', error);
+    console.error('Error fetching new libraries:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
