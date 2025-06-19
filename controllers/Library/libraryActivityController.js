@@ -5,9 +5,10 @@ const path = require('path');
 // Lấy tất cả hoạt động thư viện
 exports.getAllActivities = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search, sortBy = 'date' } = req.query;
+    const { page = 1, limit = 20, search, sortBy = 'date', includeHidden } = req.query;
     
-    const query = { isPublished: true };
+    // Nếu includeHidden = true thì lấy tất cả, ngược lại chỉ lấy những cái đã publish
+    const query = includeHidden === 'true' ? {} : { isPublished: true };
     
     // Tìm kiếm theo title
     if (search) {
