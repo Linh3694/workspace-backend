@@ -187,13 +187,43 @@ exports.getAllSeriesNames = async (req, res) => {
 
 exports.createSeriesName = async (req, res) => {
   try {
-    const { name } = req.body;
-    // Kiểm tra trùng mã
-    const newSeries = new SeriesName({ name });
+    const { name, code } = req.body;
+    
+    // Tự động generate code từ name nếu không có code
+    let generatedCode = code;
+    if (!generatedCode) {
+      // Tạo code từ name: loại bỏ dấu, chuyển thành uppercase, thay space thành underscore
+      generatedCode = name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^A-Z0-9_]/g, "");
+      
+      // Thêm timestamp để đảm bảo unique
+      generatedCode += "_" + Date.now().toString().slice(-4);
+    }
+    
+    // Kiểm tra trùng code
+    const existingByCode = await SeriesName.findOne({ code: generatedCode });
+    if (existingByCode) {
+      return res.status(400).json({ error: "Mã này đã tồn tại." });
+    }
+    
+    // Kiểm tra trùng name
+    const existingByName = await SeriesName.findOne({ name });
+    if (existingByName) {
+      return res.status(400).json({ error: "Tên tùng thư này đã tồn tại." });
+    }
+    
+    const newSeries = new SeriesName({ name, code: generatedCode });
     await newSeries.save();
     return res.status(201).json(newSeries);
   } catch (error) {
     console.error("Error creating series name:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ error: "Dữ liệu đã tồn tại trong hệ thống." });
+    }
     return res.status(500).json({ error: "Internal server error" });
   }
 };

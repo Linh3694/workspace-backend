@@ -9,6 +9,7 @@ const DocumentType = mongoose.model("DocumentType", DocumentTypeSchema);
 
 const SeriesNameSchema = new mongoose.Schema({
   name: { type: String, required: true },
+  code: { type: String, unique: true, sparse: true },
 });
 const SeriesName = mongoose.model("SeriesName", SeriesNameSchema);
 
