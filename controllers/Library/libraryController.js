@@ -283,6 +283,19 @@ exports.createSpecialCode = async (req, res) => {
 exports.updateSpecialCode = async (req, res) => {
   try {
     const { id } = req.params;
+    const { code, name, language } = req.body;
+    
+    // Kiểm tra xem có Special Code khác với cùng code này không (trừ chính record hiện tại)
+    if (code) {
+      const existing = await SpecialCode.findOne({ 
+        code: code, 
+        _id: { $ne: id } 
+      });
+      if (existing) {
+        return res.status(400).json({ error: "Mã này đã tồn tại." });
+      }
+    }
+    
     const updatedCode = await SpecialCode.findByIdAndUpdate(id, req.body, { new: true });
     if (!updatedCode) {
       return res.status(404).json({ error: "Special Code not found" });
@@ -290,6 +303,12 @@ exports.updateSpecialCode = async (req, res) => {
     return res.status(200).json(updatedCode);
   } catch (error) {
     console.error("Error updating special code:", error);
+    
+    // Xử lý lỗi duplicate key
+    if (error.code === 11000) {
+      return res.status(400).json({ error: "Mã này đã tồn tại trong hệ thống." });
+    }
+    
     return res.status(500).json({ error: "Internal server error" });
   }
 };
