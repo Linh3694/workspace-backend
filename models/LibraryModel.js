@@ -15,6 +15,7 @@ const SeriesName = mongoose.model("SeriesName", SeriesNameSchema);
 const SpecialCodeSchema = new mongoose.Schema({
   name: { type: String, required: true },
   code: { type: String, required: true },
+  language: { type: String, required: true },
 });
 const SpecialCode = mongoose.model("SpecialCode", SpecialCodeSchema);
 

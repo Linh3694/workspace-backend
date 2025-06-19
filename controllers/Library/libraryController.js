@@ -237,12 +237,12 @@ exports.getAllSpecialCodes = async (req, res) => {
 
 exports.createSpecialCode = async (req, res) => {
   try {
-    const { code, name } = req.body;
+    const { code, name, language } = req.body;
     const existing = await SpecialCode.findOne({ code });
     if (existing) {
       return res.status(400).json({ error: "Mã này đã tồn tại." });
     }
-    const newCode = new SpecialCode({ code, name });
+    const newCode = new SpecialCode({ code, name, language });
     await newCode.save();
     return res.status(201).json(newCode);
   } catch (error) {
