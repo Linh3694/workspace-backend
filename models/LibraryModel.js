@@ -159,19 +159,6 @@ const BookDetailSchema = new mongoose.Schema(
    type: Number,
    default: 0,
  },
-   // Đặc điểm sách
-   isNewBook: {
-     type: Boolean,
-     default: false,
-   },
-   isFeaturedBook: {
-     type: Boolean,
-     default: false,
-   },
-   isAudioBook: {
-     type: Boolean,
-     default: false,
-   },
    // Thông tin đặc biệt cho sách nói
    duration: {
      // Thời lượng sách nói (ví dụ: "5h 30m")
@@ -233,6 +220,20 @@ const LibrarySchema = new mongoose.Schema(
       // Mô tả sách
       type: String,
       default: '',
+    },
+    
+    // Đặc điểm sách - chuyển lên từ BookDetailSchema
+    isNewBook: {
+      type: Boolean,
+      default: false,
+    },
+    isFeaturedBook: {
+      type: Boolean,
+      default: false,
+    },
+    isAudioBook: {
+      type: Boolean,
+      default: false,
     },
     
     // Giới thiệu sách thường

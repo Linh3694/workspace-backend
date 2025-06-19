@@ -361,10 +361,10 @@ exports.addBookToLibrary = async (req, res) => {
     // Sinh mã mới theo cú pháp: <specialCode>.<LibraryCode>.<STT>
     req.body.generatedCode = `${specialCode}.${library.libraryCode}.${serialNumber}`;
     
-    // Đảm bảo các trường boolean được parse đúng
-    req.body.isNewBook = req.body.isNewBook === 'true' || req.body.isNewBook === true;
-    req.body.isFeaturedBook = req.body.isFeaturedBook === 'true' || req.body.isFeaturedBook === true;
-    req.body.isAudioBook = req.body.isAudioBook === 'true' || req.body.isAudioBook === true;
+    // Loại bỏ các trường đặc điểm sách khỏi book data vì đã chuyển lên library level
+    delete req.body.isNewBook;
+    delete req.body.isFeaturedBook;
+    delete req.body.isAudioBook;
     
     // Thêm sách mới vào mảng books và lưu Library
     library.books.push(req.body);
@@ -390,16 +390,10 @@ exports.updateBookInLibrary = async (req, res) => {
       return res.status(404).json({ error: 'Book detail not found in this library' });
     }
 
-    // Đảm bảo các trường boolean được parse đúng
-    if (req.body.hasOwnProperty('isNewBook')) {
-      req.body.isNewBook = req.body.isNewBook === 'true' || req.body.isNewBook === true;
-    }
-    if (req.body.hasOwnProperty('isFeaturedBook')) {
-      req.body.isFeaturedBook = req.body.isFeaturedBook === 'true' || req.body.isFeaturedBook === true;
-    }
-    if (req.body.hasOwnProperty('isAudioBook')) {
-      req.body.isAudioBook = req.body.isAudioBook === 'true' || req.body.isAudioBook === true;
-    }
+    // Loại bỏ các trường đặc điểm sách khỏi book data vì đã chuyển lên library level
+    delete req.body.isNewBook;
+    delete req.body.isFeaturedBook;
+    delete req.body.isAudioBook;
 
     // Gộp thuộc tính cũ và mới
     library.books[bookIndex] = {
@@ -421,16 +415,10 @@ exports.updateBookByCode = async (req, res) => {
     const { bookCode } = req.params;
     const decodedBookCode = decodeURIComponent(bookCode);
 
-    // Đảm bảo các trường boolean được parse đúng
-    if (req.body.hasOwnProperty('isNewBook')) {
-      req.body.isNewBook = req.body.isNewBook === 'true' || req.body.isNewBook === true;
-    }
-    if (req.body.hasOwnProperty('isFeaturedBook')) {
-      req.body.isFeaturedBook = req.body.isFeaturedBook === 'true' || req.body.isFeaturedBook === true;
-    }
-    if (req.body.hasOwnProperty('isAudioBook')) {
-      req.body.isAudioBook = req.body.isAudioBook === 'true' || req.body.isAudioBook === true;
-    }
+    // Loại bỏ các trường đặc điểm sách khỏi book data vì đã chuyển lên library level
+    delete req.body.isNewBook;
+    delete req.body.isFeaturedBook;
+    delete req.body.isAudioBook;
 
     // Tìm library có books.generatedCode = decodedBookCode
     const library = await Library.findOne({ "books.generatedCode": decodedBookCode });
@@ -485,7 +473,13 @@ exports.getAllBooks = async (req, res) => {
   try {
     const libraries = await Library.find();
     const allBooks = libraries.reduce((acc, library) => {
-      const booksWithLibraryId = library.books.map(book => ({ ...book.toObject(), libraryId: library._id }));
+      const booksWithLibraryId = library.books.map(book => ({ 
+        ...book.toObject(), 
+        libraryId: library._id,
+        isNewBook: library.isNewBook, // Lấy từ library level
+        isFeaturedBook: library.isFeaturedBook,
+        isAudioBook: library.isAudioBook
+      }));
       return acc.concat(booksWithLibraryId);
     }, []);
     return res.status(200).json(allBooks);
@@ -500,20 +494,22 @@ exports.getNewBooks = async (req, res) => {
   try {
     const { limit = 4 } = req.query; // Default lấy 4 quyển
     
-    const libraries = await Library.find().sort({ createdAt: -1 }); // Sort theo thời gian tạo library
+    const libraries = await Library.find({ isNewBook: true }).sort({ createdAt: -1 }); // Lấy libraries có isNewBook = true
     const allBooks = libraries.reduce((acc, library) => {
       const booksWithLibraryInfo = library.books.map(book => ({ 
         ...book.toObject(), 
         libraryId: library._id,
-        libraryTitle: library.libraryTitle,
-        libraryCode: library.libraryCode
+        libraryTitle: library.title,
+        libraryCode: library.libraryCode,
+        isNewBook: library.isNewBook, // Lấy từ library level
+        isFeaturedBook: library.isFeaturedBook,
+        isAudioBook: library.isAudioBook
       }));
       return acc.concat(booksWithLibraryInfo);
     }, []);
     
-    // Filter sách mới và sort theo thời gian
+    // Sort theo thời gian tạo
     const newBooks = allBooks
-      .filter(book => book.isNewBook === true)
       .sort((a, b) => {
         // Sort theo thời gian tạo (từ _id ObjectId) hoặc generatedCode
         if (a._id && b._id) {
@@ -536,26 +532,28 @@ exports.getFeaturedBooks = async (req, res) => {
   try {
     const { limit = 4 } = req.query; // Default lấy 4 quyển
     
-    const libraries = await Library.find(); 
+    const libraries = await Library.find({ isFeaturedBook: true }); // Lấy libraries có isFeaturedBook = true
     const allBooks = libraries.reduce((acc, library) => {
       const booksWithLibraryInfo = library.books.map(book => ({ 
         ...book.toObject(), 
         libraryId: library._id,
-        libraryTitle: library.libraryTitle || library.title, // fallback to title
+        libraryTitle: library.title,
         libraryCode: library.libraryCode,
         authors: library.authors, // Lấy authors từ library level
         category: library.category || book.documentType, // Lấy category
         coverImage: library.coverImage, // Lấy cover image từ library
         publishYear: book.publishYear,
         rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
-        borrowCount: book.borrowCount || 0
+        borrowCount: book.borrowCount || 0,
+        isNewBook: library.isNewBook, // Lấy từ library level
+        isFeaturedBook: library.isFeaturedBook,
+        isAudioBook: library.isAudioBook
       }));
       return acc.concat(booksWithLibraryInfo);
     }, []);
     
-    // Filter sách nổi bật - ưu tiên theo isFeaturedBook hoặc borrowCount cao
+    // Sort sách nổi bật theo borrowCount và thời gian tạo
     const featuredBooks = allBooks
-      .filter(book => book.isFeaturedBook === true || (book.borrowCount && book.borrowCount > 0))
       .sort((a, b) => {
         // Ưu tiên sách được đánh dấu isFeaturedBook
         if (a.isFeaturedBook && !b.isFeaturedBook) return -1;
