@@ -6,10 +6,27 @@ const libraryActivitySchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  description: {
+    type: String,
+    default: ''
+  },
+  days: [{
+    dayNumber: { type: Number, required: true },
+    date: { type: Date, required: true },
+    title: { type: String, default: '' }, // Tiêu đề cho ngày cụ thể (ví dụ: "Ngày 1 - Khai mạc")
+    description: { type: String, default: '' },
+    images: [{
+      url: { type: String, required: true },
+      caption: { type: String },
+      uploadedAt: { type: Date, default: Date.now }
+    }]
+  }],
+  // Giữ lại date cũ để backward compatibility và để sort theo ngày bắt đầu
   date: { 
     type: Date, 
     required: true 
   },
+  // Giữ lại images cũ để backward compatibility
   images: [{
     url: { type: String, required: true },
     caption: { type: String },

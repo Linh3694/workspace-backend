@@ -69,7 +69,7 @@ exports.getActivityById = async (req, res) => {
 // Tạo hoạt động mới
 exports.createActivity = async (req, res) => {
   try {
-    const { title, date, images, createdBy } = req.body;
+    const { title, description, date, images, days, createdBy } = req.body;
     
     // Validation
     if (!title || !date || !createdBy) {
@@ -78,8 +78,10 @@ exports.createActivity = async (req, res) => {
     
     const newActivity = new LibraryActivity({
       title: title.trim(),
+      description: description || '',
       date: new Date(date),
       images: images || [],
+      days: days || [],
       createdBy
     });
     
@@ -95,12 +97,14 @@ exports.createActivity = async (req, res) => {
 exports.updateActivity = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, date, images } = req.body;
+    const { title, description, date, images, days } = req.body;
     
     const updateData = {};
     if (title) updateData.title = title.trim();
+    if (description !== undefined) updateData.description = description;
     if (date) updateData.date = new Date(date);
     if (images) updateData.images = images;
+    if (days) updateData.days = days;
     
     const updatedActivity = await LibraryActivity.findByIdAndUpdate(
       id,
@@ -277,5 +281,246 @@ exports.uploadImagesForActivity = async (req, res) => {
   } catch (error) {
     console.error('Error uploading images for activity:', error);
     res.status(500).json({ message: 'Lỗi khi upload ảnh cho hoạt động', error: error.message });
+  }
+};
+
+// ===================
+// QUẢN LÝ DAYS
+// ===================
+
+// Thêm ngày mới vào hoạt động
+exports.addDay = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { dayNumber, date, title, description, images } = req.body;
+    
+    if (!dayNumber || !date) {
+      return res.status(400).json({ message: 'dayNumber và date là bắt buộc' });
+    }
+    
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    // Kiểm tra dayNumber có bị trùng không
+    const existingDay = activity.days.find(day => day.dayNumber === dayNumber);
+    if (existingDay) {
+      return res.status(400).json({ message: `Ngày thứ ${dayNumber} đã tồn tại` });
+    }
+    
+    const newDay = {
+      dayNumber,
+      date: new Date(date),
+      title: title || `Ngày ${dayNumber}`,
+      description: description || '',
+      images: images || []
+    };
+    
+    activity.days.push(newDay);
+    await activity.save();
+    
+    res.status(201).json({
+      message: 'Thêm ngày thành công',
+      activity,
+      addedDay: activity.days[activity.days.length - 1]
+    });
+  } catch (error) {
+    console.error('Error adding day:', error);
+    res.status(500).json({ message: 'Lỗi khi thêm ngày', error: error.message });
+  }
+};
+
+// Cập nhật thông tin ngày
+exports.updateDay = async (req, res) => {
+  try {
+    const { id, dayId } = req.params;
+    const { dayNumber, date, title, description, images } = req.body;
+    
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    const dayIndex = activity.days.findIndex(day => day._id.toString() === dayId);
+    if (dayIndex === -1) {
+      return res.status(404).json({ message: 'Không tìm thấy ngày' });
+    }
+    
+    // Kiểm tra dayNumber có bị trùng với ngày khác không
+    if (dayNumber && dayNumber !== activity.days[dayIndex].dayNumber) {
+      const existingDay = activity.days.find(day => day.dayNumber === dayNumber && day._id.toString() !== dayId);
+      if (existingDay) {
+        return res.status(400).json({ message: `Ngày thứ ${dayNumber} đã tồn tại` });
+      }
+    }
+    
+    // Cập nhật thông tin
+    if (dayNumber) activity.days[dayIndex].dayNumber = dayNumber;
+    if (date) activity.days[dayIndex].date = new Date(date);
+    if (title) activity.days[dayIndex].title = title;
+    if (description !== undefined) activity.days[dayIndex].description = description;
+    if (images) activity.days[dayIndex].images = images;
+    
+    await activity.save();
+    
+    res.status(200).json({
+      message: 'Cập nhật ngày thành công',
+      activity,
+      updatedDay: activity.days[dayIndex]
+    });
+  } catch (error) {
+    console.error('Error updating day:', error);
+    res.status(500).json({ message: 'Lỗi khi cập nhật ngày', error: error.message });
+  }
+};
+
+// Xóa ngày khỏi hoạt động
+exports.deleteDay = async (req, res) => {
+  try {
+    const { id, dayId } = req.params;
+    
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    const dayIndex = activity.days.findIndex(day => day._id.toString() === dayId);
+    if (dayIndex === -1) {
+      return res.status(404).json({ message: 'Không tìm thấy ngày' });
+    }
+    
+    activity.days.splice(dayIndex, 1);
+    await activity.save();
+    
+    res.status(200).json({
+      message: 'Xóa ngày thành công',
+      activity
+    });
+  } catch (error) {
+    console.error('Error deleting day:', error);
+    res.status(500).json({ message: 'Lỗi khi xóa ngày', error: error.message });
+  }
+};
+
+// Thêm ảnh vào ngày cụ thể
+exports.addImagesToDay = async (req, res) => {
+  try {
+    const { id, dayId } = req.params;
+    const { images } = req.body;
+    
+    if (!images || !Array.isArray(images)) {
+      return res.status(400).json({ message: 'Images phải là một mảng' });
+    }
+    
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    const dayIndex = activity.days.findIndex(day => day._id.toString() === dayId);
+    if (dayIndex === -1) {
+      return res.status(404).json({ message: 'Không tìm thấy ngày' });
+    }
+    
+    activity.days[dayIndex].images.push(...images);
+    await activity.save();
+    
+    res.status(200).json({
+      message: 'Thêm ảnh thành công',
+      activity,
+      day: activity.days[dayIndex]
+    });
+  } catch (error) {
+    console.error('Error adding images to day:', error);
+    res.status(500).json({ message: 'Lỗi khi thêm ảnh vào ngày', error: error.message });
+  }
+};
+
+// Upload ảnh cho ngày cụ thể
+exports.uploadImagesForDay = async (req, res) => {
+  try {
+    const { id, dayId } = req.params;
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'Không có file nào được upload' });
+    }
+
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    const dayIndex = activity.days.findIndex(day => day._id.toString() === dayId);
+    if (dayIndex === -1) {
+      return res.status(404).json({ message: 'Không tìm thấy ngày' });
+    }
+
+    const uploadedImages = [];
+    
+    for (const file of req.files) {
+      try {
+        const filePath = await convertToWebp(file.buffer, file.originalname);
+        const imageUrl = `/uploads/Library/${path.basename(filePath)}`;
+        
+        const imageData = {
+          url: imageUrl,
+          caption: req.body.caption || '',
+          uploadedAt: new Date()
+        };
+        
+        uploadedImages.push(imageData);
+      } catch (convertError) {
+        console.error('Error converting image:', convertError);
+        continue;
+      }
+    }
+
+    if (uploadedImages.length === 0) {
+      return res.status(400).json({ message: 'Không thể xử lý ảnh nào' });
+    }
+
+    activity.days[dayIndex].images.push(...uploadedImages);
+    await activity.save();
+
+    res.status(200).json({
+      message: `Upload thành công ${uploadedImages.length} ảnh cho ngày ${activity.days[dayIndex].dayNumber}`,
+      activity,
+      day: activity.days[dayIndex]
+    });
+  } catch (error) {
+    console.error('Error uploading images for day:', error);
+    res.status(500).json({ message: 'Lỗi khi upload ảnh cho ngày', error: error.message });
+  }
+};
+
+// Xóa ảnh khỏi ngày
+exports.removeImageFromDay = async (req, res) => {
+  try {
+    const { id, dayId, imageId } = req.params;
+    
+    const activity = await LibraryActivity.findById(id);
+    if (!activity) {
+      return res.status(404).json({ message: 'Không tìm thấy hoạt động' });
+    }
+    
+    const dayIndex = activity.days.findIndex(day => day._id.toString() === dayId);
+    if (dayIndex === -1) {
+      return res.status(404).json({ message: 'Không tìm thấy ngày' });
+    }
+    
+    activity.days[dayIndex].images = activity.days[dayIndex].images.filter(
+      img => img._id.toString() !== imageId
+    );
+    await activity.save();
+    
+    res.status(200).json({
+      message: 'Xóa ảnh thành công',
+      activity,
+      day: activity.days[dayIndex]
+    });
+  } catch (error) {
+    console.error('Error removing image from day:', error);
+    res.status(500).json({ message: 'Lỗi khi xóa ảnh khỏi ngày', error: error.message });
   }
 }; 
