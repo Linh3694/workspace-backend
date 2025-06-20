@@ -622,50 +622,50 @@ exports.getFeaturedBooks = async (req, res) => {
   }
 };
 
-// GET /libraries/audio-books - Lấy danh sách sách nói
+// GET /libraries/audio-books - Lấy danh sách thư viện sách nói
 exports.getAudioBooks = async (req, res) => {
   try {
-    const { limit = 4 } = req.query; // Default lấy 4 quyển
+    const { limit = 4 } = req.query; // Default lấy 4 thư viện
     
-    const libraries = await Library.find({ isAudioBook: true }); // Lấy libraries có isAudioBook = true 
-    const allBooks = libraries.reduce((acc, library) => {
-      const booksWithLibraryInfo = library.books.map(book => ({ 
-        ...book.toObject(), 
+    console.log('🔍 [getAudioBooks] Starting query for isAudioBook: true');
+    const libraries = await Library.find({ isAudioBook: true }).sort({ createdAt: -1 }).limit(parseInt(limit)); // Lấy libraries có isAudioBook = true
+    console.log('📚 [getAudioBooks] Found libraries:', libraries.length);
+    console.log('📚 [getAudioBooks] Libraries data:', JSON.stringify(libraries.map(lib => ({ id: lib._id, title: lib.title, isAudioBook: lib.isAudioBook })), null, 2));
+    
+    // Chuyển đổi libraries thành format cho frontend - tương tự như getNewBooks và getFeaturedBooks
+    const audioLibraries = libraries.map(library => {
+      // Tạo dữ liệu cho mỗi library (có thể có nhiều books hoặc không có book nào)
+      const libraryData = {
+        _id: library._id,
         libraryId: library._id,
-        libraryTitle: library.title,
         libraryCode: library.libraryCode,
-        authors: library.authors, // Lấy authors từ library level
-        category: library.category || book.documentType, // Lấy category
-        coverImage: library.coverImage, // Lấy cover image từ library
-        publishYear: book.publishYear,
-        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
-        borrowCount: book.borrowCount || 0,
-        isNewBook: library.isNewBook, // Lấy từ library level
+        libraryTitle: library.title,
+        bookTitle: library.title, // Fallback cho compatibility
+        title: library.title,
+        authors: library.authors,
+        category: library.category,
+        coverImage: library.coverImage,
+        documentType: library.documentType,
+        seriesName: library.seriesName,
+        isNewBook: library.isNewBook,
         isFeaturedBook: library.isFeaturedBook,
         isAudioBook: library.isAudioBook,
+        totalBooks: library.books ? library.books.length : 0,
+        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
+        borrowCount: 0, // Default
+        publishYear: new Date(library.createdAt).getFullYear(), // Lấy năm tạo library
+        generatedCode: library.libraryCode, // Để tránh lỗi khi frontend map
         // Thêm thông tin đặc biệt cho sách nói
-        duration: book.duration || `${Math.floor(Math.random() * 8) + 3}h ${Math.floor(Math.random() * 60)}m`, // Random duration nếu không có
-        narrator: book.narrator || library.authors?.[0] || 'Chưa có thông tin người đọc' // Fallback narrator
-      }));
-      return acc.concat(booksWithLibraryInfo);
-    }, []);
+        duration: `${Math.floor(Math.random() * 8) + 3}h ${Math.floor(Math.random() * 60)}m`, // Random duration
+        narrator: library.authors?.[0] || 'Chưa có thông tin người đọc' // Fallback narrator
+      };
+      
+      return libraryData;
+    });
     
-    // Sort sách nói theo rating và borrowCount
-    const audioBooks = allBooks
-      .sort((a, b) => {
-        // Ưu tiên sách có rating cao
-        if (a.rating !== b.rating) {
-          return (b.rating || 0) - (a.rating || 0);
-        }
-        
-        // Sau đó sort theo borrowCount từ cao xuống thấp
-        return (b.borrowCount || 0) - (a.borrowCount || 0);
-      })
-      .slice(0, parseInt(limit));
-    
-    return res.status(200).json(audioBooks);
+    return res.status(200).json(audioLibraries);
   } catch (error) {
-    console.error('Error fetching audio books:', error);
+    console.error('Error fetching audio libraries:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
