@@ -36,6 +36,26 @@ exports.createLibrary = async (req, res) => {
     if (typeof req.body.isAudioBook === 'string') {
       req.body.isAudioBook = req.body.isAudioBook === 'true';
     }
+    
+    // Đảm bảo các trường mô tả được khởi tạo đúng với cấu trúc mới
+    if (!req.body.description || typeof req.body.description !== 'object') {
+      req.body.description = {
+        linkEmbed: '',
+        content: ''
+      };
+    }
+    if (!req.body.introduction || typeof req.body.introduction !== 'object') {
+      req.body.introduction = {
+        linkEmbed: '',
+        content: ''
+      };
+    }
+    if (!req.body.audioBook || typeof req.body.audioBook !== 'object') {
+      req.body.audioBook = {
+        linkEmbed: '',
+        content: ''
+      };
+    }
 
     const newLibrary = new Library(req.body);
  
@@ -124,6 +144,32 @@ exports.updateLibrary = async (req, res) => {
     }
     if (typeof req.body.isAudioBook === 'string') {
       req.body.isAudioBook = req.body.isAudioBook === 'true';
+    }
+    
+    // Đảm bảo các trường mô tả được xử lý đúng với cấu trúc mới
+    if (req.body.description !== undefined) {
+      if (typeof req.body.description !== 'object') {
+        req.body.description = {
+          linkEmbed: '',
+          content: req.body.description || ''
+        };
+      }
+    }
+    if (req.body.introduction !== undefined) {
+      if (typeof req.body.introduction !== 'object') {
+        req.body.introduction = {
+          linkEmbed: '',
+          content: req.body.introduction || ''
+        };
+      }
+    }
+    if (req.body.audioBook !== undefined) {
+      if (typeof req.body.audioBook !== 'object') {
+        req.body.audioBook = {
+          linkEmbed: '',
+          content: req.body.audioBook || ''
+        };
+      }
     }
     
     const updatedLibrary = await Library.findByIdAndUpdate(id, req.body, {
@@ -1061,8 +1107,10 @@ exports.getBookDetailBySlug = async (req, res) => {
       libraryCode: foundLibrary.libraryCode,
       title: foundBook?.title || foundLibrary.title,
       authors: foundLibrary.authors || [],
-      description: foundBook?.description || foundLibrary.description || "Chưa có mô tả",
-      fullDescription: foundBook?.fullDescription || foundLibrary.description || "Chưa có mô tả chi tiết",
+      // Cấu trúc mới cho 3 tab
+      description: foundLibrary.description || { linkEmbed: '', content: 'Chưa có mô tả' },
+      introduction: foundLibrary.introduction || { linkEmbed: '', content: 'Chưa có giới thiệu' },
+      audioBook: foundLibrary.audioBook || { linkEmbed: '', content: 'Chưa có thông tin sách nói' },
       publishYear: foundBook?.publishYear || new Date(foundLibrary.createdAt).getFullYear(),
       genre: foundLibrary.documentType || foundLibrary.category || "Chưa phân loại",
       category: foundLibrary.category || foundLibrary.documentType,
@@ -1071,7 +1119,7 @@ exports.getBookDetailBySlug = async (req, res) => {
       language: foundBook?.language || foundLibrary.language || "Tiếng Việt",
       coverImage: foundLibrary.coverImage,
       isOnline: foundBook?.isOnline || false,
-      onlineLink: foundBook?.onlineLink || "Mở sách online",
+      onlineLink: foundBook?.onlineLink || foundLibrary.audioBook?.linkEmbed || "Mở sách online",
       isAudioBook: foundLibrary.isAudioBook || false,
       isNewBook: foundLibrary.isNewBook || false,
       isFeaturedBook: foundLibrary.isFeaturedBook || false,

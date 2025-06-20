@@ -216,10 +216,40 @@ const LibrarySchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    // Tab "Mô tả"
     description: {
-      // Mô tả sách
-      type: String,
-      default: '',
+      linkEmbed: {
+        type: String,
+        default: '',
+      },
+      content: {
+        type: String,
+        default: '',
+      }
+    },
+    
+    // Tab "Giới thiệu sách"
+    introduction: {
+      linkEmbed: {
+        type: String,
+        default: '',
+      },
+      content: {
+        type: String,
+        default: '',
+      }
+    },
+    
+    // Tab "Sách nói"
+    audioBook: {
+      linkEmbed: {
+        type: String,
+        default: '',
+      },
+      content: {
+        type: String,
+        default: '',
+      }
     },
     
     // Đặc điểm sách - chuyển lên từ BookDetailSchema
