@@ -14,9 +14,9 @@ const SeriesNameSchema = new mongoose.Schema({
 const SeriesName = mongoose.model("SeriesName", SeriesNameSchema);
 
 const SpecialCodeSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  code: { type: String, required: true },
-  language: { type: String, required: true },
+  name: { type: String, required: true }, // Mã đặc biệt (ví dụ: BV1, TL2, SH3...)
+  code: { type: String, required: true }, // Nơi lưu trữ/kho (ví dụ: Kho A, Kho B...)
+  language: { type: String, required: true }, // Ngôn ngữ (Tiếng Việt, English...)
 });
 const SpecialCode = mongoose.model("SpecialCode", SpecialCodeSchema);
 

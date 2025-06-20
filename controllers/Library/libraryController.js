@@ -357,9 +357,10 @@ exports.getAllSpecialCodes = async (req, res) => {
 exports.createSpecialCode = async (req, res) => {
   try {
     const { code, name, language } = req.body;
-    const existing = await SpecialCode.findOne({ code });
+    // Kiểm tra trùng mã đặc biệt (name) trước khi tạo mới
+    const existing = await SpecialCode.findOne({ name });
     if (existing) {
-      return res.status(400).json({ error: "Mã này đã tồn tại." });
+      return res.status(400).json({ error: "Mã đặc biệt này đã tồn tại." });
     }
     const newCode = new SpecialCode({ code, name, language });
     await newCode.save();
@@ -374,14 +375,14 @@ exports.updateSpecialCode = async (req, res) => {
     const { id } = req.params;
     const { code, name, language } = req.body;
     
-    // Kiểm tra xem có Special Code khác với cùng code này không (trừ chính record hiện tại)
-    if (code) {
+    // Kiểm tra xem có Special Code khác với cùng mã đặc biệt (name) này không (trừ chính record hiện tại)
+    if (name) {
       const existing = await SpecialCode.findOne({ 
-        code: code, 
+        name: name, 
         _id: { $ne: id } 
       });
       if (existing) {
-        return res.status(400).json({ error: "Mã này đã tồn tại." });
+        return res.status(400).json({ error: "Mã đặc biệt này đã tồn tại." });
       }
     }
     
@@ -395,7 +396,7 @@ exports.updateSpecialCode = async (req, res) => {
     
     // Xử lý lỗi duplicate key
     if (error.code === 11000) {
-      return res.status(400).json({ error: "Mã này đã tồn tại trong hệ thống." });
+      return res.status(400).json({ error: "Mã đặc biệt này đã tồn tại trong hệ thống." });
     }
     
     return res.status(500).json({ error: "Internal server error" });
@@ -437,11 +438,18 @@ exports.addBookToLibrary = async (req, res) => {
       return res.status(404).json({ error: 'Library not found' });
     }
     
-    // Yêu cầu có specialCode cho sách
-    if (!req.body.specialCode) {
-      return res.status(400).json({ error: 'Special code is required for the book.' });
+    // Yêu cầu có specialCodeId để tìm mã đặc biệt trong database
+    if (!req.body.specialCodeId) {
+      return res.status(400).json({ error: 'Special code ID is required for the book.' });
     }
-    const specialCode = req.body.specialCode;
+    
+    // Tìm SpecialCode trong database để lấy mã đặc biệt (name)
+    const specialCodeRecord = await SpecialCode.findById(req.body.specialCodeId);
+    if (!specialCodeRecord) {
+      return res.status(400).json({ error: 'Special code not found.' });
+    }
+    
+    const specialCode = specialCodeRecord.name; // name chính là mã đặc biệt (như BV1, TL2...)
     
     // Tính số thứ tự cho sách hiện có trong Library (mỗi Library có libraryCode riêng nên count độc lập)
     const count = library.books.length; // số sách hiện có trong Library
@@ -449,6 +457,10 @@ exports.addBookToLibrary = async (req, res) => {
     
     // Sinh mã mới theo cú pháp: <specialCode>.<LibraryCode>.<STT>
     req.body.generatedCode = `${specialCode}.${library.libraryCode}.${serialNumber}`;
+    req.body.specialCode = specialCode; // Lưu mã đặc biệt vào book
+    
+    // Loại bỏ specialCodeId vì không cần lưu trong book
+    delete req.body.specialCodeId;
     
     // Loại bỏ các trường đặc điểm sách khỏi book data vì đã chuyển lên library level
     delete req.body.isNewBook;
