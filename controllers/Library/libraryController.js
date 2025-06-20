@@ -991,3 +991,169 @@ exports.borrowMultipleBooks = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
+// GET /books/detail/:slug - Lấy chi tiết sách theo slug
+exports.getBookDetailBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    console.log('🔍 [getBookDetailBySlug] Searching for slug:', slug);
+    
+    // Function to create slug from title (same as frontend)
+    const createSlug = (title) => {
+      if (!title) return '';
+      return title
+        .toLowerCase()
+        .replace(/[áàạảãâấầậẩẫăắằặẳẵ]/g, 'a')
+        .replace(/[éèẹẻẽêếềệểễ]/g, 'e')
+        .replace(/[íìịỉĩ]/g, 'i')
+        .replace(/[óòọỏõôốồộổỗơớờợởỡ]/g, 'o')
+        .replace(/[úùụủũưứừựửữ]/g, 'u')
+        .replace(/[ýỳỵỷỹ]/g, 'y')
+        .replace(/đ/g, 'd')
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .trim()
+        .replace(/^-+|-+$/g, '');
+    };
+
+    // Tìm tất cả libraries
+    const libraries = await Library.find();
+    let foundLibrary = null;
+    let foundBook = null;
+
+    // Tìm kiếm trong tất cả libraries và books
+    for (const library of libraries) {
+      // Kiểm tra slug của library title
+      if (createSlug(library.title) === slug) {
+        foundLibrary = library;
+        // Nếu tìm thấy library match, lấy book đầu tiên hoặc tạo book data từ library
+        if (library.books && library.books.length > 0) {
+          foundBook = library.books[0]; // Lấy book đầu tiên
+        }
+        break;
+      }
+
+      // Kiểm tra slug trong các books của library
+      if (library.books) {
+        for (const book of library.books) {
+          if (book.title && createSlug(book.title) === slug) {
+            foundLibrary = library;
+            foundBook = book;
+            break;
+          }
+        }
+        if (foundBook) break;
+      }
+    }
+
+    if (!foundLibrary) {
+      console.log('❌ [getBookDetailBySlug] No library found for slug:', slug);
+      return res.status(404).json({ error: "Book not found" });
+    }
+
+    console.log('✅ [getBookDetailBySlug] Found library:', foundLibrary.title);
+
+    // Tạo response data từ library và book (nếu có)
+    const bookDetail = {
+      _id: foundBook?._id || foundLibrary._id,
+      libraryId: foundLibrary._id,
+      libraryCode: foundLibrary.libraryCode,
+      title: foundBook?.title || foundLibrary.title,
+      authors: foundLibrary.authors || [],
+      description: foundBook?.description || foundLibrary.description || "Chưa có mô tả",
+      fullDescription: foundBook?.fullDescription || foundLibrary.description || "Chưa có mô tả chi tiết",
+      publishYear: foundBook?.publishYear || new Date(foundLibrary.createdAt).getFullYear(),
+      genre: foundLibrary.documentType || foundLibrary.category || "Chưa phân loại",
+      category: foundLibrary.category || foundLibrary.documentType,
+      borrowCount: foundBook?.borrowCount || 0,
+      totalBorrowCount: foundLibrary.borrowCount || 0,
+      language: foundBook?.language || foundLibrary.language || "Tiếng Việt",
+      coverImage: foundLibrary.coverImage,
+      isOnline: foundBook?.isOnline || false,
+      onlineLink: foundBook?.onlineLink || "Mở sách online",
+      isAudioBook: foundLibrary.isAudioBook || false,
+      isNewBook: foundLibrary.isNewBook || false,
+      isFeaturedBook: foundLibrary.isFeaturedBook || false,
+      rating: foundBook?.rating || Math.floor(Math.random() * 5) + 1,
+      documentType: foundLibrary.documentType,
+      seriesName: foundLibrary.seriesName,
+      generatedCode: foundBook?.generatedCode || foundLibrary.libraryCode,
+      status: foundBook?.status || "Sẵn sàng"
+    };
+
+    return res.status(200).json(bookDetail);
+  } catch (error) {
+    console.error('Error fetching book detail by slug:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// GET /books/related - Lấy sách liên quan theo category
+exports.getRelatedBooks = async (req, res) => {
+  try {
+    const { category, limit = 10 } = req.query;
+    console.log('🔍 [getRelatedBooks] Searching for category:', category, 'with limit:', limit);
+    
+    if (!category || category.trim() === '') {
+      // Nếu không có category, lấy random books
+      const libraries = await Library.find().limit(parseInt(limit));
+      const relatedBooks = libraries.map(library => ({
+        _id: library._id,
+        title: library.title,
+        authors: library.authors,
+        category: library.category || library.documentType,
+        coverImage: library.coverImage,
+        borrowCount: library.borrowCount || 0,
+        totalBorrowCount: library.borrowCount || 0
+      }));
+      return res.status(200).json(relatedBooks);
+    }
+
+    // Tìm libraries có category tương tự
+    const libraries = await Library.find({
+      $or: [
+        { category: new RegExp(category, 'i') },
+        { documentType: new RegExp(category, 'i') },
+        { seriesName: new RegExp(category, 'i') }
+      ]
+    }).limit(parseInt(limit));
+
+    console.log('📚 [getRelatedBooks] Found libraries:', libraries.length);
+
+    // Chuyển đổi libraries thành format cho related books
+    const relatedBooks = libraries.map(library => ({
+      _id: library._id,
+      title: library.title,
+      authors: library.authors,
+      category: library.category || library.documentType || "Chưa phân loại",
+      coverImage: library.coverImage,
+      borrowCount: library.borrowCount || 0,
+      totalBorrowCount: library.borrowCount || 0,
+      isAudioBook: library.isAudioBook,
+      isNewBook: library.isNewBook,
+      isFeaturedBook: library.isFeaturedBook
+    }));
+
+    // Nếu không tìm thấy sách liên quan, lấy random books
+    if (relatedBooks.length === 0) {
+      console.log('⚠️ [getRelatedBooks] No related books found, getting random books');
+      const randomLibraries = await Library.find().limit(parseInt(limit));
+      const randomBooks = randomLibraries.map(library => ({
+        _id: library._id,
+        title: library.title,
+        authors: library.authors,
+        category: library.category || library.documentType || "Chưa phân loại",
+        coverImage: library.coverImage,
+        borrowCount: library.borrowCount || 0,
+        totalBorrowCount: library.borrowCount || 0
+      }));
+      return res.status(200).json(randomBooks);
+    }
+
+    return res.status(200).json(relatedBooks);
+  } catch (error) {
+    console.error('Error fetching related books:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};

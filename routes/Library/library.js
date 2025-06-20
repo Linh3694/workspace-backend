@@ -42,6 +42,8 @@ router.get("/full-libraries", libraryController.getAllLibrariesFull);
 router.post("/borrow-multiple", libraryController.borrowMultipleBooks);
 
 router.get('/books', libraryController.getAllBooks);
+router.get('/books/detail/:slug', libraryController.getBookDetailBySlug);
+router.get('/books/related', libraryController.getRelatedBooks);
 router.get('/new-books', libraryController.getNewBooks);
 router.get('/featured-books', libraryController.getFeaturedBooks);
 router.get('/audio-books', libraryController.getAudioBooks);
