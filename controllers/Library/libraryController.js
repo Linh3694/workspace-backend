@@ -577,46 +577,47 @@ exports.getNewBooks = async (req, res) => {
   }
 };
 
-// GET /libraries/featured-books - Lấy danh sách sách nổi bật
+// GET /libraries/featured-books - Lấy danh sách thư viện nổi bật
 exports.getFeaturedBooks = async (req, res) => {
   try {
-    const { limit = 4 } = req.query; // Default lấy 4 quyển
+    const { limit = 4 } = req.query; // Default lấy 4 thư viện
     
-    const libraries = await Library.find({ isFeaturedBook: true }); // Lấy libraries có isFeaturedBook = true
-    const allBooks = libraries.reduce((acc, library) => {
-      const booksWithLibraryInfo = library.books.map(book => ({ 
-        ...book.toObject(), 
+    console.log('🔍 [getFeaturedBooks] Starting query for isFeaturedBook: true');
+    const libraries = await Library.find({ isFeaturedBook: true }).sort({ createdAt: -1 }).limit(parseInt(limit)); // Lấy libraries có isFeaturedBook = true
+    console.log('📚 [getFeaturedBooks] Found libraries:', libraries.length);
+    console.log('📚 [getFeaturedBooks] Libraries data:', JSON.stringify(libraries.map(lib => ({ id: lib._id, title: lib.title, isFeaturedBook: lib.isFeaturedBook })), null, 2));
+    
+    // Chuyển đổi libraries thành format cho frontend - tương tự như getNewBooks
+    const featuredLibraries = libraries.map(library => {
+      // Tạo dữ liệu cho mỗi library (có thể có nhiều books hoặc không có book nào)
+      const libraryData = {
+        _id: library._id,
         libraryId: library._id,
-        libraryTitle: library.title,
         libraryCode: library.libraryCode,
-        authors: library.authors, // Lấy authors từ library level
-        category: library.category || book.documentType, // Lấy category
-        coverImage: library.coverImage, // Lấy cover image từ library
-        publishYear: book.publishYear,
-        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
-        borrowCount: book.borrowCount || 0,
-        isNewBook: library.isNewBook, // Lấy từ library level
+        libraryTitle: library.title,
+        bookTitle: library.title, // Fallback cho compatibility
+        title: library.title,
+        authors: library.authors,
+        category: library.category,
+        coverImage: library.coverImage,
+        documentType: library.documentType,
+        seriesName: library.seriesName,
+        isNewBook: library.isNewBook,
         isFeaturedBook: library.isFeaturedBook,
-        isAudioBook: library.isAudioBook
-      }));
-      return acc.concat(booksWithLibraryInfo);
-    }, []);
+        isAudioBook: library.isAudioBook,
+        totalBooks: library.books ? library.books.length : 0,
+        rating: Math.floor(Math.random() * 5) + 1, // Random rating 1-5 (tạm thời)
+        borrowCount: 0, // Default
+        publishYear: new Date(library.createdAt).getFullYear(), // Lấy năm tạo library
+        generatedCode: library.libraryCode, // Để tránh lỗi khi frontend map
+      };
+      
+      return libraryData;
+    });
     
-    // Sort sách nổi bật theo borrowCount và thời gian tạo
-    const featuredBooks = allBooks
-      .sort((a, b) => {
-        // Ưu tiên sách được đánh dấu isFeaturedBook
-        if (a.isFeaturedBook && !b.isFeaturedBook) return -1;
-        if (!a.isFeaturedBook && b.isFeaturedBook) return 1;
-        
-        // Sau đó sort theo borrowCount từ cao xuống thấp
-        return (b.borrowCount || 0) - (a.borrowCount || 0);
-      })
-      .slice(0, parseInt(limit));
-    
-    return res.status(200).json(featuredBooks);
+    return res.status(200).json(featuredLibraries);
   } catch (error) {
-    console.error('Error fetching featured books:', error);
+    console.error('Error fetching featured libraries:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
