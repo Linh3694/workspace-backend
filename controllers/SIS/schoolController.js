@@ -11,14 +11,18 @@ exports.createSchool = async (req, res) => {
             return res.status(400).json({ message: "Tên trường là bắt buộc" });
         }
 
-        // Kiểm tra trùng mã
-        const existingSchool = await School.findOne({ code });
-        if (existingSchool) {
-            return res.status(400).json({ message: "Mã trường đã tồn tại" });
+        // Kiểm tra trùng mã (chỉ khi có code)
+        if (code) {
+            const existingSchool = await School.findOne({ code });
+            if (existingSchool) {
+                return res.status(400).json({ message: "Mã trường đã tồn tại" });
+            }
         }
 
         const newSchool = await School.create({
             name,
+            code,
+            type,
             description
         });
 
