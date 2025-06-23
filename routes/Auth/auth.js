@@ -96,6 +96,63 @@ router.post(
   }
 );
 
+// Đăng nhập cho mobile app
+router.post('/parent/login', async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+
+    // Tìm user theo phone (username)
+    const user = await User.findOne({ username: phone });
+    if (!user) {
+      return res.status(401).json({ message: 'Số điện thoại hoặc mật khẩu không đúng' });
+    }
+
+    // Kiểm tra mật khẩu
+    console.log('FE gửi lên:', password);
+    console.log('Password trong DB:', user.password);
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Số điện thoại hoặc mật khẩu không đúng' });
+    }
+
+    // Tìm parent theo user._id
+    const parent = await Parent.findOne({ user: user._id }).populate('students');
+    if (!parent) {
+      return res.status(404).json({ message: 'Không tìm thấy thông tin phụ huynh' });
+    }
+
+    // Tạo token với thời hạn 10 năm
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '3650d' } // 10 năm
+    );
+
+    // Trả về thông tin phụ huynh và token
+    res.json({
+      token,
+      parent: {
+        id: parent._id,
+        fullname: parent.fullname,
+        phone: parent.phone,
+        email: parent.email,
+        students: parent.students.map(stu => ({
+          id: stu._id,
+          name: stu.name,
+          class: stu.class,
+          avatarUrl: stu.avatarUrl
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Mobile login error:', error);
+    res.status(500).json({ message: 'Lỗi server' });
+  }
+});
+
 router.post("/verify-id", async (req, res) => {
   const { id } = req.body;
 
