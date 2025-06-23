@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const parentController = require('../../controllers/SIS/parentController');
+const authMiddleware = require('../../middleware/authMiddleware');
 
 // Lấy danh sách tất cả phụ huynh
 router.get('/', parentController.getAllParents);
@@ -9,13 +10,13 @@ router.get('/', parentController.getAllParents);
 router.get('/:id', parentController.getParentById);
 
 // Tạo phụ huynh mới
-router.post('/', parentController.createParent);
+router.post('/', authMiddleware, parentController.createParent);
 
 // Cập nhật thông tin phụ huynh
-router.put('/:id', parentController.updateParent);
+router.put('/:id', authMiddleware, parentController.updateParent);
 
 // Xóa phụ huynh
-router.delete('/:id', parentController.deleteParent);
+router.delete('/:id', authMiddleware, parentController.deleteParent);
 
 
 

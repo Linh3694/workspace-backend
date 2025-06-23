@@ -5,7 +5,7 @@ const Family = require("../../models/Family");
 // Lấy danh sách tất cả phụ huynh
 exports.getAllParents = async (req, res) => {
     try {
-        const parents = await Parent.find();
+        const parents = await Parent.find().populate('user', 'active username phone');
         res.status(200).json(parents);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -28,10 +28,16 @@ exports.getParentById = async (req, res) => {
 // Tạo phụ huynh mới
 exports.createParent = async (req, res) => {
     try {
+        console.log('Creating parent with data:', req.body);
         const parent = new Parent(req.body);
-        await parent.save();
-        res.status(201).json(parent);
+        const savedParent = await parent.save();
+        console.log('Parent created successfully:', savedParent);
+        
+        // Populate user data nếu có
+        const populatedParent = await Parent.findById(savedParent._id).populate('user', 'active username');
+        res.status(201).json(populatedParent);
     } catch (err) {
+        console.error('Error creating parent:', err);
         res.status(400).json({ message: err.message });
     }
 };

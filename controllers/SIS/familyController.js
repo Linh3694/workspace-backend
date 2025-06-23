@@ -11,14 +11,20 @@ exports.getFamilies = asyncHandler(async (req, res) => {
             .populate({
                 path: 'parents.parent',
                 select: 'fullname phone email user',
-                populate: { path: 'user', select: 'active username' }
+                populate: { path: 'user', select: 'active username phone' }
             })
             .populate({
                 path: 'students',
                 select: 'studentCode name'
             });
 
-        console.log('Đang trả về families:', JSON.stringify(families.slice(0, 1), null, 2));
+        console.log('Số lượng families tìm thấy:', families.length);
+        if (families.length > 0) {
+            console.log('Sample family:', JSON.stringify(families[0], null, 2));
+            if (families[0].parents?.length > 0) {
+                console.log('Sample parent in family:', JSON.stringify(families[0].parents[0], null, 2));
+            }
+        }
         res.json(families);
     } catch (err) {
         console.error('Lỗi khi lấy danh sách gia đình:', err);
