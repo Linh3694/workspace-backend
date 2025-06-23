@@ -3,6 +3,11 @@ const enrollmentController = require("../../controllers/SIS/enrollmentController
 
 const router = express.Router();
 
+// Debug endpoint để test route hoạt động
+router.get("/test", (req, res) => {
+  res.json({ message: "Enrollment routes working!", timestamp: new Date() });
+});
+
 // POST / - create enrollment
 router.post("/", enrollmentController.createEnrollment);
 // POST /bulk-import - bulk import enrollments from Excel

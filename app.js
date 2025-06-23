@@ -189,7 +189,19 @@ subDirs.forEach(dir => {
 });
 
 // Middlewares
-app.use(cors());
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://wis.wellspring.edu.vn',
+    'https://api-dev.wellspring.edu.vn'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: "4096mb" }));
 app.use(express.urlencoded({ limit: "4096mb", extended: true }));
 app.use(express.static(path.join(__dirname, "public")));

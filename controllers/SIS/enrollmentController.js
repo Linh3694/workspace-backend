@@ -5,8 +5,10 @@ const Student = require("../../models/Student");
 // Create a new enrollment
 exports.createEnrollment = async (req, res) => {
     try {
+        console.log("📝 [Enrollment] Creating enrollment with data:", req.body);
         const { student, class: classId, schoolYear, status } = req.body;
         if (!student || !classId || !schoolYear) {
+            console.log("❌ [Enrollment] Missing required fields:", { student, classId, schoolYear });
             return res.status(400).json({ message: "student, class, and schoolYear are required" });
         }
         const oldEnrollments = await StudentClassEnrollment.find({
@@ -48,8 +50,10 @@ exports.createEnrollment = async (req, res) => {
             student,
             { $addToSet: { class: classId } }
         );
+        console.log("✅ [Enrollment] Created successfully:", enrollment._id);
         return res.status(201).json(enrollment);
     } catch (err) {
+        console.error("❌ [Enrollment] Error creating enrollment:", err);
         return res.status(500).json({ error: err.message });
     }
 };
