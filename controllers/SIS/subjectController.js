@@ -486,6 +486,9 @@ exports.bulkUploadSubjects = async (req, res) => {
       errors: []
     };
 
+    // Pass 1: Create all subjects first
+    const createdSubjects = new Map(); // code -> subject
+    
     for (const [index, row] of rows.entries()) {
       const line = index + 1;
       const {
@@ -494,13 +497,23 @@ exports.bulkUploadSubjects = async (req, res) => {
         schoolCode,
         gradeLevelCodes = [],
         needFunctionRoom = false,
-        roomCodes = []
+        roomCodes = [],
+        isParentSubject = false,
+        parentSubjectCode,
+        description
       } = row;
 
       // Validate required fields
       if (!name || !schoolCode || !gradeLevelCodes.length) {
         results.skipped += 1;
         results.errors.push(`Row ${line}: missing required fields`);
+        continue;
+      }
+
+      // Validate parent-child relationship logic
+      if (isParentSubject && parentSubjectCode) {
+        results.skipped += 1;
+        results.errors.push(`Row ${line}: môn học cha không thể có parentSubjectCode`);
         continue;
       }
 
@@ -546,7 +559,7 @@ exports.bulkUploadSubjects = async (req, res) => {
         rooms = foundRooms.map(r => r._id);
       }
 
-      await Subject.create({
+      const newSubject = await Subject.create({
         name,
         code,
         school: school._id,
@@ -554,10 +567,53 @@ exports.bulkUploadSubjects = async (req, res) => {
         needFunctionRoom: !!needFunctionRoom,
         rooms,
         curriculums: [],
+        isParentSubject: !!isParentSubject,
+        parentSubject: null, // Will be set in pass 2
+        subSubjects: [],
+        description: description || '',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+
+      if (code) {
+        createdSubjects.set(code, newSubject);
+      }
       results.inserted += 1;
+    }
+
+    // Pass 2: Set up parent-child relationships
+    for (const [index, row] of rows.entries()) {
+      const line = index + 1;
+      const { code, parentSubjectCode, isParentSubject } = row;
+
+      if (!isParentSubject && parentSubjectCode) {
+        // This is a child subject, find its parent
+        const parentSubject = createdSubjects.get(parentSubjectCode) || 
+                             await Subject.findOne({ code: parentSubjectCode });
+        
+        if (!parentSubject) {
+          results.errors.push(`Row ${line}: parent subject code not found (${parentSubjectCode})`);
+          continue;
+        }
+
+        if (!parentSubject.isParentSubject) {
+          results.errors.push(`Row ${line}: parent subject must be marked as parent (${parentSubjectCode})`);
+          continue;
+        }
+
+        const childSubject = createdSubjects.get(code) || await Subject.findOne({ code });
+        if (childSubject) {
+          // Update child to point to parent
+          await Subject.findByIdAndUpdate(childSubject._id, {
+            parentSubject: parentSubject._id
+          });
+
+          // Update parent to include this child
+          await Subject.findByIdAndUpdate(parentSubject._id, {
+            $addToSet: { subSubjects: childSubject._id }
+          });
+        }
+      }
     }
 
     return res.json({ data: results });
