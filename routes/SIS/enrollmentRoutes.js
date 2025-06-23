@@ -1,5 +1,3 @@
-
-
 const express = require("express");
 const enrollmentController = require("../../controllers/SIS/enrollmentController");
 
@@ -7,6 +5,8 @@ const router = express.Router();
 
 // POST / - create enrollment
 router.post("/", enrollmentController.createEnrollment);
+// POST /bulk-import - bulk import enrollments from Excel
+router.post("/bulk-import", enrollmentController.bulkImportEnrollments);
 // GET / - get all enrollments
 router.get("/", enrollmentController.getAllEnrollments);
 // GET /:id - get enrollment by id
