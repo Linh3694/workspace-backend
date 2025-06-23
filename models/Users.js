@@ -10,6 +10,12 @@ const userSchema = new mongoose.Schema({
     trim: true
   },
   
+  phone: {
+    type: String,
+    trim: true,
+    sparse: true, // Cho phép null/undefined và chỉ check unique khi có giá trị
+  },
+  
   email: {
     type: String,
     required: true,
@@ -110,6 +116,7 @@ const userSchema = new mongoose.Schema({
 // Index để tối ưu hiệu suất
 userSchema.index({ email: 1 });
 userSchema.index({ username: 1 });
+userSchema.index({ phone: 1 });
 userSchema.index({ employeeCode: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ active: 1 });
@@ -146,12 +153,13 @@ userSchema.virtual('loginIdentifier').get(function() {
   return this.username || this.email;
 });
 
-// Method để tìm user bằng username hoặc email
+// Method để tìm user bằng username, email hoặc phone
 userSchema.statics.findByLogin = function(identifier) {
   return this.findOne({
     $or: [
       { username: identifier },
-      { email: identifier }
+      { email: identifier },
+      { phone: identifier }
     ]
   });
 };

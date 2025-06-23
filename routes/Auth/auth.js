@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const User = require("../../models/Users");
 const Student = require("../../models/Student");
+const Parent = require("../../models/Parent");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { check, validationResult } = require("express-validator");
@@ -101,8 +102,19 @@ router.post('/parent/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
 
-    // Tìm user theo phone (username)
-    const user = await User.findOne({ username: phone });
+    if (!phone || !password) {
+      return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin' });
+    }
+
+    // Tìm user theo phone (có thể ở username hoặc phone field)
+    const user = await User.findOne({
+      $or: [
+        { username: phone },
+        { phone: phone }
+      ]
+    });
+    console.log('Tìm user theo phone:', phone);
+    console.log('User tìm thấy:', user ? user._id : 'Không tìm thấy');
     if (!user) {
       return res.status(401).json({ message: 'Số điện thoại hoặc mật khẩu không đúng' });
     }
