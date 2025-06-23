@@ -186,7 +186,7 @@ exports.deleteEducationalSystem = async (req, res) => {
       { $pull: { educationalSystems: educationalSystem._id } }
     );
 
-    await educationalSystem.remove();
+    await EducationalSystem.findByIdAndDelete(id);
     console.log('Successfully deleted educational system');
 
     res.json({ message: "Educational system deleted successfully" });
