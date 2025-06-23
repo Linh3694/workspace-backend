@@ -20,7 +20,7 @@ const Parent = require("../../models/Parent");
 // Tạo người dùng mới
 exports.createUser = async (req, res) => {
   try {
-    const { password, email, role, fullname, active } = req.body;
+    const { password, email, phone, role, fullname, active } = req.body;
     const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : null;
 
     // Kiểm tra dữ liệu đầu vào
@@ -46,6 +46,7 @@ exports.createUser = async (req, res) => {
     const newUser = await User.create({
       password: hashedPassword,
       email,
+      phone,
       role,
       fullname,
       active: active !== undefined ? active : true,
@@ -73,6 +74,7 @@ exports.createUser = async (req, res) => {
     return res.status(201).json({
       _id: newUser._id,
       email: newUser.email,
+      phone: newUser.phone,
       role: newUser.role,
       fullname: newUser.fullname,
       avatarUrl: newUser.avatarUrl,
@@ -161,7 +163,7 @@ exports.getUserById = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, role, fullname, active } = req.body;
+    const { email, phone, role, fullname, active } = req.body;
     const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : undefined;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -197,6 +199,7 @@ exports.updateUser = async (req, res) => {
       id,
       {
         email,
+        phone,
         role,
         fullname,
         active,
@@ -522,7 +525,7 @@ exports.createBatchUsers = async (req, res) => {
 
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
-      const { password, email, role, fullname, active } = user;
+      const { password, email, phone, role, fullname, active } = user;
 
       // Kiểm tra dữ liệu bắt buộc
       if (!password || !email || !role || !fullname) {
@@ -550,6 +553,7 @@ exports.createBatchUsers = async (req, res) => {
       usersToInsert.push({
         password: hashedPassword,
         email,
+        phone,
         role,
         fullname,
         active: active !== undefined ? active : true,
@@ -590,6 +594,7 @@ exports.createBatchUsers = async (req, res) => {
       users: createdUsers.map(user => ({
         _id: user._id,
         email: user.email,
+        phone: user.phone,
         role: user.role,
         fullname: user.fullname,
         active: user.active,
