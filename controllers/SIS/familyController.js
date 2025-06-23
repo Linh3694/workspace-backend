@@ -109,20 +109,30 @@ exports.updateFamily = asyncHandler(async (req, res) => {
 
 // Xóa Family
 exports.deleteFamily = asyncHandler(async (req, res) => {
+    console.log('Đang cố gắng xóa family ID:', req.params.id);
+    
     const family = await Family.findById(req.params.id);
 
     if (!family) {
+        console.log('Không tìm thấy family với ID:', req.params.id);
         return res.status(404).json({ message: 'Không tìm thấy gia đình' });
     }
 
+    console.log('Family được tìm thấy:', family);
+
     // Kiểm tra xem Family có liên kết với Student nào không
     if (family.students && family.students.length > 0) {
+        console.log('Family có', family.students.length, 'students, không thể xóa');
         return res.status(400).json({
             message: 'Không thể xóa gia đình đang có học sinh liên kết'
         });
     }
 
+    // Nếu family có parents, xóa parents trước (optional - có thể giữ lại parents)
+    // Chỉ xóa family, không xóa parents để tránh mất dữ liệu
+    console.log('Đang xóa family...');
     await Family.findByIdAndDelete(req.params.id);
+    console.log('Đã xóa family thành công');
     res.json({ message: 'Xóa gia đình thành công' });
 });
 
