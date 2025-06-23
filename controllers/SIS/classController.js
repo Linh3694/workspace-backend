@@ -96,8 +96,6 @@ exports.getAllClasses = async (req, res) => {
   try {
     const { gradeLevels, schoolYear } = req.query;
     const { populate } = req.query;
-    console.log("GET /classes - Query params:", { gradeLevels, schoolYear, populate });
-
     const filter = {};
 
     // Xử lý gradeLevel
@@ -116,9 +114,6 @@ exports.getAllClasses = async (req, res) => {
     if (schoolYear) {
       filter.schoolYear = new mongoose.Types.ObjectId(schoolYear);
     }
-
-    console.log("Final filter:", filter);
-
     // Xây dựng populate path dựa trên tham số populate
     let query = Class.find(filter);
 
@@ -156,10 +151,6 @@ exports.getAllClasses = async (req, res) => {
     }
 
     const classes = await query.sort({ className: 1 });
-
-    // Log để debug
-    console.log("Classes found:", JSON.stringify(classes, null, 2));
-
     return res.json({ data: classes });
   } catch (err) {
     console.error("Error fetching classes:", err);
@@ -204,8 +195,11 @@ exports.updateClass = async (req, res) => {
 
     // Lấy thông tin lớp cũ để kiểm tra thay đổi khối
     const oldClass = await Class.findById(id);
+    if (!oldClass) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+    
     const oldGradeLevel = oldClass.gradeLevel;
-
     const updatedClass = await Class.findByIdAndUpdate(
       id,
       {
@@ -236,7 +230,7 @@ exports.updateClass = async (req, res) => {
     }
 
     // Nếu có thay đổi khối, cập nhật lại references
-    if (gradeLevel && oldGradeLevel.toString() !== gradeLevel) {
+    if (gradeLevel && oldGradeLevel && oldGradeLevel.toString() !== gradeLevel) {
       // Xóa reference từ khối cũ
       await GradeLevel.findByIdAndUpdate(
         oldGradeLevel,
@@ -252,8 +246,7 @@ exports.updateClass = async (req, res) => {
 
     // Sync homeroom teacher 'classes' arrays
     const newTeacherIds = homeroomTeachers || [];
-    const oldTeacherIds = oldClass.homeroomTeachers.map(id => id.toString());
-
+    const oldTeacherIds = (oldClass.homeroomTeachers || []).map(id => id.toString());
     // Teachers removed from homeroom: pull the class
     const removed = oldTeacherIds.filter(id => !newTeacherIds.includes(id));
     if (removed.length) {
@@ -271,11 +264,14 @@ exports.updateClass = async (req, res) => {
         { $addToSet: { classes: id } }
       );
     }
-
     return res.json({ data: updatedClass });
   } catch (err) {
-    console.error('Error updating class:', err);
-    return res.status(500).json({ error: err.message });
+    console.error('❌ [Class] Error updating class:', err);
+    console.error('❌ [Class] Stack trace:', err.stack);
+    return res.status(500).json({ 
+      error: err.message,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
 
