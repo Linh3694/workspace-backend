@@ -11,29 +11,65 @@ exports.createEnrollment = async (req, res) => {
             console.log("❌ [Enrollment] Missing required fields:", { student, classId, schoolYear });
             return res.status(400).json({ message: "student, class, and schoolYear are required" });
         }
-        const oldEnrollments = await StudentClassEnrollment.find({
+
+        // Kiểm tra xem enrollment đã tồn tại chưa
+        const existingEnrollment = await StudentClassEnrollment.findOne({
             student,
-            schoolYear,
-            status: "active"
+            schoolYear
         });
 
-        for (const old of oldEnrollments) {
+        if (existingEnrollment) {
+            console.log("🔄 [Enrollment] Found existing enrollment, updating class...");
+            
+            // Nếu cùng lớp thì không cần làm gì
+            if (existingEnrollment.class.toString() === classId.toString()) {
+                console.log("ℹ️ [Enrollment] Student already in this class");
+                return res.status(200).json({ 
+                    message: "Student already enrolled in this class",
+                    enrollment: existingEnrollment 
+                });
+            }
+
             // Xóa học sinh khỏi lớp cũ
             await Class.findByIdAndUpdate(
-                old.class,
+                existingEnrollment.class,
                 { $pull: { students: student } }
             );
-            // Xóa lớp cũ khỏi student (nếu muốn chỉ lưu lớp hiện tại)
+            
+            // Xóa lớp cũ khỏi student
             await Student.findByIdAndUpdate(
                 student,
-                { $pull: { class: old.class } }
+                { $pull: { class: existingEnrollment.class } }
             );
-            // Có thể cập nhật status của enrollment cũ thành 'transferred' nếu muốn lưu lịch sử
-            await StudentClassEnrollment.findByIdAndUpdate(
-                old._id,
-                { status: "transferred" }
+
+            // Cập nhật enrollment với lớp mới
+            const updatedEnrollment = await StudentClassEnrollment.findByIdAndUpdate(
+                existingEnrollment._id,
+                { 
+                    class: classId,
+                    status: status || "active",
+                    updatedAt: new Date()
+                },
+                { new: true }
             );
+
+            // Thêm học sinh vào lớp mới
+            await Class.findByIdAndUpdate(
+                classId,
+                { $addToSet: { students: student } }
+            );
+            
+            // Thêm lớp mới vào student
+            await Student.findByIdAndUpdate(
+                student,
+                { $addToSet: { class: classId } }
+            );
+
+            console.log("✅ [Enrollment] Updated successfully:", updatedEnrollment._id);
+            return res.status(200).json(updatedEnrollment);
         }
+
+        // Tạo enrollment mới
         const enrollment = await StudentClassEnrollment.create({
             student,
             class: classId,
@@ -54,6 +90,33 @@ exports.createEnrollment = async (req, res) => {
         return res.status(201).json(enrollment);
     } catch (err) {
         console.error("❌ [Enrollment] Error creating enrollment:", err);
+        
+        // Handle duplicate key error specifically
+        if (err.code === 11000 && err.message.includes('student_1_schoolYear_1')) {
+            console.log("🔄 [Enrollment] Duplicate key detected, trying to update existing...");
+            try {
+                // Tìm enrollment hiện tại và update
+                const existingEnrollment = await StudentClassEnrollment.findOne({
+                    student: req.body.student,
+                    schoolYear: req.body.schoolYear
+                });
+                
+                if (existingEnrollment) {
+                    // Update existing enrollment logic here if needed
+                    return res.status(200).json({ 
+                        message: "Student enrollment already exists",
+                        enrollment: existingEnrollment 
+                    });
+                }
+            } catch (updateErr) {
+                console.error("❌ [Enrollment] Error handling duplicate:", updateErr);
+            }
+            
+            return res.status(409).json({ 
+                error: "Student already enrolled in this school year" 
+            });
+        }
+        
         return res.status(500).json({ error: err.message });
     }
 };
@@ -263,6 +326,73 @@ exports.bulkImportEnrollments = async (req, res) => {
         });
 
     } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+// Create or update enrollment (upsert method)
+exports.createOrUpdateEnrollment = async (req, res) => {
+    try {
+        console.log("📝 [Enrollment] Creating/updating enrollment with data:", req.body);
+        const { student, class: classId, schoolYear, status } = req.body;
+        
+        if (!student || !classId || !schoolYear) {
+            console.log("❌ [Enrollment] Missing required fields:", { student, classId, schoolYear });
+            return res.status(400).json({ message: "student, class, and schoolYear are required" });
+        }
+
+        // Tìm enrollment hiện tại để xử lý chuyển lớp
+        const existingEnrollment = await StudentClassEnrollment.findOne({ student, schoolYear });
+        const oldClassId = existingEnrollment?.class;
+
+        // Sử dụng findOneAndUpdate với upsert để tránh duplicate key error
+        const enrollment = await StudentClassEnrollment.findOneAndUpdate(
+            { student, schoolYear }, // filter
+            { 
+                class: classId,
+                status: status || "active",
+                updatedAt: new Date()
+            }, // update
+            { 
+                new: true,
+                upsert: true,
+                runValidators: true
+            } // options
+        );
+
+        // Nếu chuyển lớp, xóa khỏi lớp cũ
+        if (oldClassId && oldClassId.toString() !== classId.toString()) {
+            console.log(`🔄 [Enrollment] Moving student from class ${oldClassId} to ${classId}`);
+            
+            // Xóa khỏi lớp cũ
+            await Class.findByIdAndUpdate(
+                oldClassId,
+                { $pull: { students: student } }
+            );
+            
+            // Xóa lớp cũ khỏi student
+            await Student.findByIdAndUpdate(
+                student,
+                { $pull: { class: oldClassId } }
+            );
+        }
+
+        // Thêm vào lớp mới
+        await Class.findByIdAndUpdate(
+            classId,
+            { $addToSet: { students: student } }
+        );
+
+        // Thêm lớp mới vào student
+        await Student.findByIdAndUpdate(
+            student,
+            { $addToSet: { class: classId } }
+        );
+
+        console.log("✅ [Enrollment] Created/Updated successfully:", enrollment._id);
+        return res.status(200).json(enrollment);
+    } catch (err) {
+        console.error("❌ [Enrollment] Error creating/updating enrollment:", err);
         return res.status(500).json({ error: err.message });
     }
 };

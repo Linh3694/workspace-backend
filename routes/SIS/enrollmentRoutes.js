@@ -10,6 +10,8 @@ router.get("/test", (req, res) => {
 
 // POST / - create enrollment
 router.post("/", enrollmentController.createEnrollment);
+// POST /upsert - create or update enrollment (safer method)
+router.post("/upsert", enrollmentController.createOrUpdateEnrollment);
 // POST /bulk-import - bulk import enrollments from Excel
 router.post("/bulk-import", enrollmentController.bulkImportEnrollments);
 // GET / - get all enrollments
