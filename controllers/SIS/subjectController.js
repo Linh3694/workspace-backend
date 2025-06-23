@@ -518,24 +518,34 @@ exports.bulkUploadSubjects = async (req, res) => {
       }
 
       // Lookup School by code
+      console.log(`Looking for school with code/name: ${schoolCode}`);
       let school = await School.findOne({ code: schoolCode });
       if (!school) {
         school = await School.findOne({ name: schoolCode });
       }
       if (!school) {
+        // Debug: list all schools
+        const allSchools = await School.find({}, 'name code');
+        console.log('Available schools:', allSchools.map(s => ({ name: s.name, code: s.code })));
         results.skipped += 1;
         results.errors.push(`Row ${line}: school code not found (${schoolCode})`);
         continue;
       }
+      console.log(`Found school:`, { name: school.name, code: school.code, id: school._id });
 
       // Lookup grade levels by code within the same school
+      console.log(`Looking for grade levels: ${gradeLevelCodes.join(', ')} in school ${school.name}`);
       const gradeLevels = await GradeLevel.find({
         $or: [{ code: { $in: gradeLevelCodes } }, { name: { $in: gradeLevelCodes } }],
         school: school._id,
       });
+      console.log(`Found ${gradeLevels.length} grade levels:`, gradeLevels.map(g => ({ name: g.name, code: g.code })));
       if (gradeLevels.length !== gradeLevelCodes.length) {
+        // Debug: list all grade levels for this school
+        const allGradeLevels = await GradeLevel.find({ school: school._id }, 'name code');
+        console.log('Available grade levels for this school:', allGradeLevels.map(g => ({ name: g.name, code: g.code })));
         results.skipped += 1;
-        results.errors.push(`Row ${line}: some gradeLevel codes invalid for school ${schoolCode}`);
+        results.errors.push(`Row ${line}: some gradeLevel codes invalid for school ${schoolCode}. Expected: ${gradeLevelCodes.join(', ')}, Found: ${gradeLevels.map(g => g.name || g.code).join(', ')}`);
         continue;
       }
 
