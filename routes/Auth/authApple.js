@@ -83,56 +83,12 @@ router.post('/apple/login', async (req, res) => {
         }
       });
     } else {
-      // User doesn't exist - create new user
-      console.log('🆕 Creating new user for Apple ID:', appleUserId);
+      // User doesn't exist - return error
+      console.log('❌ User not found for Apple ID:', appleUserId);
       
-      // Extract name from fullName object or use default
-      let displayName = 'Apple User';
-      if (fullName && (fullName.givenName || fullName.familyName)) {
-        const firstName = fullName.givenName || '';
-        const lastName = fullName.familyName || '';
-        displayName = `${firstName} ${lastName}`.trim();
-      }
-      
-      const newUser = new User({
-        email: userEmail.toLowerCase(),
-        fullname: displayName,
-        role: 'user', // Default role
-        department: 'Apple',
-        jobTitle: 'N/A',
-        employeeCode: 'AP_' + Date.now(),
-        provider: 'apple',
-        appleId: appleUserId,
-        isActive: true,
-        createdAt: new Date()
-      });
-
-      const savedUser = await newUser.save();
-      console.log('✅ New Apple user created:', savedUser.fullname);
-
-      // Generate JWT token for our system
-      const systemToken = jwt.sign(
-        { id: savedUser._id, role: savedUser.role },
-        process.env.JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      return res.json({
-        success: true,
-        message: 'Apple user created and logged in successfully',
-        token: systemToken,
-        user: {
-          _id: savedUser._id,
-          email: savedUser.email,
-          fullname: savedUser.fullname,
-          role: savedUser.role,
-          department: savedUser.department,
-          jobTitle: savedUser.jobTitle,
-          employeeCode: savedUser.employeeCode,
-          avatarUrl: savedUser.avatarUrl,
-          provider: 'apple',
-          isNewUser: true
-        }
+      return res.status(401).json({
+        success: false,
+        message: 'Tài khoản chưa đăng ký'
       });
     }
     

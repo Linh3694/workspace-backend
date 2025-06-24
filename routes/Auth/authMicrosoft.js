@@ -123,48 +123,12 @@ router.post('/microsoft/login', async (req, res) => {
         }
       });
     } else {
-      // User doesn't exist - create new user
-      console.log('🆕 Creating new user for email:', email);
+      // User doesn't exist - return error
+      console.log('❌ User not found for email:', email);
       
-      const newUser = new User({
-        email: email.toLowerCase(),
-        fullname: decoded.name || decoded.given_name + ' ' + decoded.family_name || 'Microsoft User',
-        role: 'user', // Default role
-        department: 'Microsoft',
-        jobTitle: decoded.jobTitle || 'N/A',
-        employeeCode: 'MS_' + Date.now(),
-        provider: 'microsoft',
-        microsoftId: decoded.oid || decoded.sub,
-        isActive: true,
-        createdAt: new Date()
-      });
-
-      const savedUser = await newUser.save();
-      console.log('✅ New user created:', savedUser.fullname);
-
-      // Generate JWT token for our system
-      const systemToken = jwt.sign(
-        { id: savedUser._id, role: savedUser.role },
-        process.env.JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      return res.json({
-        success: true,
-        message: 'Microsoft user created and logged in successfully',
-        token: systemToken,
-        user: {
-          _id: savedUser._id,
-          email: savedUser.email,
-          fullname: savedUser.fullname,
-          role: savedUser.role,
-          department: savedUser.department,
-          jobTitle: savedUser.jobTitle,
-          employeeCode: savedUser.employeeCode,
-          avatarUrl: savedUser.avatarUrl,
-          provider: 'microsoft',
-          isNewUser: true
-        }
+      return res.status(401).json({
+        success: false,
+        message: 'Tài khoản chưa đăng ký'
       });
     }
     
