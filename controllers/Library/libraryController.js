@@ -1009,6 +1009,22 @@ exports.deleteBookByCode = async (req, res) => {
       return res.status(404).json({ error: "Book not found in any library" });
     }
 
+    // Tìm sách cần xóa để kiểm tra trạng thái
+    const bookToDelete = library.books.find(b => b.generatedCode === decodedBookCode);
+    if (!bookToDelete) {
+      return res.status(404).json({ error: "Book not found in library" });
+    }
+
+    // Kiểm tra trạng thái sách trước khi xóa
+    const allowedStatuses = ["available", "Sẵn sàng", "", undefined];
+    const bookStatus = bookToDelete.status || "available"; // Default là available
+    
+    if (!allowedStatuses.includes(bookStatus)) {
+      return res.status(400).json({ 
+        error: `Không thể xóa sách đang ở trạng thái "${bookStatus}". Chỉ có thể xóa sách ở trạng thái "Sẵn sàng".`
+      });
+    }
+
     // Filter bỏ sách có generatedCode trùng
     library.books = library.books.filter(b => b.generatedCode !== decodedBookCode);
 
