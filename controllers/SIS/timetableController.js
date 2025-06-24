@@ -612,15 +612,27 @@ exports.getTimetableGridByClass = async (req, res) => {
     const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
     // Lấy thông tin class để biết school
-    const classInfo = await Class.findById(classId).populate('gradeLevel');
+    const classInfo = await Class.findById(classId)
+      .populate({
+        path: 'gradeLevel',
+        populate: {
+          path: 'school'
+        }
+      });
+    
     if (!classInfo) {
       return res.status(400).json({ message: "Không tìm thấy lớp học" });
     }
 
-    const schoolId = classInfo.gradeLevel?.school;
+    console.log("Class info:", classInfo);
+    console.log("Grade level:", classInfo.gradeLevel);
+
+    const schoolId = classInfo.gradeLevel?.school?._id || classInfo.gradeLevel?.school;
     if (!schoolId) {
       return res.status(400).json({ message: "Không tìm thấy thông tin trường của lớp học" });
     }
+
+    console.log("Found school ID:", schoolId);
 
     // Lấy period definitions để xác định số tiết và mapping startTime -> periodNumber
     const periodDefs = await PeriodDefinition.find({ 
