@@ -583,12 +583,59 @@ exports.generateTimetable = async (req, res) => {
 // Lấy thời khóa biểu dạng bảng
 exports.getTimetableGridByClass = async (req, res) => {
   try {
+    console.log("=== getTimetableGridByClass called ===");
     const { classId, schoolYearId } = req.params;
+    console.log("Params:", { classId, schoolYearId });
 
     if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(schoolYearId)) {
+      console.log("Invalid IDs");
       return res.status(400).json({ message: "ID lớp hoặc ID năm học không hợp lệ" });
     }
 
+    // Định nghĩa các ngày trong tuần
+    const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+    // Lấy thông tin class để biết school
+    console.log("Fetching class info...");
+    const classInfo = await Class.findById(classId)
+      .populate({
+        path: 'gradeLevel',
+        populate: {
+          path: 'school'
+        }
+      });
+    
+    if (!classInfo) {
+      console.log("Class not found");
+      return res.status(400).json({ message: "Không tìm thấy lớp học" });
+    }
+
+    console.log("Class info:", JSON.stringify(classInfo, null, 2));
+
+    const schoolId = classInfo.gradeLevel?.school?._id || classInfo.gradeLevel?.school;
+    if (!schoolId) {
+      console.log("School ID not found in class info");
+      return res.status(400).json({ message: "Không tìm thấy thông tin trường của lớp học" });
+    }
+
+    console.log("Found school ID:", schoolId);
+
+    // Lấy period definitions để xác định số tiết và mapping startTime -> periodNumber
+    console.log("Fetching period definitions...");
+    const periodDefs = await PeriodDefinition.find({ 
+      schoolYear: schoolYearId,
+      school: schoolId 
+    });
+    
+    console.log("Period definitions found:", periodDefs.length);
+    
+    if (periodDefs.length === 0) {
+      console.log("No period definitions found");
+      return res.status(400).json({ message: "Chưa khai báo tiết học cho trường và năm học này" });
+    }
+
+    // Lấy timetables
+    console.log("Fetching timetables...");
     const timetables = await Timetable.find({
       class: classId,
       schoolYear: schoolYearId
@@ -600,48 +647,7 @@ exports.getTimetableGridByClass = async (req, res) => {
       })
       .populate("room", "name");
 
-    // === DEBUG LOGS ===
-    console.log("==== GRID REQUEST ====");
-    console.log("Class:", classId, "SchoolYear:", schoolYearId);
     console.log("Timetables found:", timetables.length);
-    if (timetables.length) {
-      console.log("Sample timetable:", timetables[0]);
-    }
-
-    // Định nghĩa các ngày trong tuần
-    const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-
-    // Lấy thông tin class để biết school
-    const classInfo = await Class.findById(classId)
-      .populate({
-        path: 'gradeLevel',
-        populate: {
-          path: 'school'
-        }
-      });
-    
-    if (!classInfo) {
-      return res.status(400).json({ message: "Không tìm thấy lớp học" });
-    }
-
-    console.log("Class info:", classInfo);
-    console.log("Grade level:", classInfo.gradeLevel);
-
-    const schoolId = classInfo.gradeLevel?.school?._id || classInfo.gradeLevel?.school;
-    if (!schoolId) {
-      return res.status(400).json({ message: "Không tìm thấy thông tin trường của lớp học" });
-    }
-
-    console.log("Found school ID:", schoolId);
-
-    // Lấy period definitions để xác định số tiết và mapping startTime -> periodNumber
-    const periodDefs = await PeriodDefinition.find({ 
-      schoolYear: schoolYearId,
-      school: schoolId 
-    });
-    if (periodDefs.length === 0) {
-      return res.status(400).json({ message: "Chưa khai báo tiết học cho trường và năm học này" });
-    }
     const startTimeToPeriod = {};
     periodDefs.forEach(p => {
       startTimeToPeriod[p.startTime] = p.periodNumber;
