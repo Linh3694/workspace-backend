@@ -713,27 +713,53 @@ exports.addBookToLibrary = async (req, res) => {
     
     const specialCode = specialCodeRecord.name; // name chính là mã đặc biệt (như BV1, TL2...)
     
-    // Tính số thứ tự cho sách hiện có trong Library (mỗi Library có libraryCode riêng nên count độc lập)
-    const count = library.books.length; // số sách hiện có trong Library
-    const serialNumber = String(count + 1).padStart(3, '0'); // pad STT thành 3 chữ số, ví dụ: 001, 002, ...
+    // Lấy số lượng sách cần tạo (mặc định là 1)
+    const copyCount = req.body.copyCount || 1;
     
-    // Sinh mã mới theo cú pháp: <specialCode>.<LibraryCode>.<STT>
-    req.body.generatedCode = `${specialCode}.${library.libraryCode}.${serialNumber}`;
-    req.body.specialCode = specialCode; // Lưu mã đặc biệt vào book
+    // Validate copyCount
+    if (copyCount < 1 || copyCount > 100) {
+      return res.status(400).json({ error: 'Copy count must be between 1 and 100' });
+    }
     
-    // Loại bỏ specialCodeId vì không cần lưu trong book
-    delete req.body.specialCodeId;
+    // Tính số thứ tự bắt đầu cho sách hiện có trong Library
+    let currentCount = library.books.length;
     
-    // Loại bỏ các trường đặc điểm sách khỏi book data vì đã chuyển lên library level
-    delete req.body.isNewBook;
-    delete req.body.isFeaturedBook;
-    delete req.body.isAudioBook;
+    // Loại bỏ các trường không cần thiết khỏi book data
+    const bookData = { ...req.body };
+    delete bookData.specialCodeId;
+    delete bookData.copyCount;
+    delete bookData.isNewBook;
+    delete bookData.isFeaturedBook;
+    delete bookData.isAudioBook;
     
-    // Thêm sách mới vào mảng books và lưu Library
-    library.books.push(req.body);
+    // Tạo nhiều sách dựa trên copyCount
+    const newBooks = [];
+    for (let i = 0; i < copyCount; i++) {
+      currentCount++;
+      const serialNumber = String(currentCount).padStart(3, '0'); // pad STT thành 3 chữ số
+      
+      const newBook = {
+        ...bookData,
+        generatedCode: `${specialCode}.${library.libraryCode}.${serialNumber}`,
+        specialCode: specialCode,
+        catalogingAgency: bookData.catalogingAgency || 'WIS',
+        publishYear: bookData.publishYear ? Number(bookData.publishYear) : null,
+        pages: bookData.pages ? Number(bookData.pages) : null,
+        coverPrice: bookData.coverPrice ? Number(bookData.coverPrice) : null,
+      };
+      
+      newBooks.push(newBook);
+    }
+    
+    // Thêm tất cả sách mới vào mảng books và lưu Library
+    library.books.push(...newBooks);
     await library.save();
     
-    return res.status(200).json(library);
+    return res.status(200).json({
+      message: `Đã thêm thành công ${copyCount} sách`,
+      library,
+      addedBooks: newBooks
+    });
   } catch (error) {
     console.error('Error adding book to library:', error);
     return res.status(500).json({ error: 'Internal server error' });
