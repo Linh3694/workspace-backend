@@ -31,9 +31,9 @@ router.delete("/authors/:id", libraryController.deleteAuthor);
 
 
 // -------------------- Add Book APIs -------------------- //
+router.post('/books/:bookCode/duplicate', libraryController.duplicateBookByCode);
 router.post('/:libraryId/books', libraryController.addBookToLibrary);
 router.post('/:libraryId/books/bulk', libraryController.bulkAddBooksToLibrary);
-router.post('/books/:bookCode/duplicate', libraryController.duplicateBookByCode);
 router.put('/:libraryId/books/:bookIndex', libraryController.updateBookInLibrary);
 router.put('/books/:bookCode', libraryController.updateBookByCode);
 router.delete("/books/:bookCode", libraryController.deleteBookByCode);
