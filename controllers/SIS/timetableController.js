@@ -939,8 +939,15 @@ exports.getPeriodDefinitions = async (req, res) => {
 exports.createPeriodDefinition = async (req, res) => {
   try {
     const { schoolYearId } = req.params;
-    const { periodNumber, startTime, endTime, label } = req.body;
-    const newPeriod = await PeriodDefinition.create({ schoolYear: schoolYearId, periodNumber, startTime, endTime, label });
+    const { periodNumber, startTime, endTime, label, type } = req.body;
+    const newPeriod = await PeriodDefinition.create({ 
+      schoolYear: schoolYearId, 
+      periodNumber, 
+      startTime, 
+      endTime, 
+      label, 
+      type: type || 'regular' // Default to 'regular' if not provided
+    });
     return res.status(201).json({ data: newPeriod });
   } catch (err) {
     console.error("Error creating period definition:", err);
