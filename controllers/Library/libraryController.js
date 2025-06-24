@@ -193,6 +193,132 @@ exports.bulkCreateLibraries = async (req, res) => {
   }
 };
 
+// Bulk create libraries from Excel template
+exports.bulkCreateLibrariesFromExcel = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Vui lòng tải lên file Excel" });
+    }
+
+    // Đọc file Excel từ buffer với encoding UTF-8
+    const workbook = xlsx.read(req.file.buffer, { 
+      type: 'buffer',
+      cellText: false,
+      cellDates: true,
+      raw: false,
+      codepage: 65001 // UTF-8 encoding
+    });
+    
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]]; // Đọc Sheet1
+    const data = xlsx.utils.sheet_to_json(worksheet, {
+      raw: false,
+      defval: '', // Default value cho empty cells
+      blankrows: false // Skip blank rows
+    });
+
+    if (!data || data.length === 0) {
+      return res.status(400).json({ message: "Không có dữ liệu trong file Excel" });
+    }
+
+    // Find the library with the highest libraryCode to continue numbering
+    const lastLibrary = await Library.findOne().sort({ libraryCode: -1 });
+    let nextCodeNumber = 1;
+    if (lastLibrary && lastLibrary.libraryCode) {
+      nextCodeNumber = parseInt(lastLibrary.libraryCode, 10) + 1;
+    }
+
+    const newLibraries = [];
+    const errors = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      
+      try {
+        // Clean và validate dữ liệu trước khi mapping
+        const cleanTitle = row["Tên đầu sách"] ? String(row["Tên đầu sách"]).trim() : '';
+        const cleanAuthors = row["Tác giả"] ? String(row["Tác giả"]).trim() : '';
+        
+        // Skip nếu title rỗng hoặc chứa ký tự lạ
+        if (!cleanTitle || cleanTitle.includes('') || cleanTitle.includes('PK')) {
+          errors.push(`Dòng ${i + 1}: Tên đầu sách không hợp lệ hoặc bị lỗi encoding`);
+          continue;
+        }
+
+        // Mapping từ tên cột Excel sang field của Library model
+        const libraryData = {
+          title: cleanTitle,
+          authors: cleanAuthors ? cleanAuthors.split(',').map(author => author.trim()).filter(Boolean) : [],
+          category: row["Thể loại"] ? String(row["Thể loại"]).trim() : '',
+          language: row["Ngôn ngữ"] ? String(row["Ngôn ngữ"]).trim() : 'Tiếng Việt',
+          documentType: row["Phân loại tài liệu"] ? String(row["Phân loại tài liệu"]).trim() : '',
+          seriesName: row["Tùng thư"] ? String(row["Tùng thư"]).trim() : '',
+          isNewBook: String(row["Sách mới"]).toLowerCase() === 'true',
+          isFeaturedBook: String(row["Nổi bật"]).toLowerCase() === 'true',
+          isAudioBook: String(row["Sách nói"]).toLowerCase() === 'true',
+          description: {
+            linkEmbed: row["Link mô tả"] ? String(row["Link mô tả"]).trim() : '',
+            content: row["Nội dung mô tả"] ? String(row["Nội dung mô tả"]).trim() : ''
+          },
+          introduction: {
+            linkEmbed: row["Link giới thiệu"] ? String(row["Link giới thiệu"]).trim() : '',
+            content: row["Nội dung giới thiệu"] ? String(row["Nội dung giới thiệu"]).trim() : ''
+          },
+          audioBook: {
+            linkEmbed: row["Link sách nói"] ? String(row["Link sách nói"]).trim() : '',
+            content: row["Nội dung sách nói"] ? String(row["Nội dung sách nói"]).trim() : ''
+          }
+        };
+
+        // Validate required fields
+        if (!libraryData.title || !libraryData.title.trim()) {
+          errors.push(`Dòng ${i + 1}: Thiếu tên đầu sách`);
+          continue;
+        }
+
+        // Generate library code
+        const libraryCode = String(nextCodeNumber).padStart(4, "0");
+        nextCodeNumber++;
+
+        const newLibrary = new Library({
+          ...libraryData,
+          libraryCode,
+          books: [] // Initialize with empty books array
+        });
+
+        // Sync authors
+        await syncAuthors(newLibrary.authors);
+        
+        const savedLibrary = await newLibrary.save();
+        newLibraries.push(savedLibrary);
+
+      } catch (error) {
+        errors.push(`Dòng ${i + 1}: ${error.message}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        error: 'Có lỗi trong dữ liệu Excel', 
+        details: errors,
+        successCount: newLibraries.length,
+        totalCount: data.length
+      });
+    }
+
+    return res.status(201).json({
+      message: `Đã tạo thành công ${newLibraries.length} đầu sách từ file Excel`,
+      libraries: newLibraries
+    });
+
+  } catch (error) {
+    console.error('Error bulk creating libraries from Excel:', error);
+    return res.status(500).json({ 
+      message: 'Lỗi khi xử lý file Excel',
+      error: error.message 
+    });
+  }
+};
+
 // READ - Lấy danh sách tất cả Library
 exports.getAllLibraries = async (req, res) => {
   try {
@@ -1453,110 +1579,5 @@ exports.deleteLibrary = async (req, res) => {
   } catch (error) {
     console.error('Error deleting library:', error);
     return res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Bulk create libraries from Excel template
-exports.bulkCreateLibrariesFromExcel = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "Vui lòng tải lên file Excel" });
-    }
-
-    // Đọc file Excel từ buffer
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]]; // Đọc Sheet1
-    const data = xlsx.utils.sheet_to_json(worksheet);
-
-    if (!data || data.length === 0) {
-      return res.status(400).json({ message: "Không có dữ liệu trong file Excel" });
-    }
-
-    // Find the library with the highest libraryCode to continue numbering
-    const lastLibrary = await Library.findOne().sort({ libraryCode: -1 });
-    let nextCodeNumber = 1;
-    if (lastLibrary && lastLibrary.libraryCode) {
-      nextCodeNumber = parseInt(lastLibrary.libraryCode, 10) + 1;
-    }
-
-    const newLibraries = [];
-    const errors = [];
-
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-      
-      try {
-        // Mapping từ tên cột Excel sang field của Library model
-        const libraryData = {
-          title: row["Tên đầu sách"],
-          authors: row["Tác giả"] ? row["Tác giả"].split(',').map(author => author.trim()).filter(Boolean) : [],
-          category: row["Thể loại"] || '',
-          language: row["Ngôn ngữ"] || 'Tiếng Việt',
-          documentType: row["Phân loại tài liệu"] || '',
-          seriesName: row["Tùng thư"] || '',
-          isNewBook: row["Sách mới"] === true || row["Sách mới"] === 'true' || row["Sách mới"] === 'TRUE',
-          isFeaturedBook: row["Nổi bật"] === true || row["Nổi bật"] === 'true' || row["Nổi bật"] === 'TRUE',
-          isAudioBook: row["Sách nói"] === true || row["Sách nói"] === 'true' || row["Sách nói"] === 'TRUE',
-          description: {
-            linkEmbed: row["Link mô tả"] || '',
-            content: row["Nội dung mô tả"] || ''
-          },
-          introduction: {
-            linkEmbed: row["Link giới thiệu"] || '',
-            content: row["Nội dung giới thiệu"] || ''
-          },
-          audioBook: {
-            linkEmbed: row["Link sách nói"] || '',
-            content: row["Nội dung sách nói"] || ''
-          }
-        };
-
-        // Validate required fields
-        if (!libraryData.title || !libraryData.title.trim()) {
-          errors.push(`Dòng ${i + 1}: Thiếu tên đầu sách`);
-          continue;
-        }
-
-        // Generate library code
-        const libraryCode = String(nextCodeNumber).padStart(4, "0");
-        nextCodeNumber++;
-
-        const newLibrary = new Library({
-          ...libraryData,
-          libraryCode,
-          books: [] // Initialize with empty books array
-        });
-
-        // Sync authors
-        await syncAuthors(newLibrary.authors);
-        
-        const savedLibrary = await newLibrary.save();
-        newLibraries.push(savedLibrary);
-
-      } catch (error) {
-        errors.push(`Dòng ${i + 1}: ${error.message}`);
-      }
-    }
-
-    if (errors.length > 0) {
-      return res.status(400).json({ 
-        error: 'Có lỗi trong dữ liệu Excel', 
-        details: errors,
-        successCount: newLibraries.length,
-        totalCount: data.length
-      });
-    }
-
-    return res.status(201).json({
-      message: `Đã tạo thành công ${newLibraries.length} đầu sách từ file Excel`,
-      libraries: newLibraries
-    });
-
-  } catch (error) {
-    console.error('Error bulk creating libraries from Excel:', error);
-    return res.status(500).json({ 
-      message: 'Lỗi khi xử lý file Excel',
-      error: error.message 
-    });
   }
 };
