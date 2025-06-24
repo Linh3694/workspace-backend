@@ -79,7 +79,23 @@ const userSchema = new mongoose.Schema({
   employeeCode: { 
     type: String, 
     unique: true,
-    sparse: true // Cho phép null/undefined và chỉ check unique khi có giá trị
+    sparse: true 
+  },
+
+  // Authentication providers
+  provider: {
+    type: String,
+    default: 'local' // local, microsoft, apple, google
+  },
+  
+  microsoftId: {
+    type: String,
+    sparse: true
+  },
+  
+  appleId: {
+    type: String,
+    sparse: true
   },
     
   lastSeen: { 

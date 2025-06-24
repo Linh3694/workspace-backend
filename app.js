@@ -15,6 +15,7 @@ const { createClient } = require('redis');
 // Import các route
 const authRoutes = require("./routes/Auth/auth");
 const authMicrosoftRoutes = require("./routes/Auth/authMicrosoft");
+const authAppleRoutes = require("./routes/Auth/authApple");
 const laptopRoutes = require("./routes/Inventory/laptops");
 const monitorRoutes = require("./routes/Inventory/monitors");
 const printerRoutes = require("./routes/Inventory/printers");
@@ -244,6 +245,7 @@ app.use(passport.session());
 // Định tuyến
 app.use("/api/auth", authRoutes);
 app.use("/api/auth", authMicrosoftRoutes);
+app.use("/api/auth", authAppleRoutes);
 app.use("/api/laptops", laptopRoutes);
 app.use("/api/monitors", monitorRoutes);
 app.use("/api/printers", printerRoutes);
