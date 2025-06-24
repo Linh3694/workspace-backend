@@ -811,7 +811,7 @@ exports.duplicateBookByCode = async (req, res) => {
       const newBook = {
         ...bookData,
         generatedCode: `${originalBook.specialCode}.${library.libraryCode}.${serialNumber}`,
-        status: 'available', // Đặt trạng thái mặc định
+        status: 'Sẵn sàng', // Đặt trạng thái mặc định theo enum
       };
       
       newBooks.push(newBook);
