@@ -1,17 +1,26 @@
-# PowerShell script quan ly Wellspring Attendance Sync Service
+# PowerShell script to manage Wellspring Attendance Sync Service
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet("start", "stop", "restart", "status", "logs", "test", "install", "uninstall", "monitor")]
+    [ValidateSet("start", "stop", "restart", "status", "logs", "test", "install", "uninstall", "monitor", "cleanup")]
     [string]$Action
 )
 
-# Cau hinh
+# Configuration
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ServiceName = "WellspringAttendanceSync"
 $PythonScript = Join-Path $ScriptDir "hikcon.py"
-$LogFile = Join-Path $ScriptDir "sync.log"
-$ErrorLog = Join-Path $ScriptDir "sync_error.log"
 $RunSyncScript = Join-Path $ScriptDir "run_sync.bat"
+
+# Create logs directory if it doesn't exist
+$LogsDir = Join-Path $ScriptDir "logs"
+if (-not (Test-Path $LogsDir)) {
+    New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
+}
+
+# Generate date-based log file names
+$Today = Get-Date -Format "yyyy-MM-dd"
+$LogFile = Join-Path $LogsDir "sync_$Today.log"
+$ErrorLog = Join-Path $LogsDir "sync_error_$Today.log"
 
 function Write-ColoredOutput {
     param(
@@ -22,183 +31,242 @@ function Write-ColoredOutput {
 }
 
 function Start-AttendanceService {
-    Write-ColoredOutput "Bat dau service attendance sync..." "Green"
+    Write-ColoredOutput "🚀 Starting attendance sync service..." "Green"
     Write-Host ""
-    Write-ColoredOutput "Tao scheduled task de chay moi 5 phut..." "Yellow"
+    Write-ColoredOutput "Creating scheduled task to run every 5 minutes..." "Yellow"
     
     try {
-        # Xoa task cu neu co
+        # Remove old task if exists
         schtasks /delete /tn "$ServiceName" /f 2>$null
         
-        # Tao task moi
+        # Create new task
         $TaskCommand = "`"$RunSyncScript`""
         $result = schtasks /create /tn "$ServiceName" /tr $TaskCommand /sc minute /mo 5 /ru SYSTEM /rl HIGHEST /f
         
         if ($LASTEXITCODE -eq 0) {
-            Write-ColoredOutput "V Service da duoc khoi dong va se chay moi 5 phut" "Green"
-            Write-ColoredOutput "Logs se duoc ghi vao:" "Cyan"
+            Write-ColoredOutput "✅ Service has been started and will run every 5 minutes" "Green"
+            Write-ColoredOutput "📝 Logs will be written to:" "Cyan"
             Write-ColoredOutput "   - Output: $LogFile" "Gray"
             Write-ColoredOutput "   - Error: $ErrorLog" "Gray"
+            Write-ColoredOutput "   - Log Directory: $LogsDir" "Gray"
         } else {
-            Write-ColoredOutput "X Loi khi tao scheduled task" "Red"
+            Write-ColoredOutput "❌ Error creating scheduled task" "Red"
         }
     }
     catch {
-        Write-ColoredOutput "X Loi khi tao scheduled task: $($_.Exception.Message)" "Red"
-        Write-ColoredOutput "! Ban co the can chay PowerShell voi quyen Administrator" "Yellow"
+        Write-ColoredOutput "❌ Error creating scheduled task: $($_.Exception.Message)" "Red"
+        Write-ColoredOutput "⚠️ You may need to run PowerShell as Administrator" "Yellow"
     }
 }
 
 function Stop-AttendanceService {
-    Write-ColoredOutput "Dung service attendance sync..." "Yellow"
+    Write-ColoredOutput "🛑 Stopping attendance sync service..." "Yellow"
     
     try {
         schtasks /delete /tn "$ServiceName" /f
         if ($LASTEXITCODE -eq 0) {
-            Write-ColoredOutput "V Service da duoc dung" "Green"
+            Write-ColoredOutput "✅ Service has been stopped" "Green"
         } else {
-            Write-ColoredOutput "! Service co the da duoc dung truoc do hoac chua duoc tao" "Yellow"
+            Write-ColoredOutput "⚠️ Service may have been stopped previously or not created yet" "Yellow"
         }
     }
     catch {
-        Write-ColoredOutput "! Service co the da duoc dung truoc do hoac chua duoc tao" "Yellow"
+        Write-ColoredOutput "⚠️ Service may have been stopped previously or not created yet" "Yellow"
     }
 }
 
 function Get-ServiceStatus {
-    Write-ColoredOutput "Trang thai service:" "Cyan"
+    Write-ColoredOutput "📊 Service status:" "Cyan"
     
     try {
         $taskInfo = schtasks /query /tn "$ServiceName" /fo LIST 2>$null
         
         if ($LASTEXITCODE -eq 0) {
-            Write-ColoredOutput "V Service dang chay" "Green"
+            Write-ColoredOutput "✅ Service is running" "Green"
             Write-Host ""
-            Write-ColoredOutput "Chi tiet:" "White"
+            Write-ColoredOutput "Details:" "White"
             
-            # Parse thong tin
+            # Parse information
             $taskInfo | ForEach-Object {
                 if ($_ -match "Task Name:|Status:|Next Run Time:|Last Run Time:|Last Result:") {
                     Write-Host "  $_"
                 }
             }
         } else {
-            Write-ColoredOutput "X Service khong chay" "Red"
+            Write-ColoredOutput "❌ Service is not running" "Red"
         }
     }
     catch {
-        Write-ColoredOutput "X Service khong chay" "Red"
+        Write-ColoredOutput "❌ Service is not running" "Red"
     }
 }
 
 function Show-Logs {
-    Write-ColoredOutput "Xem logs gan nhat:" "Cyan"
+    Write-ColoredOutput "📝 Viewing recent logs:" "Cyan"
     
-    Write-ColoredOutput "=== OUTPUT LOGS ===" "Yellow"
+    Write-ColoredOutput "=== OUTPUT LOGS (Today: $Today) ===" "Yellow"
     if (Test-Path $LogFile) {
         Get-Content $LogFile | Select-Object -Last 20 | ForEach-Object {
-            if ($_ -match "V|SUCCESS") {
+            if ($_ -match "✅|SUCCESS|V ") {
                 Write-ColoredOutput $_ "Green"
-            } elseif ($_ -match "X|ERROR|FAILED") {
+            } elseif ($_ -match "❌|ERROR|FAILED|X ") {
                 Write-ColoredOutput $_ "Red"
-            } elseif ($_ -match "!|WARNING") {
+            } elseif ($_ -match "⚠️|WARNING|! ") {
                 Write-ColoredOutput $_ "Yellow"
             } else {
                 Write-Host $_
             }
         }
     } else {
-        Write-ColoredOutput "Chua co logs" "Gray"
+        Write-ColoredOutput "No logs for today" "Gray"
     }
     
     Write-Host ""
-    Write-ColoredOutput "=== ERROR LOGS ===" "Red"
+    Write-ColoredOutput "=== ERROR LOGS (Today: $Today) ===" "Red"
     if (Test-Path $ErrorLog) {
         Get-Content $ErrorLog | Select-Object -Last 20 | ForEach-Object {
             Write-ColoredOutput $_ "Red"
         }
     } else {
-        Write-ColoredOutput "Chua co error logs" "Gray"
+        Write-ColoredOutput "No error logs for today" "Gray"
+    }
+    
+    Write-Host ""
+    Write-ColoredOutput "📂 Available log files:" "Cyan"
+    if (Test-Path "$LogsDir\*.log") {
+        Get-ChildItem "$LogsDir\*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | ForEach-Object {
+            Write-ColoredOutput "   $($_.Name) - $($_.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))" "Gray"
+        }
+    } else {
+        Write-ColoredOutput "No log files found" "Gray"
     }
 }
 
 function Test-Script {
-    Write-ColoredOutput "Test chay script mot lan..." "Cyan"
+    Write-ColoredOutput "🧪 Testing script execution once..." "Cyan"
     
     if (Test-Path $RunSyncScript) {
         & cmd.exe /c "`"$RunSyncScript`""
     } else {
-        Write-ColoredOutput "X Khong tim thay file run_sync.bat" "Red"
+        Write-ColoredOutput "❌ Cannot find run_sync.bat file" "Red"
     }
 }
 
 function Install-Dependencies {
-    Write-ColoredOutput "Cai dat dependencies va thiet lap moi truong..." "Cyan"
+    Write-ColoredOutput "🔧 Installing dependencies and setting up environment..." "Cyan"
     
     $SetupScript = Join-Path $ScriptDir "setup_windows.bat"
     if (Test-Path $SetupScript) {
         & cmd.exe /c "`"$SetupScript`""
     } else {
-        Write-ColoredOutput "! Khong tim thay setup_windows.bat, tien hanh setup co ban..." "Yellow"
+        Write-ColoredOutput "⚠️ Cannot find setup_windows.bat, proceeding with basic setup..." "Yellow"
         
-        # Kiem tra Python
+        # Check Python
         try {
             $PythonVersion = python --version 2>&1
-            Write-ColoredOutput "V Python da duoc cai dat: $PythonVersion" "Green"
+            Write-ColoredOutput "✅ Python is installed: $PythonVersion" "Green"
         }
         catch {
-            Write-ColoredOutput "X Python chua duoc cai dat. Vui long cai dat Python truoc." "Red"
+            Write-ColoredOutput "❌ Python is not installed. Please install Python first." "Red"
             return
         }
         
-        # Cai dat pip packages
-        Write-ColoredOutput "Cai dat Python packages..." "Yellow"
+        # Install pip packages
+        Write-ColoredOutput "Installing Python packages..." "Yellow"
         pip install pytz==2023.3 requests==2.31.0
         
-        Write-ColoredOutput "V Setup hoan tat!" "Green"
+        Write-ColoredOutput "✅ Setup completed!" "Green"
     }
 }
 
 function Start-Monitor {
-    Write-ColoredOutput "Bat dau monitor logs realtime (Ctrl+C de thoat)..." "Cyan"
+    Write-ColoredOutput "📺 Starting realtime log monitoring (Press Ctrl+C to exit)..." "Cyan"
+    Write-ColoredOutput "Monitoring: $LogFile" "Gray"
+    Write-Host ""
     
     if (Test-Path $LogFile) {
         Get-Content $LogFile -Wait -Tail 10 | ForEach-Object {
             $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-            if ($_ -match "V|SUCCESS") {
+            if ($_ -match "✅|SUCCESS|V ") {
                 Write-ColoredOutput "[$timestamp] $_" "Green"
-            } elseif ($_ -match "X|ERROR|FAILED") {
+            } elseif ($_ -match "❌|ERROR|FAILED|X ") {
                 Write-ColoredOutput "[$timestamp] $_" "Red"
-            } elseif ($_ -match "!|WARNING") {
+            } elseif ($_ -match "⚠️|WARNING|! ") {
                 Write-ColoredOutput "[$timestamp] $_" "Yellow"
             } else {
                 Write-Host "[$timestamp] $_"
             }
         }
     } else {
-        Write-ColoredOutput "X Log file chua ton tai: $LogFile" "Red"
+        Write-ColoredOutput "❌ Log file does not exist: $LogFile" "Red"
+        Write-ColoredOutput "💡 Try running the service first or check if logs directory exists" "Yellow"
+    }
+}
+
+function Start-LogCleanup {
+    Write-ColoredOutput "🧹 Cleaning up old log files..." "Cyan"
+    
+    if (-not (Test-Path $LogsDir)) {
+        Write-ColoredOutput "⚠️ Logs directory does not exist: $LogsDir" "Yellow"
+        return
+    }
+    
+    $DaysToKeep = 30
+    $CutoffDate = (Get-Date).AddDays(-$DaysToKeep)
+    
+    Write-ColoredOutput "Removing log files older than $DaysToKeep days (before $($CutoffDate.ToString('yyyy-MM-dd')))..." "Yellow"
+    
+    $OldLogs = Get-ChildItem -Path $LogsDir -Filter "*.log" | Where-Object { $_.LastWriteTime -lt $CutoffDate }
+    
+    if ($OldLogs.Count -gt 0) {
+        $OldLogs | ForEach-Object {
+            Write-ColoredOutput "   Removing: $($_.Name)" "Gray"
+            Remove-Item $_.FullName -Force
+        }
+        Write-ColoredOutput "✅ Cleaned up $($OldLogs.Count) old log files" "Green"
+    } else {
+        Write-ColoredOutput "✅ No old log files to clean up" "Green"
+    }
+    
+    # Show current log files
+    Write-Host ""
+    Write-ColoredOutput "📂 Current log files:" "Cyan"
+    $CurrentLogs = Get-ChildItem -Path $LogsDir -Filter "*.log" | Sort-Object LastWriteTime -Descending
+    if ($CurrentLogs.Count -gt 0) {
+        $CurrentLogs | ForEach-Object {
+            $Size = [math]::Round($_.Length / 1KB, 2)
+            Write-ColoredOutput "   $($_.Name) - $($_.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')) - $Size KB" "Gray"
+        }
+    } else {
+        Write-ColoredOutput "No log files found" "Gray"
     }
 }
 
 function Show-Help {
-    Write-ColoredOutput "Cach su dung: .\manage_service.ps1 -Action <action>" "White"
+    Write-ColoredOutput "Usage: .\manage_service.ps1 -Action <action>" "White"
     Write-Host ""
-    Write-ColoredOutput "Cac lenh:" "Yellow"
-    Write-Host "  start     - Bat dau service (chay moi 5 phut)"
-    Write-Host "  stop      - Dung service"
-    Write-Host "  restart   - Khoi dong lai service"
-    Write-Host "  status    - Kiem tra trang thai service"
-    Write-Host "  logs      - Xem logs gan nhat"
-    Write-Host "  test      - Chay thu script mot lan"
-    Write-Host "  install   - Cai dat dependencies va thiet lap"
-    Write-Host "  uninstall - Go bo service"
-    Write-Host "  monitor   - Monitor logs realtime"
+    Write-ColoredOutput "Commands:" "Yellow"
+    Write-Host "  start     - Start service (runs every 5 minutes)"
+    Write-Host "  stop      - Stop service"
+    Write-Host "  restart   - Restart service"
+    Write-Host "  status    - Check service status"
+    Write-Host "  logs      - View recent logs"
+    Write-Host "  test      - Run script once for testing"
+    Write-Host "  install   - Install dependencies and setup"
+    Write-Host "  uninstall - Remove service"
+    Write-Host "  monitor   - Monitor logs in realtime"
+    Write-Host "  cleanup   - Clean up old log files (older than 30 days)"
     Write-Host ""
-    Write-ColoredOutput "Vi du:" "Cyan"
+    Write-ColoredOutput "Examples:" "Cyan"
     Write-Host "  .\manage_service.ps1 -Action install"
     Write-Host "  .\manage_service.ps1 -Action test"
     Write-Host "  .\manage_service.ps1 -Action start"
     Write-Host "  .\manage_service.ps1 -Action monitor"
+    Write-Host "  .\manage_service.ps1 -Action cleanup"
+    Write-Host ""
+    Write-ColoredOutput "Log files are organized by date in the 'logs' folder:" "Cyan"
+    Write-Host "  - Daily output: logs\sync_YYYY-MM-DD.log"
+    Write-Host "  - Daily errors: logs\sync_error_YYYY-MM-DD.log"
 }
 
 # Main logic
@@ -216,8 +284,9 @@ switch ($Action) {
     "install" { Install-Dependencies }
     "uninstall" { 
         Stop-AttendanceService
-        Write-ColoredOutput "V Service da duoc go bo" "Green"
+        Write-ColoredOutput "✅ Service has been removed" "Green"
     }
     "monitor" { Start-Monitor }
+    "cleanup" { Start-LogCleanup }
     default { Show-Help }
 } 

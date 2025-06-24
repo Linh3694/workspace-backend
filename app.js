@@ -195,7 +195,9 @@ const corsOptions = {
     'http://localhost:3000',
     'http://localhost:5173',
     'https://wis.wellspring.edu.vn',
-    'https://api-dev.wellspring.edu.vn'
+    'https://api-dev.wellspring.edu.vn',
+    'https://library.wellspring.edu.vn',
+    'https://tuyendung.wellspring.edu.vn'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
