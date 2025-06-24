@@ -172,7 +172,7 @@ exports.updateUser = async (req, res) => {
 
     // Kiểm tra role hợp lệ (nếu thay đổi)
     if (role) {
-      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user"];
+      const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user","librarian"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
       }
