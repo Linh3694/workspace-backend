@@ -1016,8 +1016,8 @@ exports.deleteBookByCode = async (req, res) => {
     }
 
     // Kiểm tra trạng thái sách trước khi xóa
-    const allowedStatuses = ["available", "Sẵn sàng", "", undefined];
-    const bookStatus = bookToDelete.status || "available"; // Default là available
+    const allowedStatuses = ["Sẵn sàng", "", undefined];
+    const bookStatus = bookToDelete.status || "Sẵn sàng"; // Default là Sẵn sàng
     
     if (!allowedStatuses.includes(bookStatus)) {
       return res.status(400).json({ 
