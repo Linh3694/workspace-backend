@@ -15,13 +15,13 @@ if (!fs.existsSync(uploadDir)) {
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif/;
+  const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const mimetype = allowedTypes.test(file.mimetype) || file.mimetype === 'image/webp';
   if (extname && mimetype) {
     return cb(null, true);
   }
-  cb(new Error("Chỉ cho phép upload ảnh (jpeg, jpg, png, gif)"));
+  cb(new Error("Chỉ cho phép upload ảnh (jpeg, jpg, png, gif, webp)"));
 };
 
 const upload = multer({
