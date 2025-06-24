@@ -420,15 +420,49 @@ exports.updateLibrary = async (req, res) => {
 // DELETE - Xóa Library theo ID
 exports.deleteLibrary = async (req, res) => {
   try {
-    const { id } = req.params;
-    const deletedLibrary = await Library.findByIdAndDelete(id);
-    if (!deletedLibrary) {
-      return res.status(404).json({ error: "Library not found" });
+    const library = await Library.findByIdAndDelete(req.params.id);
+    if (!library) {
+      return res.status(404).json({ error: 'Library not found' });
     }
-    return res.status(200).json({ message: "Library deleted successfully" });
+    return res.status(200).json({ message: 'Library deleted successfully' });
   } catch (error) {
-    console.error("Error deleting library:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error('Error deleting library:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// POST /libraries/:id/upload-cover - Upload cover image for specific library
+exports.updateLibraryCoverImage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { coverImage } = req.body; // This comes from the middleware after processing the file
+    
+    if (!coverImage) {
+      return res.status(400).json({ error: "Không có ảnh bìa để cập nhật" });
+    }
+    
+    const updatedLibrary = await Library.findByIdAndUpdate(
+      id, 
+      { coverImage }, 
+      { new: true }
+    );
+    
+    if (!updatedLibrary) {
+      return res.status(404).json({ error: "Không tìm thấy đầu sách" });
+    }
+    
+    return res.status(200).json({
+      message: "Cập nhật ảnh bìa thành công",
+      library: {
+        _id: updatedLibrary._id,
+        title: updatedLibrary.title,
+        libraryCode: updatedLibrary.libraryCode,
+        coverImage: updatedLibrary.coverImage
+      }
+    });
+  } catch (error) {
+    console.error("Error updating library cover image:", error);
+    return res.status(500).json({ error: "Lỗi server khi cập nhật ảnh bìa" });
   }
 };
 
@@ -1564,20 +1598,6 @@ exports.getBookCountForDelete = async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting book count for delete:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// DELETE /libraries/:id
-exports.deleteLibrary = async (req, res) => {
-  try {
-    const library = await Library.findByIdAndDelete(req.params.id);
-    if (!library) {
-      return res.status(404).json({ error: 'Library not found' });
-    }
-    return res.status(200).json({ message: 'Library deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting library:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

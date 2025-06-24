@@ -94,5 +94,22 @@ router.put("/:id", uploadLibraryImage.upload.single("file"), async (req, res) =>
 // Xóa Library
 router.delete("/:id", libraryController.deleteLibrary);
 
+// Upload cover image for specific library
+router.post("/:id/upload-cover", uploadLibraryImage.upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Không có file ảnh được upload" });
+    }
+    
+    const filePath = await uploadLibraryImage.convertToWebp(req.file.buffer, req.file.originalname);
+    req.body.coverImage = filePath;
+    
+    // Gọi hàm cập nhật cover image từ controller
+    libraryController.updateLibraryCoverImage(req, res);
+  } catch (error) {
+    console.error("Error uploading cover image:", error);
+    return res.status(500).json({ error: "Lỗi khi upload ảnh bìa" });
+  }
+});
 
 module.exports = router;
