@@ -766,6 +766,74 @@ exports.addBookToLibrary = async (req, res) => {
   }
 };
 
+// POST /libraries/books/:bookCode/duplicate - Duplicate existing book
+exports.duplicateBookByCode = async (req, res) => {
+  try {
+    const { bookCode } = req.params;
+    const { copyCount } = req.body;
+    const decodedBookCode = decodeURIComponent(bookCode);
+
+    // Validate copyCount
+    if (!copyCount || copyCount < 1 || copyCount > 100) {
+      return res.status(400).json({ error: 'Copy count must be between 1 and 100' });
+    }
+
+    // Tìm library chứa sách gốc
+    const library = await Library.findOne({ "books.generatedCode": decodedBookCode });
+    if (!library) {
+      return res.status(404).json({ error: "Book not found in any library" });
+    }
+
+    // Tìm sách gốc trong library
+    const originalBook = library.books.find(b => b.generatedCode === decodedBookCode);
+    if (!originalBook) {
+      return res.status(404).json({ error: "Book not found in library" });
+    }
+
+    // Tính số thứ tự bắt đầu cho sách mới
+    let currentCount = library.books.length;
+    
+    // Tạo book data từ sách gốc (loại bỏ các trường không cần thiết)
+    const bookData = { ...originalBook.toObject() };
+    delete bookData._id;
+    delete bookData.generatedCode;
+    delete bookData.borrowedBy;
+    delete bookData.borrowedDate;
+    delete bookData.returnDate;
+    delete bookData.status; // Reset về trạng thái mặc định
+
+    // Tạo nhiều sách mới dựa trên copyCount
+    const newBooks = [];
+    for (let i = 0; i < copyCount; i++) {
+      currentCount++;
+      const serialNumber = String(currentCount).padStart(3, '0');
+      
+      const newBook = {
+        ...bookData,
+        generatedCode: `${originalBook.specialCode}.${library.libraryCode}.${serialNumber}`,
+        status: 'available', // Đặt trạng thái mặc định
+      };
+      
+      newBooks.push(newBook);
+    }
+
+    // Thêm tất cả sách mới vào library
+    library.books.push(...newBooks);
+    await library.save();
+
+    return res.status(201).json({
+      message: `Đã nhân bản thành công ${copyCount} sách từ ${originalBook.generatedCode}`,
+      library,
+      originalBook,
+      duplicatedBooks: newBooks
+    });
+
+  } catch (error) {
+    console.error('Error duplicating book:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // POST /libraries/:libraryId/books/bulk - Bulk add books to library
 exports.bulkAddBooksToLibrary = async (req, res) => {
   try {
