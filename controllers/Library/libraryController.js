@@ -91,6 +91,107 @@ exports.createLibrary = async (req, res) => {
   }
 };
 
+// Bulk create libraries
+exports.bulkCreateLibraries = async (req, res) => {
+  try {
+    const { libraries } = req.body;
+
+    if (!libraries || !Array.isArray(libraries) || libraries.length === 0) {
+      return res.status(400).json({ error: 'Libraries array is required and must not be empty' });
+    }
+
+    // Find the library with the highest libraryCode to continue numbering
+    const lastLibrary = await Library.findOne().sort({ libraryCode: -1 });
+    let nextCodeNumber = 1;
+    if (lastLibrary && lastLibrary.libraryCode) {
+      nextCodeNumber = parseInt(lastLibrary.libraryCode, 10) + 1;
+    }
+
+    const newLibraries = [];
+    const errors = [];
+
+    for (let i = 0; i < libraries.length; i++) {
+      const libraryData = libraries[i];
+      
+      try {
+        // Validate required fields
+        if (!libraryData.title || !libraryData.title.trim()) {
+          errors.push(`Dòng ${i + 1}: Thiếu tên đầu sách`);
+          continue;
+        }
+
+        // Parse authors if it's a string
+        if (typeof libraryData.authors === 'string') {
+          try {
+            libraryData.authors = JSON.parse(libraryData.authors);
+          } catch (e) {
+            libraryData.authors = libraryData.authors.split(',').map(author => author.trim()).filter(Boolean);
+          }
+        }
+
+        // Convert string boolean values
+        if (typeof libraryData.isNewBook === 'string') {
+          libraryData.isNewBook = libraryData.isNewBook === 'true';
+        }
+        if (typeof libraryData.isFeaturedBook === 'string') {
+          libraryData.isFeaturedBook = libraryData.isFeaturedBook === 'true';
+        }
+        if (typeof libraryData.isAudioBook === 'string') {
+          libraryData.isAudioBook = libraryData.isAudioBook === 'true';
+        }
+
+        // Ensure description objects have proper structure
+        if (!libraryData.description || typeof libraryData.description !== 'object') {
+          libraryData.description = { linkEmbed: '', content: '' };
+        }
+        if (!libraryData.introduction || typeof libraryData.introduction !== 'object') {
+          libraryData.introduction = { linkEmbed: '', content: '' };
+        }
+        if (!libraryData.audioBook || typeof libraryData.audioBook !== 'object') {
+          libraryData.audioBook = { linkEmbed: '', content: '' };
+        }
+
+        // Generate library code
+        const libraryCode = String(nextCodeNumber).padStart(4, "0");
+        nextCodeNumber++;
+
+        const newLibrary = new Library({
+          ...libraryData,
+          libraryCode,
+          books: [] // Initialize with empty books array
+        });
+
+        // Sync authors
+        await syncAuthors(newLibrary.authors);
+        
+        const savedLibrary = await newLibrary.save();
+        newLibraries.push(savedLibrary);
+
+      } catch (error) {
+        errors.push(`Dòng ${i + 1}: ${error.message}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        error: 'Có lỗi trong dữ liệu bulk upload', 
+        details: errors,
+        successCount: newLibraries.length,
+        totalCount: libraries.length
+      });
+    }
+
+    return res.status(201).json({
+      message: `Đã tạo thành công ${newLibraries.length} đầu sách`,
+      libraries: newLibraries
+    });
+
+  } catch (error) {
+    console.error('Error bulk creating libraries:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // READ - Lấy danh sách tất cả Library
 exports.getAllLibraries = async (req, res) => {
   try {
@@ -474,6 +575,100 @@ exports.addBookToLibrary = async (req, res) => {
     return res.status(200).json(library);
   } catch (error) {
     console.error('Error adding book to library:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// POST /libraries/:libraryId/books/bulk - Bulk add books to library
+exports.bulkAddBooksToLibrary = async (req, res) => {
+  try {
+    const { libraryId } = req.params;
+    const { books } = req.body; // Array of book objects
+
+    if (!books || !Array.isArray(books) || books.length === 0) {
+      return res.status(400).json({ error: 'Books array is required and must not be empty' });
+    }
+
+    const library = await Library.findById(libraryId);
+    if (!library) {
+      return res.status(404).json({ error: 'Library not found' });
+    }
+
+    // Get all special codes for validation
+    const specialCodes = await SpecialCode.find({});
+    const specialCodeMap = {};
+    specialCodes.forEach(sc => {
+      specialCodeMap[sc._id.toString()] = sc;
+    });
+
+    const newBooks = [];
+    const errors = [];
+    let currentCount = library.books.length; // Bắt đầu từ số sách hiện có
+
+    for (let i = 0; i < books.length; i++) {
+      const bookData = books[i];
+      
+      try {
+        // Validate required fields
+        if (!bookData.specialCodeId) {
+          errors.push(`Dòng ${i + 1}: Thiếu mã đặc biệt`);
+          continue;
+        }
+
+        const specialCode = specialCodeMap[bookData.specialCodeId];
+        if (!specialCode) {
+          errors.push(`Dòng ${i + 1}: Mã đặc biệt không hợp lệ`);
+          continue;
+        }
+
+        // Tính số thứ tự cho sách mới
+        currentCount++;
+        const serialNumber = String(currentCount).padStart(3, '0');
+        const generatedCode = `${specialCode.name}.${library.libraryCode}.${serialNumber}`;
+
+        // Remove library-level properties from book data
+        delete bookData.isNewBook;
+        delete bookData.isFeaturedBook;
+        delete bookData.isAudioBook;
+        delete bookData.specialCodeId; // Remove after using
+
+        const newBook = {
+          ...bookData,
+          specialCode: specialCode.name,
+          generatedCode,
+          catalogingAgency: bookData.catalogingAgency || 'WIS', // Default value
+          publishYear: bookData.publishYear ? Number(bookData.publishYear) : null,
+          pages: bookData.pages ? Number(bookData.pages) : null,
+          coverPrice: bookData.coverPrice ? Number(bookData.coverPrice) : null,
+        };
+
+        newBooks.push(newBook);
+      } catch (error) {
+        errors.push(`Dòng ${i + 1}: ${error.message}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        error: 'Có lỗi trong dữ liệu bulk upload', 
+        details: errors,
+        successCount: newBooks.length,
+        totalCount: books.length
+      });
+    }
+
+    // Add all valid books to library
+    library.books.push(...newBooks);
+    await library.save();
+
+    return res.status(201).json({
+      message: `Đã thêm thành công ${newBooks.length} sách`,
+      library,
+      addedBooks: newBooks
+    });
+
+  } catch (error) {
+    console.error('Error bulk adding books to library:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -1214,6 +1409,48 @@ exports.getRelatedBooks = async (req, res) => {
     return res.status(200).json(relatedBooks);
   } catch (error) {
     console.error('Error fetching related books:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// GET /libraries/:libraryId/book-count - Kiểm tra số lượng BookDetail trước khi xóa
+exports.getBookCountForDelete = async (req, res) => {
+  try {
+    const { libraryId } = req.params;
+    const library = await Library.findById(libraryId);
+    
+    if (!library) {
+      return res.status(404).json({ error: 'Library not found' });
+    }
+
+    const bookCount = library.books ? library.books.length : 0;
+    
+    return res.status(200).json({
+      libraryId: library._id,
+      libraryTitle: library.title,
+      bookCount: bookCount,
+      books: library.books.map(book => ({
+        generatedCode: book.generatedCode,
+        title: book.bookTitle || book.title || library.title,
+        status: book.status || 'Sẵn sàng'
+      }))
+    });
+  } catch (error) {
+    console.error('Error getting book count for delete:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// DELETE /libraries/:id
+exports.deleteLibrary = async (req, res) => {
+  try {
+    const library = await Library.findByIdAndDelete(req.params.id);
+    if (!library) {
+      return res.status(404).json({ error: 'Library not found' });
+    }
+    return res.status(200).json({ message: 'Library deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting library:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

@@ -31,10 +31,12 @@ router.delete("/authors/:id", libraryController.deleteAuthor);
 
 // -------------------- Add Book APIs -------------------- //
 router.post('/:libraryId/books', libraryController.addBookToLibrary);
+router.post('/:libraryId/books/bulk', libraryController.bulkAddBooksToLibrary);
 router.put('/:libraryId/books/:bookIndex', libraryController.updateBookInLibrary);
 router.put('/books/:bookCode', libraryController.updateBookByCode);
 router.delete("/books/:bookCode", libraryController.deleteBookByCode);
 router.get('/:libraryId/books', libraryController.getBooksFromLibrary);
+router.get('/:libraryId/book-count', libraryController.getBookCountForDelete);
 // -------------------- Borrows Books APIs -------------------- //
 router.post("/:libraryId/books/:bookIndex/borrow", libraryController.borrowBook);
 router.post("/:libraryId/books/:bookIndex/return", libraryController.returnBook);
@@ -61,6 +63,9 @@ router.post("/", uploadLibraryImage.upload.single("file"), async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// Bulk create libraries
+router.post("/bulk", libraryController.bulkCreateLibraries);
   
 // Lấy tất cả Library
 router.get("/", libraryController.getAllLibraries);
