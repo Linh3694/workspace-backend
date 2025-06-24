@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const libraryController = require("../../controllers/Library/libraryController");
 const uploadLibraryImage = require("../../middleware/uploadLibraryImage");
+const excelUpload = require("../../middleware/excelUpload");
 
 
 // Document Type APIs
@@ -66,6 +67,9 @@ router.post("/", uploadLibraryImage.upload.single("file"), async (req, res) => {
 
 // Bulk create libraries
 router.post("/bulk", libraryController.bulkCreateLibraries);
+
+// Bulk create libraries from Excel template
+router.post("/bulk-excel", excelUpload.single("excelFile"), libraryController.bulkCreateLibrariesFromExcel);
   
 // Lấy tất cả Library
 router.get("/", libraryController.getAllLibraries);
