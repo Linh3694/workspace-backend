@@ -30,6 +30,11 @@ const PeriodDefinitionSchema = new Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "SchoolYear",
     required: true
+  },
+  school: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "School",
+    required: true
   }
 }, { timestamps: true });
 

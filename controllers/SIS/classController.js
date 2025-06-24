@@ -94,7 +94,7 @@ exports.createClass = async (req, res) => {
 // Lấy tất cả lớp học
 exports.getAllClasses = async (req, res) => {
   try {
-    const { gradeLevels, schoolYear } = req.query;
+    const { gradeLevels, schoolYear, school } = req.query;
     const { populate } = req.query;
     const filter = {};
 
@@ -108,6 +108,23 @@ exports.getAllClasses = async (req, res) => {
       filter.gradeLevel = {
         $in: gradeIdList.map(id => new mongoose.Types.ObjectId(id))
       };
+    }
+
+    // Xử lý school - tìm grade levels của trường này
+    if (school) {
+      const GradeLevel = require("../../models/GradeLevel");
+      const schoolGradeLevels = await GradeLevel.find({ school: new mongoose.Types.ObjectId(school) });
+      const gradeIds = schoolGradeLevels.map(gl => gl._id);
+      
+      if (filter.gradeLevel) {
+        // Nếu đã có filter gradeLevel, thì intersection
+        filter.gradeLevel.$in = filter.gradeLevel.$in.filter(id => 
+          gradeIds.some(gradeId => gradeId.toString() === id.toString())
+        );
+      } else {
+        // Nếu chưa có filter gradeLevel, thì set filter cho tất cả grade của school
+        filter.gradeLevel = { $in: gradeIds };
+      }
     }
 
     // Xử lý schoolYear

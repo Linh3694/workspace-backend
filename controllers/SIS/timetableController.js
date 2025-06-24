@@ -611,10 +611,24 @@ exports.getTimetableGridByClass = async (req, res) => {
     // Định nghĩa các ngày trong tuần
     const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
+    // Lấy thông tin class để biết school
+    const classInfo = await Class.findById(classId).populate('gradeLevel');
+    if (!classInfo) {
+      return res.status(400).json({ message: "Không tìm thấy lớp học" });
+    }
+
+    const schoolId = classInfo.gradeLevel?.school;
+    if (!schoolId) {
+      return res.status(400).json({ message: "Không tìm thấy thông tin trường của lớp học" });
+    }
+
     // Lấy period definitions để xác định số tiết và mapping startTime -> periodNumber
-    const periodDefs = await PeriodDefinition.find({ schoolYear: schoolYearId });
+    const periodDefs = await PeriodDefinition.find({ 
+      schoolYear: schoolYearId,
+      school: schoolId 
+    });
     if (periodDefs.length === 0) {
-      return res.status(400).json({ message: "Chưa khai báo tiết học cho năm học này" });
+      return res.status(400).json({ message: "Chưa khai báo tiết học cho trường và năm học này" });
     }
     const startTimeToPeriod = {};
     periodDefs.forEach(p => {
@@ -923,11 +937,18 @@ exports.importTimetable = async (req, res) => {
   }
 };
 
-// Get all period definitions for a school year
+// Get all period definitions for a school year and school
 exports.getPeriodDefinitions = async (req, res) => {
   try {
     const { schoolYearId } = req.params;
-    const periods = await PeriodDefinition.find({ schoolYear: schoolYearId }).sort({ periodNumber: 1 });
+    const { schoolId } = req.query;
+    
+    const filter = { schoolYear: schoolYearId };
+    if (schoolId) {
+      filter.school = schoolId;
+    }
+    
+    const periods = await PeriodDefinition.find(filter).sort({ periodNumber: 1 });
     return res.json({ data: periods });
   } catch (err) {
     console.error("Error fetching period definitions:", err);
@@ -939,9 +960,15 @@ exports.getPeriodDefinitions = async (req, res) => {
 exports.createPeriodDefinition = async (req, res) => {
   try {
     const { schoolYearId } = req.params;
-    const { periodNumber, startTime, endTime, label, type } = req.body;
+    const { periodNumber, startTime, endTime, label, type, school } = req.body;
+    
+    if (!school) {
+      return res.status(400).json({ message: "School ID is required" });
+    }
+    
     const newPeriod = await PeriodDefinition.create({ 
       schoolYear: schoolYearId, 
+      school,
       periodNumber, 
       startTime, 
       endTime, 
