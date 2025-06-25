@@ -138,12 +138,31 @@ exports.deleteFamily = asyncHandler(async (req, res) => {
 
 // Thêm Parent vào Family (POST /families/:id/add-parent)
 exports.addParentToFamily = asyncHandler(async (req, res) => {
+    console.log('🔍 [AddParentToFamily] Request params:', req.params);
+    console.log('🔍 [AddParentToFamily] Request body:', req.body);
+    console.log('🔍 [AddParentToFamily] Request user:', req.user);
+    
     const { parentId, relationship } = req.body;
     const familyId = req.params.id;
 
+    // Validate input
+    if (!parentId || !relationship) {
+        console.log('❌ [AddParentToFamily] Missing required fields');
+        return res.status(400).json({ message: 'ParentId and relationship are required' });
+    }
+
+    // Check if family exists
     const family = await Family.findById(familyId);
     if (!family) {
+        console.log('❌ [AddParentToFamily] Family not found:', familyId);
         return res.status(404).json({ message: 'Không tìm thấy gia đình' });
+    }
+
+    // Check if parent exists
+    const parent = await Parent.findById(parentId);
+    if (!parent) {
+        console.log('❌ [AddParentToFamily] Parent not found:', parentId);
+        return res.status(404).json({ message: 'Không tìm thấy phụ huynh' });
     }
 
     // Kiểm tra parent đã tồn tại trong family chưa
@@ -151,6 +170,7 @@ exports.addParentToFamily = asyncHandler(async (req, res) => {
         p => p.parent.toString() === parentId
     );
     if (existingParent) {
+        console.log('❌ [AddParentToFamily] Parent already exists in family');
         return res.status(400).json({ message: 'Phụ huynh đã tồn tại trong gia đình' });
     }
 
@@ -161,6 +181,7 @@ exports.addParentToFamily = asyncHandler(async (req, res) => {
     });
 
     await family.save();
+    console.log('✅ [AddParentToFamily] Parent added to family successfully');
     res.json(family);
 });
 

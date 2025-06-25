@@ -20,23 +20,27 @@ const Parent = require("../../models/Parent");
 // Tạo người dùng mới
 exports.createUser = async (req, res) => {
   try {
+    console.log('🔍 [CreateUser] Request body:', req.body);
     const { password, email, phone, role, fullname, active } = req.body;
     const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : null;
 
     // Kiểm tra dữ liệu đầu vào
     if (!password || !email || !role || !fullname) {
+      console.log('❌ [CreateUser] Missing required fields');
       return res.status(400).json({ message: "Password, email, role, and fullname are required" });
     }
 
     // Kiểm tra role hợp lệ
     const validRoles = ["admin", "teacher", "parent", "registrar", "admission", "bos", "principal", "service", "superadmin", "technical", "marcom", "hr", "bod", "user","librarian"];
     if (!validRoles.includes(role)) {
+      console.log('❌ [CreateUser] Invalid role:', role);
       return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
     }
 
     // Kiểm tra trùng username hoặc email
     const existingUser = await User.findOne({ $or: [{ email }] });
     if (existingUser) {
+      console.log('❌ [CreateUser] Email already exists:', email);
       return res.status(400).json({ message: "Email already exists" });
     }
 
@@ -53,7 +57,7 @@ exports.createUser = async (req, res) => {
       avatarUrl
     });
 
-    await newUser.save();
+    console.log('✅ [CreateUser] User created successfully:', newUser._id);
 
     // Nếu role là teacher, tạo bản ghi Teacher tương ứng
     if (role === "teacher") {
@@ -66,6 +70,7 @@ exports.createUser = async (req, res) => {
         classes: [],
         school: req.body.school || req.user?.school
       });
+      console.log('✅ [CreateUser] Teacher record created for user:', newUser._id);
     }
 
     // Xóa cache danh sách users (nếu có Redis)
@@ -82,6 +87,7 @@ exports.createUser = async (req, res) => {
       message: "Tạo người dùng thành công"
     });
   } catch (err) {
+    console.error('❌ [CreateUser] Error:', err);
     return res.status(500).json({ error: err.message });
   }
 };
