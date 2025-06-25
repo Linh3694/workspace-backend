@@ -6,6 +6,7 @@ const attendanceController = require('../../controllers/SIS/attendanceController
 router.get('/', attendanceController.getAttendances);
 router.get('/classes-by-role', attendanceController.getClassesByRole);
 router.get('/students-by-class', attendanceController.getStudentsByClass);
+router.get('/time-attendance-by-date', attendanceController.getTimeAttendanceByDate);
 router.get('/:id', attendanceController.getAttendanceById);
 router.post('/', attendanceController.createAttendance);
 router.put('/:id', attendanceController.updateAttendance);

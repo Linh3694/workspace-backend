@@ -4,6 +4,7 @@ const Class = require('../../models/Class');
 const Student = require('../../models/Student');
 const Timetable = require('../../models/Timetable');
 const Teacher = require('../../models/Teacher');
+const TimeAttendance = require('../../models/TimeAttendance');
 
 // Display list of all Attendances
 exports.getAttendances = asyncHandler(async (req, res) => {
@@ -79,4 +80,80 @@ exports.getStudentsByClass = asyncHandler(async (req, res) => {
   if (!classId) return res.status(400).json({ message: 'Missing classId' });
   const students = await Student.find({ class: classId });
   res.json(students);
+});
+
+// API: Lấy dữ liệu timeAttendance cho học sinh theo ngày
+exports.getTimeAttendanceByDate = asyncHandler(async (req, res) => {
+  const { date, studentCodes } = req.query;
+  
+  if (!date) {
+    return res.status(400).json({ message: 'Missing date parameter' });
+  }
+
+  // Parse date và tạo range cho ngày đó
+  const queryDate = new Date(date);
+  queryDate.setHours(0, 0, 0, 0);
+  
+  const nextDay = new Date(queryDate);
+  nextDay.setDate(nextDay.getDate() + 1);
+
+  // Build filter
+  const filter = {
+    date: {
+      $gte: queryDate,
+      $lt: nextDay
+    }
+  };
+
+  // Nếu có studentCodes, filter theo employeeCode (vì timeAttendance dùng employeeCode)
+  if (studentCodes) {
+    const codes = Array.isArray(studentCodes) ? studentCodes : studentCodes.split(',');
+    filter.employeeCode = { $in: codes };
+  }
+
+  try {
+    const timeAttendanceRecords = await TimeAttendance.find(filter)
+      .select('employeeCode date firstCheckIn lastCheckOut totalCheckIns rawData')
+      .lean();
+
+    // Process data để lấy check-in đầu tiên và check-out cuối cùng
+    const processedData = {};
+    
+    timeAttendanceRecords.forEach(record => {
+      const studentCode = record.employeeCode;
+      
+      // Tìm check-in đầu tiên và check-out cuối cùng từ rawData
+      let firstCheckIn = null;
+      let lastCheckOut = null;
+      
+      if (record.rawData && record.rawData.length > 0) {
+        // Sort rawData theo timestamp
+        const sortedData = record.rawData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        // Lấy check-in đầu tiên
+        firstCheckIn = sortedData[0].timestamp;
+        
+        // Lấy check-out cuối cùng (nếu có nhiều hơn 1 record)
+        if (sortedData.length > 1) {
+          lastCheckOut = sortedData[sortedData.length - 1].timestamp;
+        }
+      } else {
+        // Fallback to firstCheckIn/lastCheckOut fields if rawData not available
+        firstCheckIn = record.firstCheckIn;
+        lastCheckOut = record.lastCheckOut;
+      }
+      
+      processedData[studentCode] = {
+        studentCode,
+        checkIn: firstCheckIn ? new Date(firstCheckIn).toTimeString().slice(0, 5) : null, // Format HH:MM
+        checkOut: lastCheckOut ? new Date(lastCheckOut).toTimeString().slice(0, 5) : null,
+        totalCheckIns: record.totalCheckIns || 0
+      };
+    });
+
+    res.json(processedData);
+  } catch (error) {
+    console.error('Error fetching time attendance:', error);
+    res.status(500).json({ message: 'Error fetching time attendance data' });
+  }
 });
