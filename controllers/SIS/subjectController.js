@@ -585,6 +585,23 @@ exports.bulkUploadSubjects = async (req, res) => {
         updatedAt: new Date(),
       });
 
+      // ---- THÊM PHẦN ĐỒNG BỘ HÓA ----
+      // Đồng bộ với GradeLevel
+      if (gradeLevels.length) {
+        await GradeLevel.updateMany(
+          { _id: { $in: gradeLevels.map(g => g._id) } },
+          { $addToSet: { subjects: newSubject._id } }
+        );
+      }
+
+      // Đồng bộ với Room nếu có
+      if (rooms.length) {
+        await Room.updateMany(
+          { _id: { $in: rooms } },
+          { $addToSet: { subjects: newSubject._id } }
+        );
+      }
+
       if (code) {
         createdSubjects.set(code, newSubject);
       }
