@@ -28,28 +28,21 @@ exports.getParentById = async (req, res) => {
 // Tạo phụ huynh mới
 exports.createParent = async (req, res) => {
     try {
-        console.log('🔍 [CreateParent] Request body:', req.body);
-        console.log('🔍 [CreateParent] Request user:', req.user);
-        
         const { user, fullname, phone, email } = req.body;
         
         // Validate required fields
         if (!fullname || !email) {
-            console.log('❌ [CreateParent] Missing required fields');
             return res.status(400).json({ message: 'Fullname and email are required' });
         }
         
         // Check if parent with same email already exists
         const existingParent = await Parent.findOne({ email });
         if (existingParent) {
-            console.log('❌ [CreateParent] Parent with email already exists:', email);
             return res.status(400).json({ message: 'Parent with this email already exists' });
         }
         
         const parent = new Parent(req.body);
-        const savedParent = await parent.save();
-        console.log('✅ [CreateParent] Parent created successfully:', savedParent._id);
-        
+        const savedParent = await parent.save();        
         // Populate user data nếu có
         const populatedParent = await Parent.findById(savedParent._id).populate('user', 'active username');
         res.status(201).json(populatedParent);

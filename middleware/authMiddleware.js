@@ -37,11 +37,6 @@ const authMiddleware = async (req, res, next) => {
       role: user.role,
       needProfileUpdate: user.needProfileUpdate,
     };
-    console.log("✅ [AuthMiddleware] User authenticated:", {
-      id: req.user._id,
-      name: req.user.fullname,
-      role: req.user.role
-    });
     next();
   } catch (error) {
     console.error("❌ [AuthMiddleware] Authentication error:", error);
