@@ -63,12 +63,19 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
   
   // Date range filter - filter by leave date range
   if (startDate && endDate) {
-    // Convert to start and end of day to handle timezone issues
-    const queryStartDate = new Date(startDate);
-    const queryEndDate = new Date(endDate);
-    queryEndDate.setHours(23, 59, 59, 999); // End of day
+    // Create UTC dates to avoid timezone issues
+    const queryStartDate = new Date(startDate + 'T00:00:00.000Z');
+    const queryEndDate = new Date(endDate + 'T23:59:59.999Z');
+    
+    console.log('Date filter debug:', {
+      inputStartDate: startDate,
+      inputEndDate: endDate,
+      queryStartDate: queryStartDate.toISOString(),
+      queryEndDate: queryEndDate.toISOString()
+    });
     
     // Check if leave request overlaps with selected date
+    // A leave request is relevant if it overlaps with the query date range
     filter.$and = [
       { startDate: { $lte: queryEndDate } },
       { endDate: { $gte: queryStartDate } }
@@ -117,9 +124,16 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
     createdBy
   } = req.body;
 
-  // Validate dates
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  // Validate dates - use UTC to avoid timezone issues
+  const start = new Date(startDate + 'T00:00:00.000Z');
+  const end = new Date(endDate + 'T23:59:59.999Z');
+  
+  console.log('Create leave request debug:', {
+    inputStartDate: startDate,
+    inputEndDate: endDate,
+    parsedStartDate: start.toISOString(),
+    parsedEndDate: end.toISOString()
+  });
   
   if (start > end) {
     return res.status(400).json({ 
@@ -320,12 +334,17 @@ exports.getLeaveRequestsByParent = asyncHandler(async (req, res) => {
   let filter = { createdBy: parentId };
   if (status) filter.status = status;
   
-  // Date range filter - filter by creation date
+  // Date range filter - filter by leave date range (not creation date)
   if (startDate && endDate) {
-    filter.createdAt = {
-      $gte: new Date(startDate),
-      $lte: new Date(endDate)
-    };
+    // Create UTC dates to avoid timezone issues
+    const queryStartDate = new Date(startDate + 'T00:00:00.000Z');
+    const queryEndDate = new Date(endDate + 'T23:59:59.999Z');
+    
+    // Check if leave request overlaps with selected date range
+    filter.$and = [
+      { startDate: { $lte: queryEndDate } },
+      { endDate: { $gte: queryStartDate } }
+    ];
   }
 
   const options = {
