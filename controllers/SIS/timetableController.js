@@ -375,7 +375,18 @@ exports.getTimetableByClass = async (req, res) => {
       .populate("room", "name")
       .sort({ "timeSlot.dayOfWeek": 1, "timeSlot.startTime": 1 });
 
-    return res.json(timetable);
+    // Transform data for parent-portal compatibility
+    const transformedTimetable = timetable.map(item => ({
+      ...item.toObject(),
+      teachers: item.teachers.map(teacher => ({
+        _id: teacher._id,
+        fullname: teacher.fullname || teacher.user?.fullname || 'Không có tên',
+        avatarUrl: teacher.avatarUrl || teacher.user?.avatarUrl || null,
+        user: teacher.user // Keep original structure for backward compatibility
+      }))
+    }));
+
+    return res.json(transformedTimetable);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
