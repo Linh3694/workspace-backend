@@ -63,9 +63,14 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
   
   // Date range filter - filter by leave date range
   if (startDate && endDate) {
-    // Create UTC dates to avoid timezone issues
-    const queryStartDate = new Date(startDate + 'T00:00:00.000Z');
-    const queryEndDate = new Date(endDate + 'T23:59:59.999Z');
+    // Handle ISO string dates properly
+    const queryStartDate = new Date(startDate);
+    const queryEndDate = new Date(endDate);
+    
+    // Validate dates
+    if (isNaN(queryStartDate.getTime()) || isNaN(queryEndDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
     
     // Check if leave request overlaps with selected date
     // A leave request is relevant if it overlaps with the query date range
@@ -117,9 +122,14 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
     createdBy
   } = req.body;
 
-  // Validate dates - use UTC to avoid timezone issues
-  const start = new Date(startDate + 'T00:00:00.000Z');
-  const end = new Date(endDate + 'T23:59:59.999Z');
+  // Validate dates
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  // Check if dates are valid
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return res.status(400).json({ message: 'Invalid date format' });
+  }
   
   if (start > end) {
     return res.status(400).json({ 
@@ -322,9 +332,14 @@ exports.getLeaveRequestsByParent = asyncHandler(async (req, res) => {
   
   // Date range filter - filter by leave date range (not creation date)
   if (startDate && endDate) {
-    // Create UTC dates to avoid timezone issues
-    const queryStartDate = new Date(startDate + 'T00:00:00.000Z');
-    const queryEndDate = new Date(endDate + 'T23:59:59.999Z');
+    // Handle ISO string dates properly
+    const queryStartDate = new Date(startDate);
+    const queryEndDate = new Date(endDate);
+    
+    // Validate dates
+    if (isNaN(queryStartDate.getTime()) || isNaN(queryEndDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
     
     // Check if leave request overlaps with selected date range
     filter.$and = [
