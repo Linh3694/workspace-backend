@@ -67,13 +67,6 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
     const queryStartDate = new Date(startDate + 'T00:00:00.000Z');
     const queryEndDate = new Date(endDate + 'T23:59:59.999Z');
     
-    console.log('Date filter debug:', {
-      inputStartDate: startDate,
-      inputEndDate: endDate,
-      queryStartDate: queryStartDate.toISOString(),
-      queryEndDate: queryEndDate.toISOString()
-    });
-    
     // Check if leave request overlaps with selected date
     // A leave request is relevant if it overlaps with the query date range
     filter.$and = [
@@ -127,13 +120,6 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
   // Validate dates - use UTC to avoid timezone issues
   const start = new Date(startDate + 'T00:00:00.000Z');
   const end = new Date(endDate + 'T23:59:59.999Z');
-  
-  console.log('Create leave request debug:', {
-    inputStartDate: startDate,
-    inputEndDate: endDate,
-    parsedStartDate: start.toISOString(),
-    parsedEndDate: end.toISOString()
-  });
   
   if (start > end) {
     return res.status(400).json({ 
