@@ -11,6 +11,13 @@ const AttendanceSchema = new Schema({
   note: { type: String },
   checkIn: { type: String },   // time string e.g. "08:00"
   checkOut: { type: String },  // time string e.g. "16:00"
+  
+  // Liên kết với đơn xin nghỉ phép (nếu có)
+  leaveRequest: { type: Schema.Types.ObjectId, ref: "LeaveRequest" },
+  
+  // Loại nghỉ (áp dụng khi status = "excused" hoặc "absent")
+  absenceType: { type: String, enum: ["full_day", "morning", "afternoon"] },
+  
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

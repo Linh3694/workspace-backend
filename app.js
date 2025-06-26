@@ -64,6 +64,7 @@ const notificationRoutes = require("./routes/Notification/notificationRoutes");
 const emojiRoutes = require('./routes/Chat/emojiRoutes');
 const postRoutes = require('./routes/Newfeed/postRoutes');
 const timeAttendanceRoutes = require('./routes/timeAttendanceRoutes');
+const leaveRequestRoutes = require('./routes/SIS/leaveRequestRoutes');
 const NewfeedSocket = require('./utils/newfeedSocket');
 
 const app = express();
@@ -295,6 +296,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/emoji", emojiRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/attendance", timeAttendanceRoutes);
+app.use("/api/leave-requests", leaveRequestRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
