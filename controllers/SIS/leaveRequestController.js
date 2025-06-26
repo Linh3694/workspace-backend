@@ -80,7 +80,7 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
     limit: parseInt(limit),
     sort: { createdAt: -1 },
     populate: [
-      { path: 'student', select: 'fullname studentId class _id' },
+      { path: 'student', select: 'name studentCode class _id' },
       { path: 'createdBy', select: 'fullname email phone' },
       { path: 'approvedBy', select: 'fullname' }
     ]
@@ -93,7 +93,7 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
 // Get a single Leave Request by ID
 exports.getLeaveRequestById = asyncHandler(async (req, res) => {
   const leaveRequest = await LeaveRequest.findById(req.params.id)
-    .populate('student', 'fullname studentId class')
+    .populate('student', 'name studentCode class')
     .populate('createdBy', 'fullname email phone')
     .populate('approvedBy', 'fullname');
     
@@ -146,7 +146,7 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
 
   const newLeaveRequest = await leaveRequest.save();
   const populatedRequest = await LeaveRequest.findById(newLeaveRequest._id)
-    .populate('student', 'fullname studentId class')
+    .populate('student', 'name studentCode class')
     .populate('createdBy', 'fullname email phone');
 
   res.status(201).json({
@@ -174,7 +174,7 @@ exports.updateLeaveRequest = asyncHandler(async (req, res) => {
     req.params.id, 
     req.body, 
     { new: true }
-  ).populate('student', 'fullname studentId class')
+  ).populate('student', 'name studentCode class')
    .populate('createdBy', 'fullname email phone');
 
   res.json({
@@ -237,7 +237,7 @@ exports.approveLeaveRequest = asyncHandler(async (req, res) => {
   await leaveRequest.save();
 
   const updatedRequest = await LeaveRequest.findById(req.params.id)
-    .populate('student', 'fullname studentId class')
+    .populate('student', 'name studentCode class')
     .populate('createdBy', 'fullname email phone')
     .populate('approvedBy', 'fullname');
 
@@ -271,7 +271,7 @@ exports.rejectLeaveRequest = asyncHandler(async (req, res) => {
   await leaveRequest.save();
 
   const updatedRequest = await LeaveRequest.findById(req.params.id)
-    .populate('student', 'fullname studentId class')
+    .populate('student', 'name studentCode class')
     .populate('createdBy', 'fullname email phone')
     .populate('approvedBy', 'fullname');
 
@@ -333,7 +333,7 @@ exports.getLeaveRequestsByParent = asyncHandler(async (req, res) => {
     limit: parseInt(limit),
     sort: { createdAt: -1 },
     populate: [
-      { path: 'student', select: 'fullname studentId class' },
+      { path: 'student', select: 'name studentCode class' },
       { path: 'approvedBy', select: 'fullname' }
     ]
   };
@@ -355,7 +355,7 @@ exports.getLeaveRequestsByStudent = asyncHandler(async (req, res) => {
     limit: parseInt(limit),
     sort: { createdAt: -1 },
     populate: [
-      { path: 'student', select: 'fullname studentId class' },
+      { path: 'student', select: 'name studentCode class' },
       { path: 'createdBy', select: 'fullname email phone' },
       { path: 'approvedBy', select: 'fullname' }
     ]
