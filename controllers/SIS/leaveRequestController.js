@@ -61,12 +61,39 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
   if (reason) filter.reason = reason;
   if (createdBy) filter.createdBy = createdBy;
   
-  // Date range filter
+  // Date range filter - filter by leave date range
   if (startDate && endDate) {
-    filter.startDate = {
-      $gte: new Date(startDate),
-      $lte: new Date(endDate)
-    };
+    // Convert to start and end of day to handle timezone issues
+    const queryStartDate = new Date(startDate);
+    const queryEndDate = new Date(endDate);
+    queryEndDate.setHours(23, 59, 59, 999); // End of day
+    
+    console.log('Date filter params:', { startDate, endDate });
+    console.log('Query dates:', { queryStartDate, queryEndDate });
+    
+    filter.$or = [
+      {
+        // Leave request bắt đầu trong khoảng thời gian
+        startDate: {
+          $gte: queryStartDate,
+          $lte: queryEndDate
+        }
+      },
+      {
+        // Leave request kết thúc trong khoảng thời gian
+        endDate: {
+          $gte: queryStartDate,
+          $lte: queryEndDate
+        }
+      },
+      {
+        // Leave request bao trùm cả khoảng thời gian
+        startDate: { $lte: queryStartDate },
+        endDate: { $gte: queryStartDate }
+      }
+    ];
+    
+    console.log('Filter object:', JSON.stringify(filter, null, 2));
   }
 
   const options = {
@@ -309,10 +336,18 @@ exports.uploadAttachments = [
 // Get Leave Requests by Parent
 exports.getLeaveRequestsByParent = asyncHandler(async (req, res) => {
   const { parentId } = req.params;
-  const { page = 1, limit = 10, status } = req.query;
+  const { page = 1, limit = 10, status, startDate, endDate } = req.query;
 
   let filter = { createdBy: parentId };
   if (status) filter.status = status;
+  
+  // Date range filter - filter by creation date
+  if (startDate && endDate) {
+    filter.createdAt = {
+      $gte: new Date(startDate),
+      $lte: new Date(endDate)
+    };
+  }
 
   const options = {
     page: parseInt(page),

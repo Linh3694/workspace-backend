@@ -13,7 +13,7 @@ const LeaveRequestSchema = new Schema({
   // Lý do xin nghỉ
   reason: { 
     type: String, 
-    enum: ["sick", "family", "other"], 
+    enum: ["sick", "family", "bereavement", "other"], 
     required: true 
   },
   
@@ -118,8 +118,9 @@ LeaveRequestSchema.methods.isSingleDay = function() {
 // Method để lấy tên lý do bằng tiếng Việt
 LeaveRequestSchema.methods.getReasonText = function() {
   const reasonMap = {
-    'sick': 'Ốm đau',
-    'family': 'Việc gia đình', 
+    'sick': 'Con bị ốm',
+    'family': 'Gia đình có việc bận',
+    'bereavement': 'Gia đình có việc hiếu',
     'other': 'Lý do khác'
   };
   return reasonMap[this.reason] || this.reason;
