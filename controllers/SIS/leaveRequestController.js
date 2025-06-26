@@ -71,29 +71,25 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
     console.log('Date filter params:', { startDate, endDate });
     console.log('Query dates:', { queryStartDate, queryEndDate });
     
-    filter.$or = [
-      {
-        // Leave request bắt đầu trong khoảng thời gian
-        startDate: {
-          $gte: queryStartDate,
-          $lte: queryEndDate
-        }
-      },
-      {
-        // Leave request kết thúc trong khoảng thời gian
-        endDate: {
-          $gte: queryStartDate,
-          $lte: queryEndDate
-        }
-      },
-      {
-        // Leave request bao trùm cả khoảng thời gian
-        startDate: { $lte: queryStartDate },
-        endDate: { $gte: queryStartDate }
-      }
+    // Simplified: Check if leave request overlaps with selected date
+    filter.$and = [
+      { startDate: { $lte: queryEndDate } },
+      { endDate: { $gte: queryStartDate } }
     ];
     
     console.log('Filter object:', JSON.stringify(filter, null, 2));
+    
+    // Test: Try a simpler date comparison
+    console.log('=== Testing simpler date comparison ===');
+    const testFilter = {
+      $or: [
+        {
+          startDate: { $lte: new Date('2025-06-26T23:59:59.999Z') },
+          endDate: { $gte: new Date('2025-06-26T00:00:00.000Z') }
+        }
+      ]
+    };
+    console.log('Test filter:', JSON.stringify(testFilter, null, 2));
   }
 
   const options = {
