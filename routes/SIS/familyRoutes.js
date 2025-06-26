@@ -28,7 +28,7 @@ router.post('/:id/parents', familyController.addParentToFamily);
 router.post('/:id/add-parent', familyController.addParentToFamily);
 
 // Xóa Parent khỏi Family
-router.delete('/:id/parents/:parentId',  familyController.removeParentFromFamily);
+router.delete('/:id/parents/:parentId', familyController.removeParentFromFamily);
 
 // Alias route để tương thích với FE gọi /remove-parent/:parentId
 router.delete('/:id/remove-parent/:parentId', familyController.removeParentFromFamily);
