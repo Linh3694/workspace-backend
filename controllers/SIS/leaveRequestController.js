@@ -97,13 +97,25 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
     limit: parseInt(limit),
     sort: { createdAt: -1 },
     populate: [
-      { path: 'student', select: 'fullname studentId class' },
+      { path: 'student', select: 'fullname studentId class _id' },
       { path: 'createdBy', select: 'fullname email phone' },
       { path: 'approvedBy', select: 'fullname' }
     ]
   };
 
   const leaveRequests = await LeaveRequest.paginate(filter, options);
+  
+  // Debug: Check if student is populated
+  console.log('=== Checking populated data ===');
+  if (leaveRequests.docs.length > 0) {
+    leaveRequests.docs.forEach((lr, index) => {
+      console.log(`Leave Request ${index + 1}:`);
+      console.log('  Student field:', lr.student);
+      console.log('  Student ID:', lr.student?._id);
+      console.log('  Student type:', typeof lr.student);
+    });
+  }
+  
   res.json(leaveRequests);
 });
 
