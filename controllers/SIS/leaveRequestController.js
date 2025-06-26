@@ -68,28 +68,11 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
     const queryEndDate = new Date(endDate);
     queryEndDate.setHours(23, 59, 59, 999); // End of day
     
-    console.log('Date filter params:', { startDate, endDate });
-    console.log('Query dates:', { queryStartDate, queryEndDate });
-    
-    // Simplified: Check if leave request overlaps with selected date
+    // Check if leave request overlaps with selected date
     filter.$and = [
       { startDate: { $lte: queryEndDate } },
       { endDate: { $gte: queryStartDate } }
     ];
-    
-    console.log('Filter object:', JSON.stringify(filter, null, 2));
-    
-    // Test: Try a simpler date comparison
-    console.log('=== Testing simpler date comparison ===');
-    const testFilter = {
-      $or: [
-        {
-          startDate: { $lte: new Date('2025-06-26T23:59:59.999Z') },
-          endDate: { $gte: new Date('2025-06-26T00:00:00.000Z') }
-        }
-      ]
-    };
-    console.log('Test filter:', JSON.stringify(testFilter, null, 2));
   }
 
   const options = {
@@ -104,18 +87,6 @@ exports.getLeaveRequests = asyncHandler(async (req, res) => {
   };
 
   const leaveRequests = await LeaveRequest.paginate(filter, options);
-  
-  // Debug: Check if student is populated
-  console.log('=== Checking populated data ===');
-  if (leaveRequests.docs.length > 0) {
-    leaveRequests.docs.forEach((lr, index) => {
-      console.log(`Leave Request ${index + 1}:`);
-      console.log('  Student field:', lr.student);
-      console.log('  Student ID:', lr.student?._id);
-      console.log('  Student type:', typeof lr.student);
-    });
-  }
-  
   res.json(leaveRequests);
 });
 
