@@ -183,12 +183,29 @@ exports.getClassById = async (req, res) => {
       return res.status(400).json({ message: "Invalid class ID" });
     }
 
-    const classInfo = await Class.findById(id)
+    // Kiểm tra query param để xác định level populate
+    const { populate } = req.query;
+    
+    let populateQuery = Class.findById(id)
       .populate('schoolYear')
       .populate('educationalSystem')
       .populate('curriculum')
       .populate('homeroomTeachers')
       .populate('students');
+
+    // Nếu có request populate gradeLevel.school
+    if (populate && populate.includes('gradeLevel.school')) {
+      populateQuery = populateQuery.populate({
+        path: 'gradeLevel',
+        populate: {
+          path: 'school'
+        }
+      });
+    } else {
+      populateQuery = populateQuery.populate('gradeLevel');
+    }
+
+    const classInfo = await populateQuery;
 
     if (!classInfo) {
       return res.status(404).json({ message: "Class not found" });
