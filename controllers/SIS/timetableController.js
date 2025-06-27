@@ -892,33 +892,14 @@ exports.importTimetable = async (req, res) => {
       let teachersFinal =
         Array.isArray(rec.teachers) ? rec.teachers.filter(Boolean) : [];
       if (teachersFinal.length === 0) {
-        // Tìm cả primary và secondary teachers cho môn học này
+        // Tìm TẤT CẢ giáo viên dạy môn học này cho lớp này
         const assigns = await Teacher.find({
           "teachingAssignments.class": classId,
           "teachingAssignments.subjects": rec.subject,
-        }).select("_id teachingAssignments");
+        }).select("_id");
         
-        // Ưu tiên primary teacher trước, sau đó secondary
-        const primaryTeachers = assigns.filter(teacher => 
-          teacher.teachingAssignments.some(ta => 
-            ta.class.toString() === classId.toString() && 
-            ta.subjects.includes(rec.subject) && 
-            ta.role === "primary"
-          )
-        );
-        
-        const secondaryTeachers = assigns.filter(teacher => 
-          teacher.teachingAssignments.some(ta => 
-            ta.class.toString() === classId.toString() && 
-            ta.subjects.includes(rec.subject) && 
-            ta.role === "secondary"
-          )
-        );
-        
-        teachersFinal = [
-          ...primaryTeachers.map(t => t._id.toString()),
-          ...secondaryTeachers.map(t => t._id.toString())
-        ].slice(0, 2);
+        // Lấy tối đa 2 giáo viên đầu tiên
+        teachersFinal = assigns.map(t => t._id.toString()).slice(0, 2);
       }
       rec.teachers = teachersFinal;          // bảo đảm luôn là mảng (≤2)
       if (!classId) {
