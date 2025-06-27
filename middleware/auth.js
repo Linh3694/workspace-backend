@@ -15,8 +15,17 @@ const authenticateToken = async (req, res, next) => {
     const secret = process.env.JWT_SECRET || "default_secret";
     const decoded = jwt.verify(token, secret);
 
+    // Support both token formats: 
+    // - Web app uses 'id' field
+    // - Parent portal uses 'userId' field
+    const userId = decoded.id || decoded.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Invalid token structure" });
+    }
+
     // Fetch user data from database
-    const user = await User.findById(decoded.id).select("fullname email role needProfileUpdate");
+    const user = await User.findById(userId).select("fullname email role needProfileUpdate");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
