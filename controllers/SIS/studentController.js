@@ -316,7 +316,16 @@ exports.removeFamilyFromStudent = asyncHandler(async (req, res) => {
 const getCurrentSchoolYear = async () => {
   const SchoolYear = require('../../models/SchoolYear');
   const currentYear = await SchoolYear.findOne({ isActive: true });
-  return currentYear ? currentYear._id : null;
+  console.log('DEBUG getCurrentSchoolYear: Found active year:', !!currentYear, currentYear?._id);
+  
+  // Fallback: nếu không có năm học active, lấy năm học mới nhất
+  if (!currentYear) {
+    const latestYear = await SchoolYear.findOne().sort({ createdAt: -1 });
+    console.log('DEBUG getCurrentSchoolYear: Fallback to latest year:', !!latestYear, latestYear?._id);
+    return latestYear ? latestYear._id : null;
+  }
+  
+  return currentYear._id;
 };
 
 // Search students by query (studentCode or name)
@@ -471,15 +480,19 @@ exports.getAllStudentPhotos = asyncHandler(async (req, res) => {
 // Lấy ảnh hiện tại của học sinh (năm học hiện tại hoặc mới nhất)
 exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  console.log('req.params.studentId:', id);
+  
   try {
     // Kiểm tra student có tồn tại không
     const student = await Student.findById(id);
+    console.log('Student found:', !!student);
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
     
     // Lấy năm học hiện tại
     const currentSchoolYear = await getCurrentSchoolYear();
+    console.log('Current school year:', currentSchoolYear);
     
     let photo = null;
 
@@ -489,7 +502,8 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
         student: id,
         schoolYear: currentSchoolYear
       }).populate('schoolYear', 'code');
-          }
+      console.log('Photo for current year:', !!photo);
+    }
 
     // Fallback: Nếu không có ảnh năm hiện tại, lấy ảnh mới nhất từ Photo model
     if (!photo) {
@@ -497,10 +511,16 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
         student: id
       }).populate('schoolYear', 'code')
         .sort({ createdAt: -1 });
-            }
+      console.log('Latest photo found:', !!photo);
+    }
+
+    // Debug: Count total photos for this student
+    const photoCount = await Photo.countDocuments({ student: id });
+    console.log('Total photos for student:', photoCount);
 
     // Fallback cuối cùng: Nếu không có ảnh trong Photo model, dùng Student.avatarUrl
     if (!photo && student.avatarUrl) {
+      console.log('Using Student.avatarUrl:', student.avatarUrl);
       return res.json({
         photoUrl: student.avatarUrl,
         description: 'Avatar từ Student model',
@@ -511,9 +531,13 @@ exports.getCurrentStudentPhoto = asyncHandler(async (req, res) => {
         }
       });
     }
+    
     if (!photo) {
+      console.log('No photo found, returning 404');
       return res.status(404).json({ message: 'Không tìm thấy ảnh học sinh' });
     }
+    
+    console.log('Returning photo:', photo.photoUrl);
     res.json(photo);
   } catch (error) {
     console.error('DEBUG: Error getting current student photo:', error);
