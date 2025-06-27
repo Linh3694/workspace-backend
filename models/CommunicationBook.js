@@ -4,7 +4,7 @@ const Schema = mongoose.Schema;
 // CommunicationBook Model
 const CommunicationBookSchema = new Schema({
   student: { type: Schema.Types.ObjectId, ref: "Student", required: true },
-  teacher: { type: Schema.Types.ObjectId, ref: "Teacher", required: true },
+  teacher: { type: Schema.Types.ObjectId, ref: "Teacher", required: false }, // Cho phép null để admin/superadmin có thể tạo
   date: { type: Date, required: true },
   ratings: {
     study: { type: String, enum: ['A', 'B', 'C'], required: true },

@@ -43,9 +43,12 @@ exports.getCommunicationBookById = asyncHandler(async (req, res) => {
 exports.createCommunicationBook = asyncHandler(async (req, res) => {
     // Lấy thông tin người dùng hiện tại từ req.user (giả sử middleware xác thực đã thêm)
     const teacherId = req.user?.teacherId || req.body.teacher;
+    
+    // Lấy role của user từ req.user hoặc req.body
+    const userRole = req.user?.role || req.body.userRole;
 
-    // Đảm bảo có teacherId, nếu không thì trả về lỗi
-    if (!teacherId) {
+    // Chỉ yêu cầu teacherId bắt buộc nếu không phải admin/superadmin
+    if (!teacherId && userRole !== 'admin' && userRole !== 'superadmin') {
         return res.status(400).json({ message: 'Cần cung cấp ID giáo viên' });
     }
 
@@ -68,7 +71,7 @@ exports.createCommunicationBook = asyncHandler(async (req, res) => {
     const communicationBook = new CommunicationBook({
         ...rest,
         ratings,
-        teacher: teacherId,
+        teacher: teacherId || null, // Cho phép null nếu là admin/superadmin
         date: providedDate
     });
 
