@@ -273,6 +273,17 @@ exports.removeStudentFromFamily = asyncHandler(async (req, res) => {
         await student.save();
     }
 
+    // 4. Xóa student khỏi students của từng parent trong family
+    if (family && family.parents) {
+        for (const parentObj of family.parents) {
+            const parent = await Parent.findById(parentObj.parent);
+            if (parent) {
+                parent.students = parent.students.filter(s => s.toString() !== studentId);
+                await parent.save();
+            }
+        }
+    }
+
     res.json({ message: 'Đã xoá học sinh khỏi gia đình', family });
 });
 

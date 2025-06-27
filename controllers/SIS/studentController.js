@@ -303,6 +303,17 @@ exports.removeFamilyFromStudent = asyncHandler(async (req, res) => {
   if (family) {
     family.students = family.students.filter(s => s.toString() !== id);
     await family.save();
+
+    // 4. Xóa student khỏi students của từng parent trong family
+    if (family.parents) {
+      for (const parentObj of family.parents) {
+        const parent = await Parent.findById(parentObj.parent);
+        if (parent) {
+          parent.students = parent.students.filter(s => s.toString() !== id);
+          await parent.save();
+        }
+      }
+    }
   }
 
   // 3. Xoá liên kết ở phía Student

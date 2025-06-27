@@ -21,22 +21,37 @@ async function syncTimetableAfterAssignment({
 
     try {
         if (action === "add") {
-            // Thêm teacher vào timetable slots có ít hơn 2 teachers và chưa có teacher này
-            const updateResult = await Timetable.updateMany(
-                {
-                    class: classId,
-                    subject: { $in: subjectIds },
-                    teachers: { $ne: teacherId }, // Chưa có teacher này
-                    $expr: { $lt: [{ $size: { $ifNull: ["$teachers", []] } }, 2] } // Có ít hơn 2 teachers
-                },
-                {
-                    $addToSet: { teachers: teacherId },
-                    status: "ready",
-                    updatedAt: new Date(),
-                }
-            );
+            // Tìm tất cả timetable slots cho class + subjects
+            const existingSlots = await Timetable.find({
+                class: classId,
+                subject: { $in: subjectIds }
+            });
             
-            console.log(`🔄 Sync timetable ADD: Updated ${updateResult.modifiedCount} slots for teacher ${teacherId}`);
+            console.log(`🔍 Found ${existingSlots.length} existing timetable slots for class ${classId}`);
+            
+            // Lọc slots có thể thêm teacher (chưa có teacher này và chưa đầy 2 teachers)
+            const slotsToUpdate = existingSlots.filter(slot => {
+                const teachers = slot.teachers || [];
+                const hasTeacher = teachers.some(t => t.toString() === teacherId.toString());
+                const canAdd = !hasTeacher && teachers.length < 2;
+                return canAdd;
+            });
+            
+            console.log(`🔍 Can add teacher to ${slotsToUpdate.length} slots`);
+            
+            if (slotsToUpdate.length > 0) {
+                const slotIds = slotsToUpdate.map(s => s._id);
+                const updateResult = await Timetable.updateMany(
+                    { _id: { $in: slotIds } },
+                    {
+                        $addToSet: { teachers: teacherId },
+                        status: "ready",
+                        updatedAt: new Date(),
+                    }
+                );
+                
+                console.log(`🔄 Sync timetable ADD: Updated ${updateResult.modifiedCount} slots for teacher ${teacherId}`);
+            }
         } else if (action === "remove") {
             const removeResult = await Timetable.updateMany(
                 { class: classId, subject: { $in: subjectIds } },
