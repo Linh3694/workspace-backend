@@ -63,7 +63,7 @@ exports.createTimetable = async (req, res) => {
   try {
     const { schoolYear, class: classId, subject, teachers = [], room, timeSlot } = req.body;
 
-    if (!schoolYear || !classId || !subject || !teacher || !room || !timeSlot) {
+    if (!schoolYear || !classId || !subject || !room || !timeSlot) {
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
     }
     if (!Array.isArray(teachers) || teachers.length === 0) {
@@ -382,7 +382,11 @@ exports.getTimetableByClass = async (req, res) => {
         subject: timetable[0].subject?.name,
         dayOfWeek: timetable[0].timeSlot?.dayOfWeek,
         startTime: timetable[0].timeSlot?.startTime,
-        teachers: timetable[0].teachers?.map(t => t.fullname || t.user?.fullname)
+        teachers: timetable[0].teachers?.map(t => ({
+          fullname: t.fullname || t.user?.fullname,
+          avatarUrl: t.avatarUrl,
+          userAvatarUrl: t.user?.avatarUrl
+        }))
       });
     }
 
@@ -888,11 +892,33 @@ exports.importTimetable = async (req, res) => {
       let teachersFinal =
         Array.isArray(rec.teachers) ? rec.teachers.filter(Boolean) : [];
       if (teachersFinal.length === 0) {
+        // Tìm cả primary và secondary teachers cho môn học này
         const assigns = await Teacher.find({
           "teachingAssignments.class": classId,
           "teachingAssignments.subjects": rec.subject,
-        }).select("_id");
-        teachersFinal = assigns.map((a) => a._id.toString()).slice(0, 2);
+        }).select("_id teachingAssignments");
+        
+        // Ưu tiên primary teacher trước, sau đó secondary
+        const primaryTeachers = assigns.filter(teacher => 
+          teacher.teachingAssignments.some(ta => 
+            ta.class.toString() === classId.toString() && 
+            ta.subjects.includes(rec.subject) && 
+            ta.role === "primary"
+          )
+        );
+        
+        const secondaryTeachers = assigns.filter(teacher => 
+          teacher.teachingAssignments.some(ta => 
+            ta.class.toString() === classId.toString() && 
+            ta.subjects.includes(rec.subject) && 
+            ta.role === "secondary"
+          )
+        );
+        
+        teachersFinal = [
+          ...primaryTeachers.map(t => t._id.toString()),
+          ...secondaryTeachers.map(t => t._id.toString())
+        ].slice(0, 2);
       }
       rec.teachers = teachersFinal;          // bảo đảm luôn là mảng (≤2)
       if (!classId) {

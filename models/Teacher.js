@@ -18,6 +18,7 @@ const TeacherSchema = new Schema({
     {
       class: { type: Schema.Types.ObjectId, ref: "Class", required: true },
       subjects: [{ type: Schema.Types.ObjectId, ref: "Subject", required: true }],
+      role: { type: String, enum: ["primary", "secondary"], default: "primary" }, // primary = giáo viên chính, secondary = giáo viên phụ
     },
   ],
   createdAt: { type: Date, default: Date.now },
