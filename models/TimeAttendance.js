@@ -97,16 +97,7 @@ timeAttendanceSchema.methods.updateAttendanceTime = function (timestamp, deviceI
         const timeDiff = Math.abs(new Date(item.timestamp).getTime() - checkTime.getTime());
         const sameDevice = item.deviceId === deviceIdToUse;
 
-        // Log để debug
-        if (timeDiff < 10000) { // Trong vòng 10 giây
-            console.log(`🔍 Potential duplicate check:`, {
-                existing: item.timestamp,
-                new: checkTime.toISOString(),
-                timeDiff: `${timeDiff}ms`,
-                sameDevice,
-                willSkip: timeDiff < 10000 && sameDevice
-            });
-        }
+        // Duplicate check logic without logging
 
         return timeDiff < 10000 && sameDevice; // Nghiêm ngặt: 10 giây thay vì 1 phút
     });
@@ -121,11 +112,6 @@ timeAttendanceSchema.methods.updateAttendanceTime = function (timestamp, deviceI
 
         // Tăng số lần chấm công
         this.totalCheckIns += 1;
-
-        console.log(`✅ Added new attendance record: ${this.employeeCode} at ${checkTime.toISOString()} from device ${deviceIdToUse}`);
-    } else {
-        console.log(`⚠️ SKIPPED duplicate attendance: ${this.employeeCode} at ${checkTime.toISOString()} from device ${deviceIdToUse}`);
-        console.log(`   → Already exists: ${existingRawData.timestamp}`);
     }
 
     // Cleanup rawData cũ hơn 7 ngày
@@ -134,13 +120,11 @@ timeAttendanceSchema.methods.updateAttendanceTime = function (timestamp, deviceI
     // Cập nhật check-in time (lần đầu tiên trong ngày)
     if (!this.checkInTime || checkTime < this.checkInTime) {
         this.checkInTime = checkTime;
-        console.log(`🕐 Updated check-in time: ${checkTime.toISOString()}`);
     }
 
     // Cập nhật check-out time (lần cuối cùng trong ngày)
     if (!this.checkOutTime || checkTime > this.checkOutTime) {
         this.checkOutTime = checkTime;
-        console.log(`🕐 Updated check-out time: ${checkTime.toISOString()}`);
     }
 
     return this;
@@ -157,9 +141,6 @@ timeAttendanceSchema.methods.cleanupOldRawData = function () {
     );
 
     const cleanedCount = originalCount - this.rawData.length;
-    if (cleanedCount > 0) {
-        console.log(`🧹 Cleaned up ${cleanedCount} old rawData records for ${this.employeeCode}`);
-    }
 
     return this;
 };
@@ -182,8 +163,6 @@ timeAttendanceSchema.methods.removeDuplicateRawData = function () {
         if (!uniqueMap.has(key)) {
             uniqueMap.set(key, true);
             uniqueRawData.push(item);
-        } else {
-            console.log(`🗑️ Removing duplicate: ${item.timestamp} from device ${deviceId}`);
         }
     });
 
@@ -195,9 +174,6 @@ timeAttendanceSchema.methods.removeDuplicateRawData = function () {
 
     const removedCount = originalCount - this.rawData.length;
     if (removedCount > 0) {
-        console.log(`🧹 Removed ${removedCount} duplicate rawData records for ${this.employeeCode}`);
-        console.log(`📊 Updated totalCheckIns: ${oldTotalCheckIns} → ${this.totalCheckIns}`);
-
         // Recalculate check-in and check-out times based on remaining data
         this.recalculateCheckTimes();
     }
@@ -210,7 +186,6 @@ timeAttendanceSchema.methods.recalculateCheckTimes = function () {
     if (this.rawData.length === 0) {
         this.checkInTime = null;
         this.checkOutTime = null;
-        console.log(`❌ No rawData left, cleared check times for ${this.employeeCode}`);
         return this;
     }
 
@@ -224,10 +199,6 @@ timeAttendanceSchema.methods.recalculateCheckTimes = function () {
 
     this.checkInTime = new Date(sortedRawData[0].timestamp);
     this.checkOutTime = new Date(sortedRawData[sortedRawData.length - 1].timestamp);
-
-    console.log(`🔄 Recalculated check times for ${this.employeeCode}:`);
-    console.log(`   Check-in: ${oldCheckIn?.toISOString()} → ${this.checkInTime.toISOString()}`);
-    console.log(`   Check-out: ${oldCheckOut?.toISOString()} → ${this.checkOutTime.toISOString()}`);
 
     return this;
 };
@@ -281,7 +252,6 @@ timeAttendanceSchema.statics.parseAttendanceTimestamp = function (dateTimeString
             // Chuyển về UTC bằng cách trừ 7 tiếng
             const vnTime = new Date(dateTimeString);
             timestamp = new Date(vnTime.getTime() - (7 * 60 * 60 * 1000));
-            console.log(`📅 Converted VN time ${dateTimeString} to UTC: ${timestamp.toISOString()}`);
         } else {
             // Đã có timezone info -> parse trực tiếp
             timestamp = new Date(dateTimeString);
@@ -328,7 +298,6 @@ timeAttendanceSchema.statics.cleanupAllOldRawData = async function () {
             }
         );
 
-        console.log(`🧹 Bulk cleanup completed: ${result.modifiedCount} records cleaned`);
         return result;
     } catch (error) {
         console.error('Error during bulk rawData cleanup:', error);
@@ -339,8 +308,6 @@ timeAttendanceSchema.statics.cleanupAllOldRawData = async function () {
 // Static method để cleanup duplicates cho tất cả records
 timeAttendanceSchema.statics.cleanupAllDuplicateRawData = async function () {
     try {
-        console.log('🧹 Starting bulk duplicate cleanup...');
-
         // Lấy tất cả records có rawData
         const records = await this.find({
             rawData: { $exists: true, $ne: [] }
@@ -364,7 +331,7 @@ timeAttendanceSchema.statics.cleanupAllDuplicateRawData = async function () {
                 totalRecordsModified++;
                 totalDuplicatesRemoved += duplicatesRemoved;
 
-                console.log(`✅ ${record.employeeCode} (${record.date.toISOString().split('T')[0]}): ${originalCount} → ${newCount} (-${duplicatesRemoved})`);
+
             }
 
             totalProcessed++;
@@ -376,7 +343,6 @@ timeAttendanceSchema.statics.cleanupAllDuplicateRawData = async function () {
             totalDuplicatesRemoved
         };
 
-        console.log('🎯 Bulk duplicate cleanup summary:', summary);
         return summary;
 
     } catch (error) {

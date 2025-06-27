@@ -105,7 +105,6 @@ exports.fetchEmailsAndCreateTickets = async (req, res) => {
       .get();
     // Nếu không có email mới, trả về ngay
         if (!messages.value || messages.value.length === 0) {
-        console.log("Không có email mới.");
         return;
         }
     console.log(`Tìm thấy ${messages.value.length} email chưa đọc`);
@@ -188,9 +187,7 @@ exports.fetchEmailsAndCreateTickets = async (req, res) => {
 // C) Hàm chạy định kỳ (dùng với cron job nếu cần)
 exports.runEmailSync = async () => {
   try {
-    console.log("Bắt đầu đồng bộ email...");
     await exports.fetchEmailsAndCreateTickets({}); // Gọi hàm fetch mà không cần req/res
-    console.log("Đồng bộ email hoàn tất.");
   } catch (error) {
     console.error("Lỗi đồng bộ email:", error);
   }
