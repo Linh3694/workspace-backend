@@ -359,6 +359,7 @@ exports.deleteTimetable = async (req, res) => {
 exports.getTimetableByClass = async (req, res) => {
   try {
     const { classId } = req.params;
+    console.log('🔍 getTimetableByClass called with classId:', classId);
 
     if (!mongoose.Types.ObjectId.isValid(classId)) {
       return res.status(400).json({ message: "ID lớp không hợp lệ" });
@@ -375,6 +376,16 @@ exports.getTimetableByClass = async (req, res) => {
       .populate("room", "name")
       .sort({ "timeSlot.dayOfWeek": 1, "timeSlot.startTime": 1 });
 
+    console.log('📅 Raw timetable found:', timetable.length, 'entries');
+    if (timetable.length > 0) {
+      console.log('📅 Sample timetable entry:', {
+        subject: timetable[0].subject?.name,
+        dayOfWeek: timetable[0].timeSlot?.dayOfWeek,
+        startTime: timetable[0].timeSlot?.startTime,
+        teachers: timetable[0].teachers?.map(t => t.fullname || t.user?.fullname)
+      });
+    }
+
     // Transform data for parent-portal compatibility
     const transformedTimetable = timetable.map(item => ({
       ...item.toObject(),
@@ -386,8 +397,10 @@ exports.getTimetableByClass = async (req, res) => {
       }))
     }));
 
+    console.log('📅 Returning transformed timetable:', transformedTimetable.length, 'entries');
     return res.json(transformedTimetable);
   } catch (err) {
+    console.error('❌ Error in getTimetableByClass:', err);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -971,16 +984,28 @@ exports.getPeriodDefinitions = async (req, res) => {
   try {
     const { schoolYearId } = req.params;
     const { schoolId } = req.query;
+    console.log('⏰ getPeriodDefinitions called with:', { schoolYearId, schoolId });
     
     const filter = { schoolYear: schoolYearId };
     if (schoolId) {
       filter.school = schoolId;
     }
+    console.log('⏰ Period filter:', filter);
     
     const periods = await PeriodDefinition.find(filter).sort({ periodNumber: 1 });
+    console.log('⏰ Found periods:', periods.length);
+    if (periods.length > 0) {
+      console.log('⏰ Sample period:', {
+        periodNumber: periods[0].periodNumber,
+        startTime: periods[0].startTime,
+        endTime: periods[0].endTime,
+        school: periods[0].school
+      });
+    }
+    
     return res.json({ data: periods });
   } catch (err) {
-    console.error("Error fetching period definitions:", err);
+    console.error("❌ Error fetching period definitions:", err);
     return res.status(500).json({ error: err.message });
   }
 };
