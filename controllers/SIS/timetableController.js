@@ -898,8 +898,12 @@ exports.importTimetable = async (req, res) => {
           "teachingAssignments.subjects": rec.subject,
         }).select("_id fullname");
         
-        console.log(`🔍 Found ${assigns.length} teachers for class ${rec.classCode}, subject ${rec.subject}:`, 
-          assigns.map(t => t.fullname));
+        console.log(`🔍 Searching teachers for:`, {
+          classCode: rec.classCode,
+          classId: classId,
+          subjectId: rec.subject
+        });
+        console.log(`🔍 Found ${assigns.length} teachers:`, assigns.map(t => t.fullname));
         
         // Lấy tối đa 2 giáo viên đầu tiên
         teachersFinal = assigns.map(t => t._id.toString()).slice(0, 2);

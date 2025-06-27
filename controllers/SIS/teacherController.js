@@ -156,9 +156,16 @@ exports.updateTeacher = async (req, res) => {
         class: sa.classId,
         subjects: sa.subjectIds,
       }));
-      // Cập nhật mảng subjects gộp để cột “Môn học phụ trách” vẫn đúng
+      // Cập nhật mảng subjects gộp để cột "Môn học phụ trách" vẫn đúng
       const flatIds = [...new Set(subjectAssignments.flatMap(sa => sa.subjectIds))];
       updateData.subjects = flatIds;
+      
+      // Debug log
+      console.log('📝 Updating teaching assignments:', {
+        teacherId: id,
+        teacherName: teacher.fullname,
+        assignments: updateData.teachingAssignments
+      });
     }
 
     // Handle subject assignments

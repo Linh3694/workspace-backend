@@ -21,11 +21,13 @@ async function syncTimetableAfterAssignment({
 
     try {
         if (action === "add") {
-            await Timetable.updateMany(
+            // Thêm teacher vào timetable slots có ít hơn 2 teachers và chưa có teacher này
+            const updateResult = await Timetable.updateMany(
                 {
                     class: classId,
                     subject: { $in: subjectIds },
-                    $or: [{ teachers: { $exists: false } }, { teachers: { $size: 0 } }],
+                    teachers: { $ne: teacherId }, // Chưa có teacher này
+                    $expr: { $lt: [{ $size: { $ifNull: ["$teachers", []] } }, 2] } // Có ít hơn 2 teachers
                 },
                 {
                     $addToSet: { teachers: teacherId },
@@ -33,17 +35,21 @@ async function syncTimetableAfterAssignment({
                     updatedAt: new Date(),
                 }
             );
+            
+            console.log(`🔄 Sync timetable ADD: Updated ${updateResult.modifiedCount} slots for teacher ${teacherId}`);
         } else if (action === "remove") {
-            await Timetable.updateMany(
+            const removeResult = await Timetable.updateMany(
                 { class: classId, subject: { $in: subjectIds } },
                 { $pull: { teachers: teacherId }, updatedAt: new Date() }
             );
 
             // any slot now lacking teachers → back to draft
-            await Timetable.updateMany(
+            const draftResult = await Timetable.updateMany(
                 { class: classId, subject: { $in: subjectIds }, teachers: { $size: 0 } },
                 { status: "draft" }
             );
+            
+            console.log(`🔄 Sync timetable REMOVE: Removed teacher from ${removeResult.modifiedCount} slots, ${draftResult.modifiedCount} slots back to draft`);
         }
     } catch (err) {
         console.error("Timetable sync error:", err.message);
