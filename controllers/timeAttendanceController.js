@@ -225,7 +225,6 @@ exports.getEmployeeAttendance = async (req, res) => {
                 $lt: nextDay
             };
             
-            console.log(`Querying attendance for date: ${date}, filter:`, filter.date);
         } else if (startDate && endDate) {
             filter.date = {
                 $gte: new Date(startDate),
@@ -414,7 +413,6 @@ exports.syncWithUsers = async (req, res) => {
 // Cleanup rawData cũ hơn 7 ngày
 exports.cleanupOldRawData = async (req, res) => {
     try {
-        console.log("🧹 Bắt đầu cleanup rawData cũ...");
 
         const result = await TimeAttendance.cleanupAllOldRawData();
 
@@ -438,14 +436,12 @@ exports.cleanupOldRawData = async (req, res) => {
 // Cleanup duplicate rawData records
 exports.cleanupDuplicateRawData = async (req, res) => {
     try {
-        console.log("🧹 Bắt đầu cleanup duplicate rawData...");
 
         const { employeeCode, date } = req.query;
 
         let result;
         if (employeeCode && date) {
             // Cleanup specific record
-            console.log(`🎯 Targeting specific record: ${employeeCode} on ${date}`);
 
             const record = await TimeAttendance.findOne({
                 employeeCode,
@@ -462,8 +458,6 @@ exports.cleanupDuplicateRawData = async (req, res) => {
                     totalRecordsModified: originalCount !== record.rawData.length ? 1 : 0,
                     totalDuplicatesRemoved: originalCount - record.rawData.length
                 };
-
-                console.log(`✅ Specific cleanup: ${originalCount} → ${record.rawData.length}`);
             } else {
                 result = { totalProcessed: 0, totalRecordsModified: 0, totalDuplicatesRemoved: 0 };
             }
