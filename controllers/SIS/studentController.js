@@ -50,8 +50,11 @@ exports.createStudent = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Dữ liệu data không phải JSON hợp lệ' });
   }
 
+  // Loại bỏ field parents khỏi studentData vì sẽ được xử lý riêng
+  const { parents: parentsData, ...studentDataWithoutParents } = studentData;
+
   // Tạo student trước (không lưu avatarUrl vào Student)
-  const student = new Student(studentData);
+  const student = new Student(studentDataWithoutParents);
   const newStudent = await student.save();
 
   // Xử lý avatar - Lưu vào Photo model nếu có
@@ -90,9 +93,9 @@ exports.createStudent = asyncHandler(async (req, res) => {
     }
   }
 
-  // Nếu không có parentIds, lấy từ studentData.parents (nếu đã là ObjectId)
-  if (parentIds.length === 0 && Array.isArray(studentData.parents)) {
-    parentIds = studentData.parents.filter(p => typeof p === 'string' || typeof p === 'object' && p._id).map(p => typeof p === 'string' ? p : p._id);
+  // Nếu không có parentIds, lấy từ parentsData (nếu đã là ObjectId)
+  if (parentIds.length === 0 && Array.isArray(parentsData)) {
+    parentIds = parentsData.filter(p => typeof p === 'string' || (typeof p === 'object' && p._id)).map(p => typeof p === 'string' ? p : p._id);
   }
 
   if (parentIds.length > 0) {
@@ -147,6 +150,9 @@ exports.updateStudent = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Dữ liệu data không phải JSON hợp lệ' });
   }
 
+  // Loại bỏ field parents khỏi studentData vì sẽ được xử lý riêng
+  const { parents: parentsData, ...studentDataWithoutParents } = studentData;
+
   // Xử lý avatar mới (lưu vào Photo model)
   if (req.file && req.body.schoolYear) {
     // Kiểm tra xem đã có photo cho student trong năm học này chưa
@@ -198,11 +204,11 @@ exports.updateStudent = asyncHandler(async (req, res) => {
   }
 
   // Nếu không có parentIds mới, giữ lại các parent cũ (nếu có)
-  if (parentIds.length === 0 && Array.isArray(studentData.parents)) {
-    parentIds = studentData.parents.filter(p => typeof p === 'string' || (typeof p === 'object' && p._id)).map(p => typeof p === 'string' ? p : p._id);
+  if (parentIds.length === 0 && Array.isArray(parentsData)) {
+    parentIds = parentsData.filter(p => typeof p === 'string' || (typeof p === 'object' && p._id)).map(p => typeof p === 'string' ? p : p._id);
   }
 
-  studentData.parents = parentIds;
+  studentDataWithoutParents.parents = parentIds;
 
   // Lấy thông tin student hiện tại
   const currentStudent = await Student.findById(req.params.id);
@@ -211,7 +217,7 @@ exports.updateStudent = asyncHandler(async (req, res) => {
   }
 
   // Xử lý Family
-  let familyId = studentData.family;
+  let familyId = studentDataWithoutParents.family;
   if (familyId) {
     // Nếu có familyId mới
     if (currentStudent.family && currentStudent.family.toString() !== familyId) {
@@ -232,14 +238,14 @@ exports.updateStudent = asyncHandler(async (req, res) => {
     }
 
     // Thêm student vào family mới
-    const newFamily = await Family.findById(familyId);
-    if (newFamily) {
-      if (!newFamily.students.includes(req.params.id)) {
-        newFamily.students.push(req.params.id);
-        await newFamily.save();
+    const family = await Family.findById(familyId);
+    if (family) {
+      if (!family.students.includes(req.params.id)) {
+        family.students.push(req.params.id);
+        await family.save();
       }
-      // Thêm student vào students của từng parent trong family mới
-      for (const parentObj of newFamily.parents) {
+      // Thêm student vào students của từng parent trong family
+      for (const parentObj of family.parents) {
         const parent = await Parent.findById(parentObj.parent);
         if (parent && !parent.students.includes(req.params.id)) {
           parent.students.push(req.params.id);
@@ -249,7 +255,7 @@ exports.updateStudent = asyncHandler(async (req, res) => {
     }
   } else if (parentIds.length > 0) {
     // Nếu không có familyId nhưng có parents, tạo family mới
-    const family = new Family({
+    const newFamily = new Family({
       familyCode: `FAM${Date.now()}`,
       parents: parentIds.map(parentId => ({
         parent: parentId,
@@ -257,9 +263,9 @@ exports.updateStudent = asyncHandler(async (req, res) => {
       })),
       students: [req.params.id]
     });
-    const newFamily = await family.save();
-    familyId = newFamily._id;
-    studentData.family = familyId;
+    const savedFamily = await newFamily.save();
+    familyId = savedFamily._id;
+    studentDataWithoutParents.family = familyId;
 
     // Xóa student khỏi family cũ nếu có
     if (currentStudent.family) {
@@ -280,7 +286,7 @@ exports.updateStudent = asyncHandler(async (req, res) => {
   }
 
   // Cập nhật student
-  const student = await Student.findByIdAndUpdate(req.params.id, studentData, { new: true });
+  const student = await Student.findByIdAndUpdate(req.params.id, studentDataWithoutParents, { new: true });
   res.json(student);
 });
 
