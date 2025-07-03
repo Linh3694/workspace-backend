@@ -4,7 +4,7 @@ const Schema = mongoose.Schema;
 // Room Model
 const RoomSchema = new Schema({
   name: { type: String, required: true, unique: true },
-  type: { type: String, enum: ["classroom", "lab", "library", "other"], required: true },
+  type: { type: String, enum: ["classroom", "lab", "library", "other", "office"], required: true },
   capacity: { type: Number },
   periodsPerDay: { type: Number, default: 10 },
   isHomeroom: { type: Boolean, default: false },

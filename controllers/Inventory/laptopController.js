@@ -16,6 +16,8 @@ exports.getLaptops = async (req, res) => {
     
     // Get search and filter parameters
     const { search, status, manufacturer, type, releaseYear } = req.query;
+    
+    console.log('🔍 [Laptop] Filters received:', { search, status, manufacturer, type, releaseYear });
 
     // Only use cache if no filters are applied
     const hasFilters = search || status || manufacturer || type || releaseYear;
@@ -74,8 +76,13 @@ exports.getLaptops = async (req, res) => {
       query.releaseYear = parseInt(releaseYear);
     }
     
+    console.log('📋 [Laptop] Built query:', query);
+    console.log('🎯 [Laptop] hasFilters:', hasFilters);
+    
     // Đếm tổng số documents với filter
     const totalItems = await Laptop.countDocuments(query);
+    
+    console.log('📊 [Laptop] Count result:', totalItems);
     
     // Lấy data với pagination và filter
     const laptops = await Laptop.find(query)
