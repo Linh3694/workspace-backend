@@ -599,6 +599,8 @@ exports.getHandoverReport = async (req, res) => {
   res.sendFile(filePath);
 };
 
+
+
 // Get filter options for monitors
 exports.getMonitorFilterOptions = async (req, res) => {
   try {

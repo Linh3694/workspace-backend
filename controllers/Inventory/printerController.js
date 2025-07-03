@@ -607,6 +607,8 @@ exports.getHandoverReport = async (req, res) => {
   res.sendFile(filePath);
 };
 
+
+
 // Get filter options for printers
 exports.getPrinterFilterOptions = async (req, res) => {
   try {

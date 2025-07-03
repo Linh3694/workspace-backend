@@ -906,6 +906,8 @@ exports.fixOldData = async (req, res) => {
   }
 };
 
+
+
 // Get filter options for laptops
 exports.getLaptopFilterOptions = async (req, res) => {
   try {
