@@ -16,21 +16,26 @@ exports.getPrinters = async (req, res) => {
     // Get search and filter parameters
     const { search, status, manufacturer, type, releaseYear } = req.query;
 
-    // Kiểm tra cache trước
-    const cachedData = await redisService.getDevicePage('printer', page, limit);
-    if (cachedData) {
-      console.log(`[Cache] Returning cached printers page ${page}`);
-      return res.status(200).json({
-        populatedPrinters: cachedData.devices,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(cachedData.total / limit),
-          totalItems: cachedData.total,
-          itemsPerPage: limit,
-          hasNext: page < Math.ceil(cachedData.total / limit),
-          hasPrev: page > 1
-        }
-      });
+    // Only use cache if no filters are applied
+    const hasFilters = search || status || manufacturer || type || releaseYear;
+    
+    if (!hasFilters) {
+      // Kiểm tra cache trước
+      const cachedData = await redisService.getDevicePage('printer', page, limit);
+      if (cachedData) {
+        console.log(`[Cache] Returning cached printers page ${page}`);
+        return res.status(200).json({
+          populatedPrinters: cachedData.devices,
+          pagination: {
+            currentPage: page,
+            totalPages: Math.ceil(cachedData.total / limit),
+            totalItems: cachedData.total,
+            itemsPerPage: limit,
+            hasNext: page < Math.ceil(cachedData.total / limit),
+            hasPrev: page > 1
+          }
+        });
+      }
     }
 
     // Nếu không có cache, fetch từ DB
@@ -97,8 +102,10 @@ exports.getPrinters = async (req, res) => {
         : { name: "Không xác định", location: ["Không xác định"] },
     }));
 
-    // Lưu vào cache (5 phút)
-    await redisService.setDevicePage('printer', page, limit, populatedPrinters, totalItems, 300);
+    // Lưu vào cache (5 phút) chỉ khi không có filter
+    if (!hasFilters) {
+      await redisService.setDevicePage('printer', page, limit, populatedPrinters, totalItems, 300);
+    }
 
     const totalPages = Math.ceil(totalItems / limit);
 
