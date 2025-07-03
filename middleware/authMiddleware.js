@@ -23,7 +23,7 @@ const authMiddleware = async (req, res, next) => {
     });
 
     // Tìm user trong DB
-    const user = await User.findById(decoded.id).select("fullname email role needProfileUpdate");
+    const user = await User.findById(decoded.id).select("fullname email role needProfileUpdate jobTitle department employeeCode");
     if (!user) {
       console.error('❌ [AuthMiddleware] User not found with ID:', decoded.id);
       return res.status(404).json({ message: "User not found" });
@@ -36,6 +36,9 @@ const authMiddleware = async (req, res, next) => {
       email: user.email,
       role: user.role,
       needProfileUpdate: user.needProfileUpdate,
+      jobTitle: user.jobTitle,
+      department: user.department,
+      employeeCode: user.employeeCode,
     };
     next();
   } catch (error) {

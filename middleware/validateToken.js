@@ -23,7 +23,7 @@ const validateToken = async (req, res, next) => {
 
     // Fetch user data from database for consistency
     try {
-      const user = await User.findById(decoded.id).select("fullname email role needProfileUpdate");
+      const user = await User.findById(decoded.id).select("fullname email role needProfileUpdate jobTitle department employeeCode");
       if (!user) {
         console.error('❌ [ValidateToken] User not found with ID:', decoded.id);
         return res.status(404).json({ message: "User not found" });
@@ -35,6 +35,9 @@ const validateToken = async (req, res, next) => {
         email: user.email,
         role: user.role,
         needProfileUpdate: user.needProfileUpdate,
+        jobTitle: user.jobTitle,
+        department: user.department,
+        employeeCode: user.employeeCode,
       };
       
       console.log("✅ [ValidateToken] User validated:", {

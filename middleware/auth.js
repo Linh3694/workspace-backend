@@ -25,7 +25,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     // Fetch user data from database
-    const user = await User.findById(userId).select("fullname email role needProfileUpdate");
+    const user = await User.findById(userId).select("fullname email role needProfileUpdate jobTitle department employeeCode");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -36,6 +36,9 @@ const authenticateToken = async (req, res, next) => {
       email: user.email,
       role: user.role,
       needProfileUpdate: user.needProfileUpdate,
+      jobTitle: user.jobTitle,
+      department: user.department,
+      employeeCode: user.employeeCode,
     };
     
     next();
