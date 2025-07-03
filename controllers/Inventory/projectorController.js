@@ -14,6 +14,9 @@ exports.getProjectors = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
+    
+    // Get search and filter parameters
+    const { search, status, manufacturer, type, releaseYear } = req.query;
 
     // Kiểm tra cache trước
     const cachedData = await redisService.getDevicePage('projector', page, limit);
@@ -35,11 +38,43 @@ exports.getProjectors = async (req, res) => {
     // Nếu không có cache, fetch từ DB
     console.log(`[DB] Fetching projectors page ${page} from database`);
     
-    // Đếm tổng số documents
-    const totalItems = await Projector.countDocuments();
+    // Build filter query
+    const query = {};
     
-    // Lấy data với pagination
-    const projectors = await Projector.find()
+    // Add search functionality
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { serial: { $regex: search, $options: "i" } },
+        { manufacturer: { $regex: search, $options: "i" } }
+      ];
+    }
+    
+    // Add status filter
+    if (status) {
+      query.status = status;
+    }
+    
+    // Add manufacturer filter
+    if (manufacturer) {
+      query.manufacturer = { $regex: manufacturer, $options: "i" };
+    }
+    
+    // Add type filter
+    if (type) {
+      query.type = { $regex: type, $options: "i" };
+    }
+    
+    // Add release year filter
+    if (releaseYear) {
+      query.releaseYear = parseInt(releaseYear);
+    }
+    
+    // Đếm tổng số documents với filter
+    const totalItems = await Projector.countDocuments(query);
+    
+    // Lấy data với pagination và filter
+    const projectors = await Projector.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)

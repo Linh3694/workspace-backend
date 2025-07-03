@@ -10,7 +10,42 @@ const upload = require("../../middleware/uploadHandover"); // Middleware Multer
 // Lấy danh sách tool
 exports.getTools = async (req, res) => {
   try {
-    const tools = await Tool.find()
+    // Get search and filter parameters
+    const { search, status, manufacturer, type, releaseYear } = req.query;
+    
+    // Build filter query
+    const query = {};
+    
+    // Add search functionality
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { serial: { $regex: search, $options: "i" } },
+        { manufacturer: { $regex: search, $options: "i" } }
+      ];
+    }
+    
+    // Add status filter
+    if (status) {
+      query.status = status;
+    }
+    
+    // Add manufacturer filter
+    if (manufacturer) {
+      query.manufacturer = { $regex: manufacturer, $options: "i" };
+    }
+    
+    // Add type filter
+    if (type) {
+      query.type = { $regex: type, $options: "i" };
+    }
+    
+    // Add release year filter
+    if (releaseYear) {
+      query.releaseYear = parseInt(releaseYear);
+    }
+    
+    const tools = await Tool.find(query)
       .sort({ createdAt: -1 })  // sắp xếp giảm dần theo createdAt
       .populate("assigned", "fullname jobTitle department avatarUrl")
       .populate("room", "name location status")
