@@ -229,6 +229,7 @@ exports.updateTool = async (req, res) => {
       type,
       room,
       reason: validStatus === "Broken" ? reason : undefined,
+      assignmentHistory: req.body.assignmentHistory, // Thêm hỗ trợ cập nhật assignmentHistory
     };
 
     const tool = await Tool.findByIdAndUpdate(id, updatedData, { new: true });

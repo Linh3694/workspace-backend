@@ -289,6 +289,7 @@ exports.updateLaptop = async (req, res) => {
       type,
       room,
       reason: validStatus === "Broken" ? reason : undefined,
+      assignmentHistory: req.body.assignmentHistory, // Thêm hỗ trợ cập nhật assignmentHistory
     };
 
     const laptop = await Laptop.findByIdAndUpdate(id, updatedData, { new: true });

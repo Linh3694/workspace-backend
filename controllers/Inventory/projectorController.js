@@ -283,6 +283,7 @@ exports.updateProjector = async (req, res) => {
       type,
       room,
       reason: validStatus === "Broken" ? reason : undefined,
+      assignmentHistory: req.body.assignmentHistory, // Thêm hỗ trợ cập nhật assignmentHistory
     };
 
     const projector = await Projector.findByIdAndUpdate(id, updatedData, { new: true });

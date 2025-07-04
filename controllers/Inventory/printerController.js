@@ -230,6 +230,7 @@ exports.updatePrinter = async (req, res) => {
         type,
         room,
         reason: status === "Broken" ? reason : undefined,
+        assignmentHistory: req.body.assignmentHistory, // Thêm hỗ trợ cập nhật assignmentHistory
       },
       { new: true }
     );

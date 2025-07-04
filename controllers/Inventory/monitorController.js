@@ -226,6 +226,7 @@ exports.updateMonitor = async (req, res) => {
         releaseYear,
         room,
         reason: status === "Broken" ? reason : undefined,
+        assignmentHistory: req.body.assignmentHistory, // Thêm hỗ trợ cập nhật assignmentHistory
       },
       { new: true }
     );
