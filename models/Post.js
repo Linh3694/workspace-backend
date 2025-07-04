@@ -43,7 +43,7 @@ const postSchema = new mongoose.Schema(
     },
 
     // Nếu visibility = department, thì gán phòng ban tại đây
-    department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+    department: { type: String },
 
     // Tag người dùng khác
     tags: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

@@ -97,8 +97,7 @@ exports.createPost = async (req, res) => {
         // Populate author information
         const populatedPost = await Post.findById(post._id)
             .populate('author', 'fullname avatarUrl email department jobTitle')
-            .populate('tags', 'fullname avatarUrl email')
-            .populate('department', 'name');
+            .populate('tags', 'fullname avatarUrl email');
 
         // Broadcast new post via socket
         const newfeedSocket = req.app.get('newfeedSocket');
@@ -160,11 +159,18 @@ exports.getNewsfeed = async (req, res) => {
         // Build filter query
         let filter = {};
 
-        // Filter by visibility
+        // Filter by visibility - chỉ hiển thị public posts hoặc posts của department của user
         filter.$or = [
-            { visibility: 'public' },
-            { visibility: 'department', department: userDepartment }
+            { visibility: 'public' }
         ];
+
+        // Nếu user có department, thêm posts của department đó
+        if (userDepartment) {
+            filter.$or.push({
+                visibility: 'department',
+                department: userDepartment
+            });
+        }
 
         // Filter by type if specified
         if (type) {
@@ -188,7 +194,6 @@ exports.getNewsfeed = async (req, res) => {
         const posts = await Post.find(filter)
             .populate('author', 'fullname avatarUrl email department jobTitle')
             .populate('tags', 'fullname avatarUrl email')
-            .populate('department', 'name')
             .populate('comments.user', 'fullname avatarUrl email')
             .populate('reactions.user', 'fullname avatarUrl email')
             .sort(sortOptions)
@@ -237,7 +242,6 @@ exports.getPostById = async (req, res) => {
         const post = await Post.findById(postId)
             .populate('author', 'fullname avatarUrl email department jobTitle')
             .populate('tags', 'fullname avatarUrl email')
-            .populate('department', 'name')
             .populate('comments.user', 'fullname avatarUrl email')
             .populate('reactions.user', 'fullname avatarUrl email');
 
@@ -254,7 +258,7 @@ exports.getPostById = async (req, res) => {
 
         if (post.visibility === 'department' && 
             post.department && 
-            post.department._id.toString() !== userDepartment.toString()) {
+            post.department !== userDepartment) {
             return res.status(403).json({ 
                 success: false,
                 message: 'Bạn không có quyền xem bài viết này' 
@@ -351,7 +355,6 @@ exports.updatePost = async (req, res) => {
         )
             .populate('author', 'fullname avatarUrl email department jobTitle')
             .populate('tags', 'fullname avatarUrl email')
-            .populate('department', 'name')
             .populate('comments.user', 'fullname avatarUrl email')
             .populate('reactions.user', 'fullname avatarUrl email');
 
