@@ -57,6 +57,6 @@ router.get('/unmapped-users', requireAdmin, getUnmappedLocalUsers);
 router.get('/job-status', requireAdmin, getJobStatus);
 
 // POST /api/microsoft-sync/run-job - Chạy đồng bộ thủ công qua job
-router.post('/run-job', requireAdmin, runManualJob);
+router.post('/run-job', runManualJob);
 
 module.exports = router; 
