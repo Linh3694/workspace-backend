@@ -49,7 +49,8 @@ exports.createInspection = async (req, res) => {
       passed,
       recommendations,
       technicalConclusion,
-      followUpRecommendation
+      followUpRecommendation,
+      overallAssessment
     } = req.body;
     
     // Lấy inspectorId từ user hiện tại
@@ -75,6 +76,7 @@ exports.createInspection = async (req, res) => {
       inspectorId,
       inspectionDate: new Date(),
       results,
+      overallAssessment: overallAssessment || "",
       passed: passed || false, // Mặc định là false nếu không có
       recommendations: JSON.stringify(recommendations),
       technicalConclusion: technicalConclusion || "",
@@ -152,6 +154,7 @@ exports.getLatestInspectionByDeviceId = async (req, res) => {
         inspectorName: inspection.inspectorId?.fullname || 'Không xác định',
         results: inspection.results,
         overallCondition: inspection.results?.["Tổng thể"]?.overallCondition || 'Không xác định',
+        overallAssessment: inspection.overallAssessment || "",
         documentUrl: inspection.report?.filePath || "#",
         technicalConclusion: inspection.technicalConclusion || "",
         followUpRecommendation: inspection.followUpRecommendation || ""

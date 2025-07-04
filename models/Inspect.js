@@ -48,6 +48,7 @@ const InspectSchema = new mongoose.Schema({
       notes: { type: String, default: "" },
     },
   },
+  overallAssessment: { type: String, default: "" }, // Đánh giá tổng thể: Tốt, Trung Bình, Kém
   passed: { type: Boolean, default: true },
   recommendations: String,
   technicalConclusion: { type: String, default: "" },
