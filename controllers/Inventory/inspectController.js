@@ -164,9 +164,6 @@ exports.getLatestInspectionByDeviceId = async (req, res) => {
 };
 
 exports.uploadReport = async (req, res) => {
-  console.log("📥 Nhận request tải lên:", req.body);
-  console.log("📂 File nhận được:", req.file);
-
   try {
     const { inspectId } = req.body;
 
