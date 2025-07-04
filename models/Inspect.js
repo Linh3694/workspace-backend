@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const InspectSchema = new mongoose.Schema({
   // Tham chiếu tới bất kỳ thiết bị nào trong kho (Laptop, Monitor, Printer, v.v.)
   deviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Device', required: true },
+  deviceType: { type: String, required: true }, // Thêm deviceType để biết loại thiết bị
   inspectorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   inspectionDate: { type: Date, default: Date.now },
   results: {
@@ -27,9 +28,9 @@ const InspectSchema = new mongoose.Schema({
       notes: { type: String, default: "" },
     },
     battery: {
-      capacity: Number,
-      performance: Number,
-      chargeCycles: Number,
+      capacity: String,
+      performance: String,
+      chargeCycles: String,
       overallCondition: { type: String, default: "" },
       notes: { type: String, default: "" },
     },

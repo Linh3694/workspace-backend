@@ -44,7 +44,7 @@ exports.createInspection = async (req, res) => {
   try {
     const {
       deviceId,
-      inspectorId,
+      deviceType,
       results,
       passed,
       recommendations,
@@ -52,21 +52,26 @@ exports.createInspection = async (req, res) => {
       followUpRecommendation
     } = req.body;
     
+    // Lấy inspectorId từ user hiện tại
+    const inspectorId = req.user?._id;
+    console.log("Inspector ID from current user:", inspectorId);
+    
     const cpu = results?.cpu;
     console.log("CPU Data:", cpu);
     
-    // Kiểm tra CPU
-    if (!cpu?.performance || !cpu?.temperature) {
+    // Kiểm tra CPU (chỉ khi có CPU trong results và có performance/temperature)
+    if (results?.cpu && cpu && (!cpu.performance || !cpu.temperature)) {
       return res.status(400).json({ message: "Thông tin CPU không hợp lệ." });
     }
 
     // Kiểm tra các trường bắt buộc
-    if (!deviceId || !inspectorId) {
+    if (!deviceId || !deviceType || !inspectorId) {
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc." });
     }
     
     const newInspection = new Inspect({
       deviceId,
+      deviceType,
       inspectorId,
       inspectionDate: new Date(),
       results,
