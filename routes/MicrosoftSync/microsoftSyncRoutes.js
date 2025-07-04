@@ -25,7 +25,6 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Routes cho Microsoft Sync
 // POST /api/microsoft-sync/sync-all - Đồng bộ toàn bộ users
 router.post('/sync-all', requireAdmin, syncAllUsers);
 
