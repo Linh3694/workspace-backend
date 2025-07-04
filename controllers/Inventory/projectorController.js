@@ -75,20 +75,73 @@ exports.getProjectors = async (req, res) => {
       query.releaseYear = parseInt(releaseYear);
     }
     
-    // Đếm tổng số documents với filter
-    const totalItems = await Projector.countDocuments(query);
+    let projectors, totalItems;
     
-    // Lấy data với pagination và filter
-    const projectors = await Projector.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate("assigned", "fullname jobTitle department avatarUrl")
-      .populate("room", "name location status")
-      .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
-      .populate("assignmentHistory.assignedBy", "fullname email title")
-      .populate("assignmentHistory.revokedBy", "fullname email")
-      .lean();
+    if (search) {
+      // Sử dụng aggregation để tìm kiếm theo tên người sử dụng
+      const searchRegex = new RegExp(search, "i");
+      const aggregationPipeline = [
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assigned',
+            foreignField: '_id',
+            as: 'assignedUsers'
+          }
+        },
+        {
+          $match: {
+            $or: [
+              { name: searchRegex },
+              { serial: searchRegex },
+              { manufacturer: searchRegex },
+              { 'assignedUsers.fullname': searchRegex }
+            ]
+          }
+        },
+        {
+          $facet: {
+            data: [
+              { $sort: { createdAt: -1 } },
+              { $skip: skip },
+              { $limit: limit }
+            ],
+            total: [{ $count: "count" }]
+          }
+        }
+      ];
+      
+      const result = await Projector.aggregate(aggregationPipeline);
+      projectors = result[0]?.data || [];
+      totalItems = result[0]?.total[0]?.count || 0;
+      
+      // Populate các field cần thiết
+      const projectorIds = projectors.map(projector => projector._id);
+      const populatedProjectors = await Projector.find({ _id: { $in: projectorIds } })
+        .populate("assigned", "fullname jobTitle department avatarUrl")
+        .populate("room", "name location status")
+        .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
+        .populate("assignmentHistory.assignedBy", "fullname email title")
+        .populate("assignmentHistory.revokedBy", "fullname email")
+        .lean();
+      
+      projectors = populatedProjectors;
+    } else {
+      // Đếm tổng số documents với filter
+      totalItems = await Projector.countDocuments(query);
+      
+      // Lấy data với pagination và filter
+      projectors = await Projector.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("assigned", "fullname jobTitle department avatarUrl")
+        .populate("room", "name location status")
+        .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
+        .populate("assignmentHistory.assignedBy", "fullname email title")
+        .populate("assignmentHistory.revokedBy", "fullname email")
+        .lean();
+    }
 
     // Reshape data như cũ
     const populatedProjectors = projectors.map((projector) => ({

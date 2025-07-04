@@ -45,14 +45,56 @@ exports.getTools = async (req, res) => {
       query.releaseYear = parseInt(releaseYear);
     }
     
-    const tools = await Tool.find(query)
-      .sort({ createdAt: -1 })  // sắp xếp giảm dần theo createdAt
-      .populate("assigned", "fullname jobTitle department avatarUrl")
-      .populate("room", "name location status")
-      .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
-      .populate("assignmentHistory.assignedBy", "fullname email title")
-      .populate("assignmentHistory.revokedBy", "fullname email")
-      .lean();
+    let tools;
+    
+    if (search) {
+      // Sử dụng aggregation để tìm kiếm theo tên người sử dụng
+      const searchRegex = new RegExp(search, "i");
+      const aggregationPipeline = [
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assigned',
+            foreignField: '_id',
+            as: 'assignedUsers'
+          }
+        },
+        {
+          $match: {
+            $or: [
+              { name: searchRegex },
+              { serial: searchRegex },
+              { manufacturer: searchRegex },
+              { 'assignedUsers.fullname': searchRegex }
+            ]
+          }
+        },
+        { $sort: { createdAt: -1 } }
+      ];
+      
+      tools = await Tool.aggregate(aggregationPipeline);
+      
+      // Populate các field cần thiết
+      const toolIds = tools.map(tool => tool._id);
+      const populatedTools = await Tool.find({ _id: { $in: toolIds } })
+        .populate("assigned", "fullname jobTitle department avatarUrl")
+        .populate("room", "name location status")
+        .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
+        .populate("assignmentHistory.assignedBy", "fullname email title")
+        .populate("assignmentHistory.revokedBy", "fullname email")
+        .lean();
+      
+      tools = populatedTools;
+    } else {
+      tools = await Tool.find(query)
+        .sort({ createdAt: -1 })  // sắp xếp giảm dần theo createdAt
+        .populate("assigned", "fullname jobTitle department avatarUrl")
+        .populate("room", "name location status")
+        .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
+        .populate("assignmentHistory.assignedBy", "fullname email title")
+        .populate("assignmentHistory.revokedBy", "fullname email")
+        .lean();
+    }
 
     // Nếu vẫn muốn reshape (thêm field `location` dạng string), bạn làm như cũ:
     const populatedTools = tools.map((tool) => ({

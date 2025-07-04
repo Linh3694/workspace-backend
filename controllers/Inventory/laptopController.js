@@ -79,22 +79,75 @@ exports.getLaptops = async (req, res) => {
     console.log('📋 [Laptop] Built query:', query);
     console.log('🎯 [Laptop] hasFilters:', hasFilters);
     
-    // Đếm tổng số documents với filter
-    const totalItems = await Laptop.countDocuments(query);
+    let laptops, totalItems;
     
-    console.log('📊 [Laptop] Count result:', totalItems);
-    
-    // Lấy data với pagination và filter
-    const laptops = await Laptop.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate("assigned", "fullname jobTitle department avatarUrl")
-      .populate("room", "name location status")
-      .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
-      .populate("assignmentHistory.assignedBy", "fullname email title")
-      .populate("assignmentHistory.revokedBy", "fullname email")
-      .lean();
+    if (search) {
+      // Sử dụng aggregation để tìm kiếm theo tên người sử dụng
+      const searchRegex = new RegExp(search, "i");
+      const aggregationPipeline = [
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assigned',
+            foreignField: '_id',
+            as: 'assignedUsers'
+          }
+        },
+        {
+          $match: {
+            $or: [
+              { name: searchRegex },
+              { serial: searchRegex },
+              { manufacturer: searchRegex },
+              { 'assignedUsers.fullname': searchRegex }
+            ]
+          }
+        },
+        {
+          $facet: {
+            data: [
+              { $sort: { createdAt: -1 } },
+              { $skip: skip },
+              { $limit: limit }
+            ],
+            total: [{ $count: "count" }]
+          }
+        }
+      ];
+      
+      const result = await Laptop.aggregate(aggregationPipeline);
+      laptops = result[0]?.data || [];
+      totalItems = result[0]?.total[0]?.count || 0;
+      
+      // Populate các field cần thiết
+      const laptopIds = laptops.map(laptop => laptop._id);
+      const populatedLaptops = await Laptop.find({ _id: { $in: laptopIds } })
+        .populate("assigned", "fullname jobTitle department avatarUrl")
+        .populate("room", "name location status")
+        .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
+        .populate("assignmentHistory.assignedBy", "fullname email title")
+        .populate("assignmentHistory.revokedBy", "fullname email")
+        .lean();
+      
+      laptops = populatedLaptops;
+    } else {
+      // Đếm tổng số documents với filter
+      totalItems = await Laptop.countDocuments(query);
+      
+      console.log('📊 [Laptop] Count result:', totalItems);
+      
+      // Lấy data với pagination và filter
+      laptops = await Laptop.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("assigned", "fullname jobTitle department avatarUrl")
+        .populate("room", "name location status")
+        .populate("assignmentHistory.user", "fullname email jobTitle avatarUrl")
+        .populate("assignmentHistory.assignedBy", "fullname email title")
+        .populate("assignmentHistory.revokedBy", "fullname email")
+        .lean();
+    }
 
     // Reshape data như cũ
     const populatedLaptops = laptops.map((laptop) => ({
