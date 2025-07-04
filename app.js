@@ -65,6 +65,7 @@ const emojiRoutes = require('./routes/Chat/emojiRoutes');
 const postRoutes = require('./routes/Newfeed/postRoutes');
 const timeAttendanceRoutes = require('./routes/timeAttendanceRoutes');
 const leaveRequestRoutes = require('./routes/SIS/leaveRequestRoutes');
+const microsoftSyncRoutes = require('./routes/MicrosoftSync/microsoftSyncRoutes');
 const NewfeedSocket = require('./utils/newfeedSocket');
 
 const app = express();
@@ -290,6 +291,7 @@ app.use("/api/emoji", emojiRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/attendance", timeAttendanceRoutes);
 app.use("/api/leave-requests", leaveRequestRoutes);
+app.use("/api/microsoft-sync", microsoftSyncRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -307,8 +309,10 @@ require("./cronEmail");
 // Khởi động scheduled jobs
 const AttendanceCleanupJob = require('./jobs/attendanceCleanupJob');
 const ChatCleanupJob = require('./jobs/chatCleanupJob');
+const MicrosoftSyncJob = require('./jobs/microsoftSyncJob');
 
 AttendanceCleanupJob.start();
 ChatCleanupJob.start();
+// MicrosoftSyncJob sẽ tự động khởi động khi module được load
 
 module.exports = app;
