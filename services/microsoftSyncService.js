@@ -4,6 +4,11 @@ const MicrosoftUser = require('../models/MicrosoftUser');
 const User = require('../models/Users');
 const logger = require('../logger');
 
+const GROUP_IDS = [
+  '989da314-610e-4be4-9f67-1d6d63e2fc34', // Group 1
+  'dd475730-881b-4c7e-8c8b-13f2160da442'  // Group 2
+];
+
 class MicrosoftSyncService {
   constructor() {
     this.graphClient = null;
@@ -46,32 +51,20 @@ class MicrosoftSyncService {
       await this.initialize();
     }
 
-    try {
-      const users = [];
+    const users = [];
+    for (const groupId of GROUP_IDS) {
       let nextLink = null;
-      let page = 1;
-
       do {
-        const query = nextLink || '/users?$select=id,displayName,givenName,surname,userPrincipalName,mail,jobTitle,department,officeLocation,businessPhones,mobilePhone,employeeId,employeeType,accountEnabled,preferredLanguage,usageLocation&$top=100';
-        
+        const query = nextLink || `/groups/${groupId}/members?$select=id,displayName,givenName,surname,userPrincipalName,mail,jobTitle,department,officeLocation,businessPhones,mobilePhone,employeeId,employeeType,accountEnabled,preferredLanguage,usageLocation&$top=100`;
         const response = await this.graphClient.api(query).get();
-        
         if (response.value) {
-          users.push(...response.value);
+          // Lọc chỉ lấy user (bỏ group, device, ... nếu có)
+          users.push(...response.value.filter(u => u['@odata.type'] === '#microsoft.graph.user'));
         }
-        
         nextLink = response['@odata.nextLink'];
-        page++;
-        
-        logger.info(`Fetched page ${page - 1} with ${response.value?.length || 0} users`);
       } while (nextLink);
-
-      logger.info(`Total Microsoft users fetched: ${users.length}`);
-      return users;
-    } catch (error) {
-      logger.error('Error fetching Microsoft users:', error);
-      throw error;
     }
+    return users;
   }
 
   // Đồng bộ một user từ Microsoft
@@ -194,13 +187,14 @@ class MicrosoftSyncService {
       const userData = {
         email: microsoftUser.mail || microsoftUser.userPrincipalName,
         fullname: microsoftUser.displayName,
-        jobTitle: microsoftUser.jobTitle || 'User',
-        department: microsoftUser.department || 'Unknown',
-        role: this.mapMicrosoftRoleToLocalRole(microsoftUser.jobTitle, microsoftUser.department),
+        jobTitle: microsoftUser.jobTitle || '',
+        department: microsoftUser.department || '',
+        role: 'user', // Luôn để mặc định là user
         active: microsoftUser.accountEnabled,
         provider: 'microsoft',
         microsoftId: microsoftUser.id,
-        avatarUrl: '' // Có thể lấy từ Microsoft Graph API sau
+        employeeCode: microsoftUser.employeeId || '',
+        avatarUrl: '' // Không lấy avatar từ Microsoft
       };
 
       const localUser = new User(userData);
@@ -221,11 +215,11 @@ class MicrosoftSyncService {
         fullname: microsoftUser.displayName,
         jobTitle: microsoftUser.jobTitle || localUser.jobTitle,
         department: microsoftUser.department || localUser.department,
-        role: this.mapMicrosoftRoleToLocalRole(microsoftUser.jobTitle, microsoftUser.department) || localUser.role,
         active: microsoftUser.accountEnabled,
-        microsoftId: microsoftUser.id
+        microsoftId: microsoftUser.id,
+        employeeCode: microsoftUser.employeeId || localUser.employeeCode
+        // Không cập nhật role nữa
       };
-
       Object.assign(localUser, updates);
       await localUser.save();
       
@@ -235,30 +229,6 @@ class MicrosoftSyncService {
       logger.error(`Error updating local user ${localUser.email}:`, error);
       throw error;
     }
-  }
-
-  // Map role từ Microsoft sang local role
-  mapMicrosoftRoleToLocalRole(jobTitle, department) {
-    if (!jobTitle && !department) return 'user';
-
-    const title = (jobTitle || '').toLowerCase();
-    const dept = (department || '').toLowerCase();
-
-    // Mapping logic dựa trên job title và department
-    if (title.includes('admin') || title.includes('administrator')) return 'admin';
-    if (title.includes('teacher') || title.includes('giáo viên')) return 'teacher';
-    if (title.includes('principal') || title.includes('hiệu trưởng')) return 'principal';
-    if (title.includes('librarian') || title.includes('thủ thư')) return 'librarian';
-    if (title.includes('hr') || dept.includes('human resource')) return 'hr';
-    if (title.includes('technical') || title.includes('it')) return 'technical';
-    if (title.includes('marcom') || dept.includes('marketing')) return 'marcom';
-    if (title.includes('bod') || title.includes('board')) return 'bod';
-    if (title.includes('service')) return 'service';
-    if (title.includes('registrar')) return 'registrar';
-    if (title.includes('admission')) return 'admission';
-    if (title.includes('bos')) return 'bos';
-
-    return 'user';
   }
 
   // Đồng bộ toàn bộ users
