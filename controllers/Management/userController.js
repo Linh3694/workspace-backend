@@ -721,7 +721,7 @@ exports.bulkAvatarUpload = async (req, res) => {
 
         const user = await User.findOneAndUpdate(
           { employeeCode: employeeCode },
-          { avatarUrl: `/uploads/Avatar/${file.filename}` },
+          { avatarUrl: `${file.filename}` },
           { new: true }
         );
 
