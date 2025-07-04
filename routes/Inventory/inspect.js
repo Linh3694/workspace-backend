@@ -9,7 +9,8 @@ router.get('/:id', inspectController.getInspectionById); // Lấy chi tiết ki�
 router.put('/:id', inspectController.updateInspection);
 router.post('/', inspectController.createInspection); // Tạo bản ghi kiểm tra
 router.delete('/:id', inspectController.deleteInspection); // Xóa bản ghi kiểm tra
-router.get('/laptop/:laptopId', inspectController.getLatestInspectionByLaptopId);
+// router.get('/laptop/:laptopId', inspectController.getLatestInspectionByLaptopId);
+router.get('/latest/:deviceId', inspectController.getLatestInspectionByDeviceId);
 router.post("/uploadReport", uploadReport.single("file"), inspectController.uploadReport);
 router.get("/downloadReport/:inspectId", inspectController.downloadReport);
 

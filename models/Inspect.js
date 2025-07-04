@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const InspectSchema = new mongoose.Schema({
-  laptopId: { type: mongoose.Schema.Types.ObjectId, ref: 'Laptop', required: true },
+  // Tham chiếu tới bất kỳ thiết bị nào trong kho (Laptop, Monitor, Printer, v.v.)
+  deviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Device', required: true },
   inspectorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   inspectionDate: { type: Date, default: Date.now },
   results: {

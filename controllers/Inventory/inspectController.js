@@ -5,16 +5,16 @@ const path = require("path");
 // Lấy danh sách tất cả các bản ghi kiểm tra
 exports.getAllInspections = async (req, res) => {
   try {
-    const { laptopId, inspectorId, startDate, endDate } = req.query;
+    const { deviceId, inspectorId, startDate, endDate } = req.query;
 
     const filter = {};
-    if (laptopId) filter.laptopId = laptopId;
+    if (deviceId) filter.deviceId = deviceId;
     if (inspectorId) filter.inspectorId = inspectorId;
     if (startDate && endDate) {
       filter.inspectionDate = { $gte: new Date(startDate), $lte: new Date(endDate) };
     }
 
-    const inspections = await Inspect.find(filter).populate('laptopId inspectorId');
+    const inspections = await Inspect.find(filter).populate('deviceId inspectorId');
     res.status(200).json({ data: inspections });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching inspections', error });
@@ -25,7 +25,7 @@ exports.getAllInspections = async (req, res) => {
 exports.getInspectionById = async (req, res) => {
   try {
     const { id } = req.params;
-    const inspection = await Inspect.findById(id).populate('laptopId inspectorId');
+    const inspection = await Inspect.findById(id).populate('deviceId inspectorId');
 
     if (!inspection) {
       return res.status(404).json({ message: 'Inspection not found' });
@@ -43,7 +43,7 @@ exports.createInspection = async (req, res) => {
   console.log("CPU Data from Payload:", req.body.results?.cpu);
   try {
     const {
-      laptopId,
+      deviceId,
       inspectorId,
       results,
       passed,
@@ -61,12 +61,12 @@ exports.createInspection = async (req, res) => {
     }
 
     // Kiểm tra các trường bắt buộc
-    if (!laptopId || !inspectorId) {
+    if (!deviceId || !inspectorId) {
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc." });
     }
     
     const newInspection = new Inspect({
-      laptopId,
+      deviceId,
       inspectorId,
       inspectionDate: new Date(),
       results,
@@ -127,11 +127,11 @@ exports.updateInspection = async (req, res) => {
   }
 };
 
-// Lấy lần kiểm tra mới nhất theo laptopId
-exports.getLatestInspectionByLaptopId = async (req, res) => {
+// Lấy lần kiểm tra mới nhất theo deviceId
+exports.getLatestInspectionByDeviceId = async (req, res) => {
   try {
-    const { laptopId } = req.params;
-    const inspection = await Inspect.findOne({ laptopId })
+    const { deviceId } = req.params;
+    const inspection = await Inspect.findOne({ deviceId })
       .sort({ inspectionDate: -1 }) // Lấy lần kiểm tra mới nhất
       .populate('inspectorId', 'fullname jobTitle email'); // Chỉ lấy các trường cần thiết
 
