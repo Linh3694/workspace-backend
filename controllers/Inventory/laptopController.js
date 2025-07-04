@@ -509,6 +509,8 @@ exports.assignLaptop = async (req, res) => {
     laptop.status = "PendingDocumentation";
 
     await laptop.save();
+    // Xóa cache do thay đổi gán thiết bị
+    await redisService.deleteDeviceCache('laptop');
 
     // Populate assignmentHistory.user để trả về thông tin chi tiết
     const populatedLaptop = await laptop.populate({
@@ -560,6 +562,8 @@ exports.revokeLaptop = async (req, res) => {
     laptop.currentHolder = null; // Xóa người đang giữ laptop
     laptop.assigned = [];
     await laptop.save();
+    // Xóa cache do thay đổi gán thiết bị
+    await redisService.deleteDeviceCache('laptop');
 
     res.status(200).json({ message: "Thu hồi thành công", laptop });
   } catch (error) {
@@ -573,32 +577,34 @@ exports.updateLaptopStatus = async (req, res) => {
     const { id } = req.params;
     const { status, brokenReason } = req.body;
 
-      if (!["Active", "Standby", "Broken", "PendingDocumentation"].includes(status)) {
-        return res.status(400).json({ message: "Trạng thái không hợp lệ" });
-      }
-      if (status === "Broken" && !brokenReason) {
-        return res.status(400).json({ error: "Lý do báo hỏng là bắt buộc!" });
-      }    
+    if (!["Active", "Standby", "Broken", "PendingDocumentation"].includes(status)) {
+      return res.status(400).json({ message: "Trạng thái không hợp lệ" });
+    }
+    if (status === "Broken" && !brokenReason) {
+      return res.status(400).json({ error: "Lý do báo hỏng là bắt buộc!" });
+    }    
 
-      try {
-        const laptop = await Laptop.findById(id);
-        if (!laptop) {
-          return res.status(404).json({ message: "Không tìm thấy thiết bị" });
-        }
-    
-        // Lưu lý do báo hỏng vào `reason`
-        if (status === "Broken") {
-          laptop.brokenReason = brokenReason || "Không xác định";
-        }
-    
-        laptop.status = status;
-        await laptop.save();
-    
-        res.status(200).json(laptop);
-      } catch (error) {
-        console.error("Lỗi khi cập nhật trạng thái:", error);
-        res.status(500).json({ message: "Lỗi máy chủ", error });
+    try {
+      const laptop = await Laptop.findById(id);
+      if (!laptop) {
+        return res.status(404).json({ message: "Không tìm thấy thiết bị" });
       }
+
+      // Lưu lý do báo hỏng vào `reason`
+      if (status === "Broken") {
+        laptop.brokenReason = brokenReason || "Không xác định";
+      }
+
+      laptop.status = status;
+      await laptop.save();
+      // Xóa cache do thay đổi trạng thái thiết bị
+      await redisService.deleteDeviceCache('laptop');
+
+      res.status(200).json(laptop);
+    } catch (error) {
+      console.error("Lỗi khi cập nhật trạng thái:", error);
+      res.status(500).json({ message: "Lỗi máy chủ", error });
+    }
   } catch (error) {
     console.error("Lỗi updateLaptopStatus:", error);
     res.status(500).json({ message: "Lỗi server", error });
