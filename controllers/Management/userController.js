@@ -170,7 +170,7 @@ exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
     const { email, phone, role, fullname, active } = req.body;
-    const avatarUrl = req.file ? `/uploads/Avatar/${req.file.filename}` : undefined;
+    const avatarUrl = req.file ? `${req.file.filename}` : undefined;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid user ID" });
