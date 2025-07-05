@@ -232,6 +232,40 @@ exports.getEventsByMonth = async (req, res) => {
   }
 };
 
+// Lấy sự kiện theo khoảng thời gian (cho timetable)
+exports.getEventsByDateRange = async (req, res) => {
+  try {
+    const { startDate, endDate, schoolYear } = req.query;
+
+    if (!startDate || !endDate || !schoolYear) {
+      return res.status(400).json({ message: "Thiếu thông tin startDate, endDate hoặc schoolYear" });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    const query = {
+      schoolYear: schoolYear,
+      $or: [
+        // Sự kiện bắt đầu trong khoảng thời gian
+        { startDate: { $gte: start, $lte: end } },
+        // Sự kiện kết thúc trong khoảng thời gian
+        { endDate: { $gte: start, $lte: end } },
+        // Sự kiện bao trùm khoảng thời gian
+        { startDate: { $lte: start }, endDate: { $gte: end } }
+      ]
+    };
+
+    const events = await SchoolYearEvent.find(query)
+      .populate("schoolYear", "code startDate endDate")
+      .sort({ startDate: 1 });
+
+    return res.json({ data: events });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   createSchoolYearEvent: exports.createSchoolYearEvent,
   getAllSchoolYearEvents: exports.getAllSchoolYearEvents,
@@ -240,5 +274,6 @@ module.exports = {
   deleteSchoolYearEvent: exports.deleteSchoolYearEvent,
   getEventsBySchoolYear: exports.getEventsBySchoolYear,
   getEventsByType: exports.getEventsByType,
-  getEventsByMonth: exports.getEventsByMonth
+  getEventsByMonth: exports.getEventsByMonth,
+  getEventsByDateRange: exports.getEventsByDateRange
 }; 

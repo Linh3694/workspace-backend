@@ -17,5 +17,6 @@ router.delete("/:id", schoolYearEventController.deleteSchoolYearEvent);
 router.get("/school-year/:schoolYearId", schoolYearEventController.getEventsBySchoolYear);
 router.get("/type/:type", schoolYearEventController.getEventsByType);
 router.get("/month/:year/:month", schoolYearEventController.getEventsByMonth);
+router.get("/date-range", schoolYearEventController.getEventsByDateRange);
 
 module.exports = router; 
