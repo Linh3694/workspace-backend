@@ -19,8 +19,8 @@ exports.createSchoolYearEvent = async (req, res) => {
     }
 
     // Kiểm tra logic thời gian
-    if (new Date(startDate) >= new Date(endDate)) {
-      return res.status(400).json({ message: "Start date must be before end date" });
+    if (new Date(startDate) > new Date(endDate)) {
+      return res.status(400).json({ message: "Start date must be before or equal to end date" });
     }
 
     // Kiểm tra sự kiện có nằm trong năm học không
@@ -96,8 +96,8 @@ exports.updateSchoolYearEvent = async (req, res) => {
     }
 
     // Kiểm tra logic thời gian
-    if (startDate && endDate && new Date(startDate) >= new Date(endDate)) {
-      return res.status(400).json({ message: "Start date must be before end date" });
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      return res.status(400).json({ message: "Start date must be before or equal to end date" });
     }
 
     // Nếu thay đổi năm học, kiểm tra năm học mới có tồn tại không
