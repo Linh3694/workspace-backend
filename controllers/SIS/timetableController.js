@@ -1037,21 +1037,30 @@ exports.importTimetable = async (req, res) => {
         },
       };
 
-      // Thêm scheduleId nếu có
+      // Thêm scheduleId nếu có - chỉ đặt trong $set để tránh xung đột
       if (rec.scheduleId) {
         updateData.$set.scheduleId = rec.scheduleId;
-        updateData.$setOnInsert.scheduleId = rec.scheduleId;
+      }
+
+      // Xây dựng filter chính xác cho scheduleId
+      const filter = {
+        schoolYear,
+        class: classId,
+        "timeSlot.dayOfWeek": rec.dayOfWeek,
+        "timeSlot.startTime": period.startTime
+      };
+
+      // Xử lý scheduleId trong filter một cách chính xác
+      if (rec.scheduleId) {
+        filter.scheduleId = rec.scheduleId;
+      } else {
+        // Nếu không có scheduleId, chỉ match với document không có scheduleId
+        filter.scheduleId = { $exists: false };
       }
 
       ops.push({
         updateOne: {
-          filter: {
-            schoolYear,
-            class: classId,
-            "timeSlot.dayOfWeek": rec.dayOfWeek,
-            "timeSlot.startTime": period.startTime,
-            ...(rec.scheduleId && { scheduleId: rec.scheduleId })
-          },
+          filter,
           update: updateData,
           upsert: true,
         },
