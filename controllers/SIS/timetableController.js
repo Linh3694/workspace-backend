@@ -727,12 +727,12 @@ exports.getTimetableGridByClass = async (req, res) => {
             const grid = {};
             daysOfWeek.forEach(day => {
               grid[day] = {};
-              periodDefs
-                .map(p => p.periodNumber)
-                .sort((a, b) => a - b)
-                .forEach(period => {
-                  grid[day][period] = null;
-                });
+              // Tạo empty grid với UI display numbers cho regular periods
+              const regularPeriodsForEmpty = periodDefs.filter(p => p.type === 'regular').sort((a, b) => a.startTime.localeCompare(b.startTime));
+              regularPeriodsForEmpty.forEach((period, index) => {
+                const uiNumber = index + 1;
+                grid[day][uiNumber] = null;
+              });
             });
             return res.json({ data: grid });
           }
@@ -756,37 +756,53 @@ exports.getTimetableGridByClass = async (req, res) => {
     periodDefs.forEach(p => {
       startTimeToPeriod[p.startTime] = p.periodNumber;
     });
-    // Lấy TẤT CẢ các periodNumber đã khai báo và sort tăng dần
-    const periods = periodDefs
-      .map(p => p.periodNumber)
-      .sort((a, b) => a - b);
-
-    // Additional debug log after building startTimeToPeriod
+    // ✅ SỬA: Tạo UI period mapping giống frontend getPeriodMeta()
+    // Tách biệt regular periods và special periods
+    const regularPeriods = periodDefs.filter(p => p.type === 'regular').sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const specialPeriods = periodDefs.filter(p => p.type !== 'regular');
+    
+    // Tạo mapping DB period number → UI display number
+    const dbToUIMapping = {};
+    regularPeriods.forEach((period, index) => {
+      dbToUIMapping[period.periodNumber] = index + 1; // UI display: 1, 2, 3, 4, 5...
+    });
+    
+    console.log("DB to UI period mapping:", dbToUIMapping);
     console.log("startTimeToPeriod map:", startTimeToPeriod);
 
-    // Tạo lưới thời khóa biểu trống
+    // Tạo lưới thời khóa biểu trống với UI display numbers
     const grid = {};
     daysOfWeek.forEach(day => {
       grid[day] = {};
-      periods.forEach(period => {
-        grid[day][period] = null;
+      // Tạo slots cho regular periods (1-10)
+      regularPeriods.forEach((period, index) => {
+        const uiNumber = index + 1;
+        grid[day][uiNumber] = null;
       });
     });
 
-    // Điền dữ liệu vào lưới
+    // Điền dữ liệu vào lưới sử dụng UI mapping
     timetables.forEach(timetable => {
       const day = timetable.timeSlot.dayOfWeek;
-      const periodNumber = startTimeToPeriod[timetable.timeSlot.startTime];
+      const dbPeriodNumber = startTimeToPeriod[timetable.timeSlot.startTime];
 
-      if (day && periodNumber !== undefined) {
-        grid[day][periodNumber] = {
-          subject: timetable.subject?.name || 'Chưa có môn học',
-          teachers: (timetable.teachers?.length)
-            ? timetable.teachers.map(t => t.fullname).join(", ")
-            : "Chưa có giáo viên",
-          room: timetable.room?.name || 'Chưa có phòng',
-          id: timetable._id
-        };
+      if (day && dbPeriodNumber !== undefined) {
+        const uiPeriodNumber = dbToUIMapping[dbPeriodNumber];
+        
+        if (uiPeriodNumber) {
+          console.log(`📍 Mapping timetable: DB period ${dbPeriodNumber} → UI period ${uiPeriodNumber} for ${day}`);
+          
+          grid[day][uiPeriodNumber] = {
+            subject: timetable.subject?.name || 'Chưa có môn học',
+            teachers: (timetable.teachers?.length)
+              ? timetable.teachers.map(t => t.fullname).join(", ")
+              : "Chưa có giáo viên",
+            room: timetable.room?.name || 'Chưa có phòng',
+            id: timetable._id
+          };
+        } else {
+          console.log(`⚠️ No UI mapping found for DB period ${dbPeriodNumber} (special period or not regular)`);
+        }
       }
     });
 
