@@ -948,24 +948,21 @@ exports.importTimetable = async (req, res) => {
             schoolYear,
             class: classId,
             "timeSlot.dayOfWeek": rec.dayOfWeek,
-            "timeSlot.startTime": period.startTime,
-            scheduleId
+            "timeSlot.startTime": period.startTime
           },
           update: {
             $set: {
               subject: rec.subject,
               teachers: rec.teachers || [],
               room: chosenRoomId,
-              "timeSlot.endTime": period.endTime,
-              scheduleId
+              "timeSlot.endTime": period.endTime
             },
             $setOnInsert: {
               schoolYear,
               class: classId,
               "timeSlot.dayOfWeek": rec.dayOfWeek,
               "timeSlot.startTime": period.startTime,
-              createdAt: new Date(),
-              scheduleId
+              createdAt: new Date()
             },
           },
           upsert: true,
