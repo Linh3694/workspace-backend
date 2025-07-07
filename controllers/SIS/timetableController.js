@@ -917,11 +917,25 @@ exports.importTimetable = async (req, res) => {
       schoolYear: schoolYear,
       school: schoolId 
     });
+    
+    // Tạo mapping cho TẤT CẢ period definitions (để backward compatibility)
     const periodMap = {};
     periodDefs.forEach(p => { periodMap[p.periodNumber] = { startTime: p.startTime, endTime: p.endTime }; });
 
+    // Tạo mapping riêng cho REGULAR periods (chỉ tiết học thực sự)
+    const regularPeriods = periodDefs.filter(p => p.type === 'regular').sort((a, b) => a.periodNumber - b.periodNumber);
+    const regularPeriodMap = {};
+    regularPeriods.forEach((p, index) => {
+      regularPeriodMap[index + 1] = { 
+        periodNumber: p.periodNumber, 
+        startTime: p.startTime, 
+        endTime: p.endTime 
+      };
+    });
+
     console.log("Class map keys (classCodes):", Object.keys(classMap));
     console.log("Period map numbers:", Object.keys(periodMap));
+    console.log("Regular period map:", regularPeriodMap);
 
     if (periodDefs.length === 0) {
       return res.status(400).json({ message: "Chưa khai báo tiết học cho trường và năm học này" });
@@ -999,9 +1013,17 @@ exports.importTimetable = async (req, res) => {
         continue;
       }
 
-      const period = periodMap[rec.periodNumber];
-      if (!period) {
-        errors.push(`Chưa khai báo tiết ${rec.periodNumber} cho trường này`);
+      // Sử dụng regularPeriodMap để map period number từ Excel (1-10) sang period thực sự
+      const regularPeriod = regularPeriodMap[rec.periodNumber];
+      if (!regularPeriod) {
+        errors.push(`Tiết ${rec.periodNumber} không hợp lệ. Chỉ chấp nhận tiết học từ 1-${Object.keys(regularPeriodMap).length}`);
+        continue;
+      }
+
+      // Lấy thông tin period thực sự từ mapping
+      const actualPeriod = periodMap[regularPeriod.periodNumber];
+      if (!actualPeriod) {
+        errors.push(`Chưa khai báo tiết ${regularPeriod.periodNumber} cho trường này`);
         continue;
       }
 
@@ -1011,7 +1033,7 @@ exports.importTimetable = async (req, res) => {
       const subjInfo = subjectRoomMap.get(String(rec.subject));
       if (subjInfo && subjInfo.need && subjInfo.rooms.length) {
         for (const candidate of subjInfo.rooms) {
-          const key = `${candidate}|${rec.dayOfWeek}|${period.startTime}`;
+          const key = `${candidate}|${rec.dayOfWeek}|${actualPeriod.startTime}`;
           if (!occupied.has(key)) {
             chosenRoomId = candidate;
             occupied.add(key);             // đánh dấu phòng đã bận
@@ -1026,7 +1048,7 @@ exports.importTimetable = async (req, res) => {
           subject: rec.subject,
           teachers: rec.teachers || [],
           room: chosenRoomId,
-          "timeSlot.endTime": period.endTime
+          "timeSlot.endTime": actualPeriod.endTime
         },
         $setOnInsert: {
           schoolYear,
