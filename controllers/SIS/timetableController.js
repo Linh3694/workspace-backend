@@ -1054,7 +1054,7 @@ exports.importTimetable = async (req, res) => {
           schoolYear,
           class: classId,
           "timeSlot.dayOfWeek": rec.dayOfWeek,
-          "timeSlot.startTime": period.startTime,
+          "timeSlot.startTime": actualPeriod.startTime,
           createdAt: new Date()
         },
       };
@@ -1069,7 +1069,7 @@ exports.importTimetable = async (req, res) => {
         schoolYear,
         class: classId,
         "timeSlot.dayOfWeek": rec.dayOfWeek,
-        "timeSlot.startTime": period.startTime
+        "timeSlot.startTime": actualPeriod.startTime
       };
 
       // Xử lý scheduleId trong filter một cách chính xác
