@@ -437,23 +437,43 @@ exports.generateTimetable = async (req, res) => {
       return res.status(400).json({ message: "Chương trình học không có thông tin môn học" });
     }
 
+    // Lấy thông tin school từ class
+    const classWithSchool = await Class.findById(classId)
+      .populate({
+        path: 'gradeLevel',
+        populate: { path: 'school' }
+      });
+    
+    if (!classWithSchool || !classWithSchool.gradeLevel?.school) {
+      return res.status(400).json({ message: "Không tìm thấy thông tin trường của lớp học" });
+    }
+    
+    const schoolId = classWithSchool.gradeLevel.school._id;
+
+    // Lấy period definitions từ database thay vì hardcode
+    const periodDefs = await PeriodDefinition.find({
+      schoolYear: schoolYearId,
+      school: schoolId,
+      type: 'regular'
+    }).sort({ periodNumber: 1 });
+
+    if (periodDefs.length === 0) {
+      return res.status(400).json({ 
+        message: "Chưa khai báo tiết học cho trường này. Vui lòng chạy script initPeriodDefinitions.js trước." 
+      });
+    }
+
+    // Chuyển đổi period definitions thành format cũ để tương thích
+    const periods = periodDefs.map(p => ({
+      startTime: p.startTime,
+      endTime: p.endTime,
+      periodNumber: p.periodNumber,
+      label: p.label
+    }));
+
     // Lấy danh sách giáo viên và phòng học khả dụng
     const teachers = await Teacher.find({}).populate('subjects');
     const rooms = await Room.find({}).populate('subjects');
-
-    // Các tiết học trong một ngày
-    const periods = [
-      { startTime: "07:00", endTime: "07:45" },
-      { startTime: "07:50", endTime: "08:35" },
-      { startTime: "08:40", endTime: "09:25" },
-      { startTime: "09:40", endTime: "10:25" },
-      { startTime: "10:30", endTime: "11:15" },
-      { startTime: "13:00", endTime: "13:45" },
-      { startTime: "13:50", endTime: "14:35" },
-      { startTime: "14:40", endTime: "15:25" },
-      { startTime: "15:40", endTime: "16:25" },
-      { startTime: "16:30", endTime: "17:15" }
-    ];
 
     // Thứ trong tuần cho việc lên lịch
     const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];

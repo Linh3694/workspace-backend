@@ -248,18 +248,31 @@ class TimeTableService {
 
             const rules = this.defaultRules;
             const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].slice(0, daysPerWeek);
-            const periods = [
-                { startTime: '07:00', endTime: '07:45' },
-                { startTime: '07:50', endTime: '08:35' },
-                { startTime: '08:40', endTime: '09:25' },
-                { startTime: '09:40', endTime: '10:25' },
-                { startTime: '10:30', endTime: '11:15' },
-                { startTime: '13:00', endTime: '13:45' },
-                { startTime: '13:50', endTime: '14:35' },
-                { startTime: '14:40', endTime: '15:25' },
-                { startTime: '15:40', endTime: '16:25' },
-                { startTime: '16:30', endTime: '17:15' },
-            ].slice(0, periodsPerDay);
+            
+            // Lấy period definitions từ database thay vì hardcode
+            const PeriodDefinition = require('../models/PeriodDefinition');
+            const periodDefs = await PeriodDefinition.find({
+                schoolYear: schoolYearId,
+                school: schoolId,
+                type: 'regular'
+            }).sort({ periodNumber: 1 });
+
+            if (periodDefs.length === 0) {
+                console.log('❌ Chưa khai báo tiết học cho trường này');
+                return {
+                    success: false,
+                    message: 'Chưa khai báo tiết học cho trường này. Vui lòng chạy script initPeriodDefinitions.js trước.',
+                    errors: ['No period definitions found']
+                };
+            }
+
+            // Chuyển đổi period definitions thành format cũ để tương thích
+            const periods = periodDefs.map(p => ({
+                startTime: p.startTime,
+                endTime: p.endTime,
+                periodNumber: p.periodNumber,
+                label: p.label
+            })).slice(0, periodsPerDay);
 
             console.log('\nSTEP 4: Khởi tạo bảng phân bổ giáo viên và phòng học');
             const teacherAllocation = {};
