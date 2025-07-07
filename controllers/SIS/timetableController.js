@@ -695,12 +695,15 @@ exports.getTimetableGridByClass = async (req, res) => {
             weekEnd: weekEnd.toISOString()
           });
           
-          // Kiểm tra xem tuần này có nằm trong khoảng thời gian của schedule không
-          if (weekStart >= schedule.startDate && weekEnd <= schedule.endDate) {
-            console.log("Week is within schedule range");
+          // ✅ SỬA: Logic kiểm tra overlap linh hoạt hơn
+          // Kiểm tra xem tuần này có overlap với khoảng thời gian của schedule không
+          const hasOverlap = weekStart <= schedule.endDate && weekEnd >= schedule.startDate;
+          
+          if (hasOverlap) {
+            console.log("Week overlaps with schedule range");
           } else {
-            console.log("Week is outside schedule range - returning empty grid");
-            // Trả về lưới trống nếu tuần không nằm trong khoảng thời gian của schedule
+            console.log("Week does not overlap with schedule range - returning empty grid");
+            // Trả về lưới trống nếu tuần không overlap với khoảng thời gian của schedule
             const grid = {};
             daysOfWeek.forEach(day => {
               grid[day] = {};
@@ -871,6 +874,59 @@ exports.getTeacherTimetable = async (req, res) => {
 exports.importTimetable = async (req, res) => {
   try {
     const { schoolYear, records } = req.body || {};
+    
+    console.log("===== Import Timetable =====");
+    console.log("SchoolYear:", schoolYear, "Total incoming records:", Array.isArray(records) ? records.length : 0);
+
+    if (!schoolYear || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ message: "Thiếu dữ liệu schoolYear hoặc records" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(schoolYear)) {
+      return res.status(400).json({ message: "schoolYear không hợp lệ" });
+    }
+
+    // 1. Map classCode -> classId (chỉ trong schoolYear này)
+    const classCodes = [...new Set(records.map(r => r.classCode))];
+    const classDocs = await Class.find({ className: { $in: classCodes }, schoolYear })
+      .select("_id className")
+      .populate({
+        path: 'gradeLevel',
+        populate: {
+          path: 'school',
+          select: '_id'
+        }
+      });
+    const classMap = {};
+    let schoolId = null;
+    classDocs.forEach(c => { 
+      classMap[c.className] = c._id; 
+      // Lấy schoolId từ class đầu tiên
+      if (!schoolId && c.gradeLevel?.school?._id) {
+        schoolId = c.gradeLevel.school._id;
+      }
+    });
+
+    if (!schoolId) {
+      return res.status(400).json({ message: "Không thể xác định school từ các lớp học" });
+    }
+
+    console.log("Found school ID for import:", schoolId);
+
+    // ✅ SỬA: Lấy period definitions theo cả schoolYear và school
+    const periodDefs = await PeriodDefinition.find({ 
+      schoolYear: schoolYear,
+      school: schoolId 
+    });
+    const periodMap = {};
+    periodDefs.forEach(p => { periodMap[p.periodNumber] = { startTime: p.startTime, endTime: p.endTime }; });
+
+    console.log("Class map keys (classCodes):", Object.keys(classMap));
+    console.log("Period map numbers:", Object.keys(periodMap));
+
+    if (periodDefs.length === 0) {
+      return res.status(400).json({ message: "Chưa khai báo tiết học cho trường và năm học này" });
+    }
+
     const subjectDocs = await Subject.find({})
       .select("needFunctionRoom rooms")
       .lean();
@@ -894,30 +950,6 @@ exports.importTimetable = async (req, res) => {
     // Log các dayOfWeek xuất hiện trong payload
     const uniqueDays = [...new Set((records || []).map(r => r.dayOfWeek))];
     console.log("Incoming dayOfWeek values:", uniqueDays);
-    console.log("===== Import Timetable =====");
-    console.log("SchoolYear:", schoolYear, "Total incoming records:", Array.isArray(records) ? records.length : 0);
-
-    if (!schoolYear || !Array.isArray(records) || records.length === 0) {
-      return res.status(400).json({ message: "Thiếu dữ liệu schoolYear hoặc records" });
-    }
-    if (!mongoose.Types.ObjectId.isValid(schoolYear)) {
-      return res.status(400).json({ message: "schoolYear không hợp lệ" });
-    }
-
-    // 1. Map classCode -> classId (chỉ trong schoolYear này)
-    const classCodes = [...new Set(records.map(r => r.classCode))];
-    const classDocs = await Class.find({ className: { $in: classCodes }, schoolYear })
-      .select("_id className");
-    const classMap = {};
-    classDocs.forEach(c => { classMap[c.className] = c._id; });
-
-    // 2. Lấy period definitions để map periodNumber -> start/end
-    const periodDefs = await PeriodDefinition.find({ schoolYear });
-    const periodMap = {};
-    periodDefs.forEach(p => { periodMap[p.periodNumber] = { startTime: p.startTime, endTime: p.endTime }; });
-
-    console.log("Class map keys (classCodes):", Object.keys(classMap));
-    console.log("Period map numbers:", Object.keys(periodMap));
 
     // 2.5. Tìm phòng Homeroom mặc định (nếu có)
     let homeroomRoom = await Room.findOne({ isHomeroom: true });
@@ -969,7 +1001,7 @@ exports.importTimetable = async (req, res) => {
 
       const period = periodMap[rec.periodNumber];
       if (!period) {
-        errors.push(`Chưa khai báo tiết ${rec.periodNumber}`);
+        errors.push(`Chưa khai báo tiết ${rec.periodNumber} cho trường này`);
         continue;
       }
 
@@ -988,29 +1020,39 @@ exports.importTimetable = async (req, res) => {
         }
       }
 
+      // ✅ THÊM: Gắn scheduleId nếu có trong record
+      const updateData = {
+        $set: {
+          subject: rec.subject,
+          teachers: rec.teachers || [],
+          room: chosenRoomId,
+          "timeSlot.endTime": period.endTime
+        },
+        $setOnInsert: {
+          schoolYear,
+          class: classId,
+          "timeSlot.dayOfWeek": rec.dayOfWeek,
+          "timeSlot.startTime": period.startTime,
+          createdAt: new Date()
+        },
+      };
+
+      // Thêm scheduleId nếu có
+      if (rec.scheduleId) {
+        updateData.$set.scheduleId = rec.scheduleId;
+        updateData.$setOnInsert.scheduleId = rec.scheduleId;
+      }
+
       ops.push({
         updateOne: {
           filter: {
             schoolYear,
             class: classId,
             "timeSlot.dayOfWeek": rec.dayOfWeek,
-            "timeSlot.startTime": period.startTime
+            "timeSlot.startTime": period.startTime,
+            ...(rec.scheduleId && { scheduleId: rec.scheduleId })
           },
-          update: {
-            $set: {
-              subject: rec.subject,
-              teachers: rec.teachers || [],
-              room: chosenRoomId,
-              "timeSlot.endTime": period.endTime
-            },
-            $setOnInsert: {
-              schoolYear,
-              class: classId,
-              "timeSlot.dayOfWeek": rec.dayOfWeek,
-              "timeSlot.startTime": period.startTime,
-              createdAt: new Date()
-            },
-          },
+          update: updateData,
           upsert: true,
         },
       });
