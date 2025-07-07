@@ -932,34 +932,21 @@ exports.importTimetable = async (req, res) => {
 
     console.log("Found school ID for import:", schoolId);
 
-    // ✅ SỬA: Lấy period definitions theo cả schoolYear và school
-    const periodDefs = await PeriodDefinition.find({ 
-      schoolYear: schoolYear,
-      school: schoolId 
-    });
+    // ✅ SỬA: Sử dụng PeriodMappingHelper để tạo mapping chính xác
+    const PeriodMappingHelper = require('../utils/periodMappingHelper');
+    const periodMappingResult = await PeriodMappingHelper.createExcelPeriodMapping(schoolYear, schoolId);
     
-    // Tạo mapping cho TẤT CẢ period definitions (để backward compatibility)
-    const periodMap = {};
-    periodDefs.forEach(p => { periodMap[p.periodNumber] = { startTime: p.startTime, endTime: p.endTime }; });
-
-    // Tạo mapping riêng cho REGULAR periods (chỉ tiết học thực sự)
-    const regularPeriods = periodDefs.filter(p => p.type === 'regular').sort((a, b) => a.periodNumber - b.periodNumber);
-    const regularPeriodMap = {};
-    regularPeriods.forEach((p, index) => {
-      regularPeriodMap[index + 1] = { 
-        periodNumber: p.periodNumber, 
-        startTime: p.startTime, 
-        endTime: p.endTime 
-      };
-    });
-
-    console.log("Class map keys (classCodes):", Object.keys(classMap));
-    console.log("Period map numbers:", Object.keys(periodMap));
-    console.log("Regular period map:", regularPeriodMap);
-
-    if (periodDefs.length === 0) {
-      return res.status(400).json({ message: "Chưa khai báo tiết học cho trường và năm học này" });
+    if (!periodMappingResult.success) {
+      return res.status(400).json({ 
+        message: "Lỗi khi tạo period mapping: " + periodMappingResult.error,
+        suggestion: "Vui lòng chạy script initPeriodDefinitions.js để khởi tạo period definitions."
+      });
     }
+
+    const { mapping: periodMap, regularMapping: regularPeriodMap, summary } = periodMappingResult;
+    
+    console.log("Class map keys (classCodes):", Object.keys(classMap));
+    console.log("Period mapping summary:", summary);
 
     const subjectDocs = await Subject.find({})
       .select("needFunctionRoom rooms")
@@ -1004,48 +991,55 @@ exports.importTimetable = async (req, res) => {
     const ops = [];
     const errors = [];
 
-    // 3. Build bulkWrite ops (upsert) with smart room‑assignment
+    // 3. Validate và build bulkWrite ops (upsert) with smart room‑assignment
+    const validatedRecords = [];
+    
     for (const rec of records) {
-      const classId = classMap[rec.classCode];
+      // ✅ SỬA: Sử dụng PeriodMappingHelper để validate record
+      const validation = PeriodMappingHelper.validateTimetableRecord(rec, { mapping: periodMap, regularMapping: regularPeriodMap }, classMap);
+      
+      if (!validation.valid) {
+        errors.push(`Record ${records.indexOf(rec) + 1}: ${validation.errors.join(', ')}`);
+        continue;
+      }
+
+      const convertedRec = validation.convertedRecord;
+      
       // ═══ Ưu tiên giáo viên từ teachingAssignments ═══
       let teachersFinal =
-        Array.isArray(rec.teachers) ? rec.teachers.filter(Boolean) : [];
+        Array.isArray(convertedRec.teachers) ? convertedRec.teachers.filter(Boolean) : [];
       if (teachersFinal.length === 0) {
         // Tìm TẤT CẢ giáo viên dạy môn học này cho lớp này
         const assigns = await Teacher.find({
-          "teachingAssignments.class": classId,
-          "teachingAssignments.subjects": rec.subject,
+          "teachingAssignments.class": convertedRec.classId,
+          "teachingAssignments.subjects": convertedRec.subject,
         }).select("_id fullname");
         
         console.log(`🔍 Searching teachers for:`, {
-          classCode: rec.classCode,
-          classId: classId,
-          subjectId: rec.subject
+          classCode: convertedRec.classCode,
+          classId: convertedRec.classId,
+          subjectId: convertedRec.subject
         });
         console.log(`🔍 Found ${assigns.length} teachers:`, assigns.map(t => t.fullname));
         
         // Lấy tối đa 2 giáo viên đầu tiên
         teachersFinal = assigns.map(t => t._id.toString()).slice(0, 2);
       }
-      rec.teachers = teachersFinal;          // bảo đảm luôn là mảng (≤2)
-      if (!classId) {
-        errors.push(`Không tìm thấy lớp ${rec.classCode}`);
-        continue;
-      }
+      convertedRec.teachers = teachersFinal;          // bảo đảm luôn là mảng (≤2)
+      
+      validatedRecords.push(validation);
+    }
 
-      // Sử dụng regularPeriodMap để map period number từ Excel (1-10) sang period thực sự
-      const regularPeriod = regularPeriodMap[rec.periodNumber];
-      if (!regularPeriod) {
-        errors.push(`Tiết ${rec.periodNumber} không hợp lệ. Chỉ chấp nhận tiết học từ 1-${Object.keys(regularPeriodMap).length}`);
-        continue;
-      }
+    // Phân tích conflicts
+    const conflictAnalysis = PeriodMappingHelper.analyzeConflicts(validatedRecords);
+    if (conflictAnalysis.hasConflicts) {
+      console.log('⚠️ Phát hiện conflicts:', conflictAnalysis.summary);
+      // Có thể thêm cảnh báo hoặc từ chối import tùy thuộc vào policy
+    }
 
-      // Lấy thông tin period thực sự từ mapping
-      const actualPeriod = periodMap[regularPeriod.periodNumber];
-      if (!actualPeriod) {
-        errors.push(`Chưa khai báo tiết ${regularPeriod.periodNumber} cho trường này`);
-        continue;
-      }
+    // Build bulk operations từ validated records
+    for (const validation of validatedRecords) {
+      const rec = validation.convertedRecord;
 
       /* ==== Chọn phòng theo ưu tiên & tránh trùng lịch ==== */
       let chosenRoomId = homeroomRoom._id; // default
@@ -1053,7 +1047,7 @@ exports.importTimetable = async (req, res) => {
       const subjInfo = subjectRoomMap.get(String(rec.subject));
       if (subjInfo && subjInfo.need && subjInfo.rooms.length) {
         for (const candidate of subjInfo.rooms) {
-          const key = `${candidate}|${rec.dayOfWeek}|${actualPeriod.startTime}`;
+          const key = `${candidate}|${rec.dayOfWeek}|${rec.startTime}`;
           if (!occupied.has(key)) {
             chosenRoomId = candidate;
             occupied.add(key);             // đánh dấu phòng đã bận
@@ -1068,13 +1062,13 @@ exports.importTimetable = async (req, res) => {
           subject: rec.subject,
           teachers: rec.teachers || [],
           room: chosenRoomId,
-          "timeSlot.endTime": actualPeriod.endTime
+          "timeSlot.endTime": rec.endTime
         },
         $setOnInsert: {
           schoolYear,
-          class: classId,
+          class: rec.classId,
           "timeSlot.dayOfWeek": rec.dayOfWeek,
-          "timeSlot.startTime": actualPeriod.startTime,
+          "timeSlot.startTime": rec.startTime,
           createdAt: new Date()
         },
       };
@@ -1087,9 +1081,9 @@ exports.importTimetable = async (req, res) => {
       // Xây dựng filter chính xác cho scheduleId
       const filter = {
         schoolYear,
-        class: classId,
+        class: rec.classId,
         "timeSlot.dayOfWeek": rec.dayOfWeek,
-        "timeSlot.startTime": actualPeriod.startTime
+        "timeSlot.startTime": rec.startTime
       };
 
       // Xử lý scheduleId trong filter một cách chính xác

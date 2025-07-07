@@ -7,7 +7,7 @@ const PeriodDefinitionSchema = new Schema({
     type: Number,
     required: true,
     min: 0,
-    max: 14
+    max: 25
   },
   startTime: {
     type: String,
