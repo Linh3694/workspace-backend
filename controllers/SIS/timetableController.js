@@ -613,6 +613,7 @@ exports.getTimetableGridByClass = async (req, res) => {
   try {
     console.log("=== getTimetableGridByClass called ===");
     const { classId, schoolYearId } = req.params;
+    const { scheduleId } = req.query;
     console.log("Params:", { classId, schoolYearId });
 
     if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(schoolYearId)) {
@@ -664,10 +665,16 @@ exports.getTimetableGridByClass = async (req, res) => {
 
     // Lấy timetables
     console.log("Fetching timetables...");
-    const timetables = await Timetable.find({
+    let timetableQuery = {
       class: classId,
       schoolYear: schoolYearId
-    })
+    };
+
+    if (scheduleId) {
+      timetableQuery.scheduleId = scheduleId;
+    }
+
+    const timetables = await Timetable.find(timetableQuery)
       .populate("subject", "name")
       .populate({
         path: 'teachers',
@@ -942,6 +949,7 @@ exports.importTimetable = async (req, res) => {
             class: classId,
             "timeSlot.dayOfWeek": rec.dayOfWeek,
             "timeSlot.startTime": period.startTime,
+            scheduleId
           },
           update: {
             $set: {
@@ -949,6 +957,7 @@ exports.importTimetable = async (req, res) => {
               teachers: rec.teachers || [],
               room: chosenRoomId,
               "timeSlot.endTime": period.endTime,
+              scheduleId
             },
             $setOnInsert: {
               schoolYear,
@@ -956,6 +965,7 @@ exports.importTimetable = async (req, res) => {
               "timeSlot.dayOfWeek": rec.dayOfWeek,
               "timeSlot.startTime": period.startTime,
               createdAt: new Date(),
+              scheduleId
             },
           },
           upsert: true,

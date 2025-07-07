@@ -3,6 +3,7 @@ const TimetableSchedule = require("../../models/TimetableSchedule");
 const SchoolYear = require("../../models/SchoolYear");
 const Class = require("../../models/Class");
 const Users = require("../../models/Users");
+const Timetable = require("../../models/Timetable");
 
 // Lấy tất cả thời khoá biểu theo lớp
 exports.getTimetableSchedules = async (req, res) => {
@@ -198,17 +199,19 @@ exports.deleteTimetableSchedule = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "ID không hợp lệ" });
-    }
-
-    const deletedSchedule = await TimetableSchedule.findByIdAndDelete(id);
-
-    if (!deletedSchedule) {
+    // Xoá schedule
+    const deleted = await TimetableSchedule.findByIdAndDelete(id);
+    if (!deleted) {
       return res.status(404).json({ message: "Không tìm thấy thời khoá biểu" });
     }
 
-    return res.json({ message: "Xóa thời khoá biểu thành công" });
+    // Xoá tất cả slot timetable liên quan
+    const deletedSlots = await Timetable.deleteMany({ scheduleId: id });
+
+    return res.json({
+      message: "Xoá thời khoá biểu thành công",
+      deletedSlots: deletedSlots.deletedCount
+    });
   } catch (err) {
     console.error("Error deleting timetable schedule:", err);
     return res.status(500).json({ error: err.message });

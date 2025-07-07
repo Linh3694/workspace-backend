@@ -16,6 +16,7 @@ const TimetableSchema = new Schema({
   },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+  scheduleId: { type: Schema.Types.ObjectId, ref: "TimetableSchedule" },
 });
 
 module.exports = mongoose.model("Timetable", TimetableSchema); 
