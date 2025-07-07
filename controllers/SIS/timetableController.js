@@ -933,7 +933,7 @@ exports.importTimetable = async (req, res) => {
     console.log("Found school ID for import:", schoolId);
 
     // ✅ SỬA: Sử dụng PeriodMappingHelper để tạo mapping chính xác
-    const PeriodMappingHelper = require('../utils/periodMappingHelper');
+    const PeriodMappingHelper = require('../../utils/periodMappingHelper');
     const periodMappingResult = await PeriodMappingHelper.createExcelPeriodMapping(schoolYear, schoolId);
     
     if (!periodMappingResult.success) {
