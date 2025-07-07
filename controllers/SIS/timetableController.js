@@ -8,6 +8,7 @@ const GradeLevel = require("../../models/GradeLevel");
 const PeriodDefinition = require("../../models/PeriodDefinition");
 const Teacher = require("../../models/Teacher");
 const timetableService = require("../../services/timetable.service");
+const TimetableSchedule = require("../../models/TimetableSchedule");
 
 // Lấy tất cả thời khóa biểu
 exports.getAllTimetables = async (req, res) => {
@@ -613,8 +614,8 @@ exports.getTimetableGridByClass = async (req, res) => {
   try {
     console.log("=== getTimetableGridByClass called ===");
     const { classId, schoolYearId } = req.params;
-    const { scheduleId } = req.query;
-    console.log("Params:", { classId, schoolYearId });
+    const { scheduleId, weekStartDate } = req.query;
+    console.log("Params:", { classId, schoolYearId, scheduleId, weekStartDate });
 
     if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(schoolYearId)) {
       console.log("Invalid IDs");
@@ -663,15 +664,60 @@ exports.getTimetableGridByClass = async (req, res) => {
       return res.status(400).json({ message: "Chưa khai báo tiết học cho trường và năm học này" });
     }
 
-    // Lấy timetables
+    // Lấy timetables với logic lọc theo schedule và tuần
     console.log("Fetching timetables...");
     let timetableQuery = {
       class: classId,
       schoolYear: schoolYearId
     };
 
+    // Nếu có scheduleId, chỉ lấy timetable của schedule đó
     if (scheduleId) {
       timetableQuery.scheduleId = scheduleId;
+      
+      // Lấy thông tin schedule để kiểm tra khoảng thời gian
+      const schedule = await TimetableSchedule.findById(scheduleId);
+      if (schedule) {
+        console.log("Schedule found:", {
+          name: schedule.name,
+          startDate: schedule.startDate,
+          endDate: schedule.endDate
+        });
+        
+        // Nếu có weekStartDate, tính toán khoảng thời gian của tuần
+        if (weekStartDate) {
+          const weekStart = new Date(weekStartDate);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 4); // Thứ 2 đến thứ 6
+          
+          console.log("Week range:", {
+            weekStart: weekStart.toISOString(),
+            weekEnd: weekEnd.toISOString()
+          });
+          
+          // Kiểm tra xem tuần này có nằm trong khoảng thời gian của schedule không
+          if (weekStart >= schedule.startDate && weekEnd <= schedule.endDate) {
+            console.log("Week is within schedule range");
+          } else {
+            console.log("Week is outside schedule range - returning empty grid");
+            // Trả về lưới trống nếu tuần không nằm trong khoảng thời gian của schedule
+            const grid = {};
+            daysOfWeek.forEach(day => {
+              grid[day] = {};
+              periodDefs
+                .map(p => p.periodNumber)
+                .sort((a, b) => a - b)
+                .forEach(period => {
+                  grid[day][period] = null;
+                });
+            });
+            return res.json({ data: grid });
+          }
+        }
+      }
+    } else {
+      // Nếu không có scheduleId, lấy tất cả timetable không có scheduleId (timetable cũ)
+      timetableQuery.scheduleId = { $exists: false };
     }
 
     const timetables = await Timetable.find(timetableQuery)
