@@ -5,13 +5,14 @@ const AwardRecord = require("../../models/AwardRecord");
 // Tạo mới AwardCategory
 exports.createCategory = async (req, res) => {
   try {
-    const { name, nameEng, description, descriptionEng, coverImage, subAwards } = req.body;
+    const { name, nameEng, description, descriptionEng, coverImage, subAwards, recipientType } = req.body;
     const newCategory = await AwardCategory.create({
       name,
       nameEng,
       description,
       descriptionEng,
       coverImage,
+      recipientType: recipientType || 'student',
       subAwards,
     });
     return res.status(201).json(newCategory);

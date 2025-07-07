@@ -32,6 +32,12 @@ const AwardCategorySchema = new Schema({
   description: { type: String },     
   descriptionEng: { type: String },          // Mô tả chung
   coverImage: { type: String },                // Đường dẫn ảnh cover (upload qua middleware)
+  recipientType: { 
+    type: String, 
+    enum: ['student', 'class'], 
+    required: true, 
+    default: 'student' 
+  },
   subAwards: [SubAwardSchema],
   createdAt: { type: Date, default: Date.now },
 });
