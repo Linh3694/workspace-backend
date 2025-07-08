@@ -382,6 +382,32 @@ exports.updateAwardRecord = async (req, res) => {
         }
       }
     }
+
+    // --- Merge logic for updating a single class (avoid losing other classes) ---
+    if (
+      Array.isArray(req.body.awardClasses) &&
+      req.body.awardClasses.length === 1 &&
+      originalRecord &&
+      Array.isArray(originalRecord.awardClasses) &&
+      originalRecord.awardClasses.length > 1
+    ) {
+      const updatedClass = req.body.awardClasses[0];
+      // Tìm vị trí lớp cần cập nhật trong mảng cũ
+      const idx = originalRecord.awardClasses.findIndex(
+        (c) =>
+          (c.class?.toString?.() || c.class + '') === (updatedClass.class?._id?.toString?.() || updatedClass.class?.toString?.() || updatedClass.class + '')
+      );
+      if (idx !== -1) {
+        // Tạo mảng mới giữ nguyên các lớp khác, chỉ cập nhật lớp này
+        const mergedClasses = [...originalRecord.awardClasses];
+        mergedClasses[idx] = { ...mergedClasses[idx], ...updatedClass };
+        req.body.awardClasses = mergedClasses;
+      } else {
+        // Nếu không tìm thấy, thêm vào cuối mảng
+        req.body.awardClasses = [...originalRecord.awardClasses, updatedClass];
+      }
+    }
+
     // --- Deduplication & duplicate guard (students / classes) ---
     // TEMPORARILY DISABLED - causing data loss during updates
     /*
