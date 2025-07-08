@@ -392,19 +392,26 @@ exports.updateAwardRecord = async (req, res) => {
       originalRecord.awardClasses.length > 1
     ) {
       const updatedClass = req.body.awardClasses[0];
+      const updatedClassId = (updatedClass.class?._id || updatedClass.class)?.toString();
+      console.log('🔍 Merge class: Looking for classId =', updatedClassId);
+      console.log('🔍 Original awardClasses:', originalRecord.awardClasses.map(c => (c.class?._id || c.class)?.toString()));
       // Tìm vị trí lớp cần cập nhật trong mảng cũ
       const idx = originalRecord.awardClasses.findIndex(
-        (c) =>
-          (c.class?.toString?.() || c.class + '') === (updatedClass.class?._id?.toString?.() || updatedClass.class?.toString?.() || updatedClass.class + '')
+        (c) => {
+          const cid = (c.class?._id || c.class)?.toString();
+          return cid === updatedClassId;
+        }
       );
       if (idx !== -1) {
         // Tạo mảng mới giữ nguyên các lớp khác, chỉ cập nhật lớp này
         const mergedClasses = [...originalRecord.awardClasses];
         mergedClasses[idx] = { ...mergedClasses[idx], ...updatedClass };
         req.body.awardClasses = mergedClasses;
+        console.log('🔍 Merge class: Updated class at idx', idx);
       } else {
         // Nếu không tìm thấy, thêm vào cuối mảng
         req.body.awardClasses = [...originalRecord.awardClasses, updatedClass];
+        console.log('🔍 Merge class: Not found, appended new class');
       }
     }
 
