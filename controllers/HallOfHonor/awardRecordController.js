@@ -383,16 +383,31 @@ exports.updateAwardRecord = async (req, res) => {
       }
     }
     // --- Deduplication & duplicate guard (students / classes) ---
+    // TEMPORARILY DISABLED - causing data loss during updates
+    /*
     if (Array.isArray(req.body.students)) {
+      console.log('🔍 BACKEND: Processing students array, length:', req.body.students.length);
+      console.log('🔍 BACKEND: Sample student object:', req.body.students[0]);
+      
       const seenStu = new Set();
       req.body.students = req.body.students.filter((s) => {
-        const id = s.student?.toString();
-        if (!id || seenStu.has(id)) return false;
+        // Handle both ObjectId and populated student object
+        const id = s.student?._id?.toString() || s.student?.toString();
+        console.log('🔍 BACKEND: Processing student ID:', id);
+        
+        if (!id || seenStu.has(id)) {
+          console.log('🔍 BACKEND: Filtering out student (no ID or duplicate):', id);
+          return false;
+        }
         seenStu.add(id);
         return true;
       });
+      
+      console.log('🔍 BACKEND: After deduplication, students length:', req.body.students.length);
     }
+    */
 
+    /*
     if (Array.isArray(req.body.awardClasses)) {
       const seenCls = new Set();
       req.body.awardClasses = req.body.awardClasses.filter((c) => {
@@ -402,6 +417,7 @@ exports.updateAwardRecord = async (req, res) => {
         return true;
       });
     }
+    */
 
     const baseMatch = {
       _id: { $ne: req.params.id }, // exclude current record
