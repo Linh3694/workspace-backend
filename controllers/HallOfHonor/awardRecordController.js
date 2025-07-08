@@ -360,6 +360,13 @@ exports.getAwardRecordById = async (req, res) => {
 // Cập nhật AwardRecord
 exports.updateAwardRecord = async (req, res) => {
   try {
+    console.log('🔍 BACKEND: Received update request for record:', req.params.id);
+    console.log('🔍 BACKEND: Request body:', JSON.stringify(req.body, null, 2));
+    
+    // Get original record to compare
+    const originalRecord = await AwardRecord.findById(req.params.id);
+    console.log('🔍 BACKEND: Original record students:', originalRecord?.students);
+
     // If custom subAward, inherit priority and labelEng from its category definition
     if (req.body.subAward?.type === "custom") {
       const cat = await AwardCategory.findById(req.body.awardCategory);
@@ -436,6 +443,10 @@ exports.updateAwardRecord = async (req, res) => {
 
     const updatedRecord = await AwardRecord.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!updatedRecord) return res.status(404).json({ message: "Không tìm thấy AwardRecord" });
+    
+    console.log('🔍 BACKEND: Updated record students:', updatedRecord.students);
+    console.log('🔍 BACKEND: Students count - Original:', originalRecord?.students?.length, 'Updated:', updatedRecord.students?.length);
+    
     return res.json(updatedRecord);
   } catch (error) {
     return res.status(400).json({ error: error.message });
