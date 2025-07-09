@@ -195,7 +195,8 @@ const corsOptions = {
     'https://wis.wellspring.edu.vn',
     'https://api-dev.wellspring.edu.vn',
     'https://library.wellspring.edu.vn',
-    'https://tuyendung.wellspring.edu.vn'
+    'https://tuyendung.wellspring.edu.vn',
+    'https://honor.wellspring.edu.vn'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
