@@ -341,9 +341,18 @@ exports.deleteClass = async (req, res) => {
 // Nhập hàng loạt lớp học từ Excel
 exports.bulkUploadClasses = async (req, res) => {
   try {
-    const data = req.body;  
+    if (!req.file) {
+      return res.status(400).json({ message: "Không có file Excel được upload" });
+    }
+
+    // Đọc file Excel từ buffer
+    const xlsx = require('xlsx');
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
     if (!data || data.length === 0) {
-      return res.status(400).json({ message: "No data found in Excel file" });
+      return res.status(400).json({ message: "Không có dữ liệu trong file Excel" });
     }
 
     const classesToInsert = [];

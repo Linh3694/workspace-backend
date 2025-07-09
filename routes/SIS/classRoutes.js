@@ -3,6 +3,7 @@ const router = express.Router();
 const classController = require("../../controllers/SIS/classController");
 const { authenticateToken, isAdmin } = require("../../middleware/auth");
 const uploadClass = require("../../middleware/uploadClass");
+const uploadExcel = require("../../middleware/uploadExcel");
 
 // Áp dụng middleware xác thực cho tất cả các route
 router.use(authenticateToken);
@@ -13,7 +14,7 @@ router.get("/", classController.getAllClasses);
 // Route: Tạo lớp học mới
 router.post("/", isAdmin, classController.createClass);
 
-router.post("/bulk-upload", isAdmin, classController.bulkUploadClasses);
+router.post("/bulk-upload", isAdmin, uploadExcel.single("excelFile"), classController.bulkUploadClasses);
 
 // Route: Lấy lớp học theo ID
 router.get("/:id", classController.getClassById);
