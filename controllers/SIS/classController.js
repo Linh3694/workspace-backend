@@ -341,15 +341,27 @@ exports.deleteClass = async (req, res) => {
 // Nhập hàng loạt lớp học từ Excel
 exports.bulkUploadClasses = async (req, res) => {
   try {
+    console.log('📁 Starting bulk upload classes...');
+    
     if (!req.file) {
+      console.log('❌ No file uploaded');
       return res.status(400).json({ message: "Không có file Excel được upload" });
     }
+
+    console.log('📄 File info:', {
+      filename: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
 
     // Đọc file Excel từ buffer
     const xlsx = require('xlsx');
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     const data = xlsx.utils.sheet_to_json(worksheet);
+
+    console.log('📊 Excel data parsed:', data.length, 'rows');
+    console.log('📋 Sample data:', data.slice(0, 2));
 
     if (!data || data.length === 0) {
       return res.status(400).json({ message: "Không có dữ liệu trong file Excel" });
@@ -396,12 +408,12 @@ exports.bulkUploadClasses = async (req, res) => {
         continue;
       }
 
-      // Tìm curriculum (nếu có)
+      // Tìm curriculum dựa trên educationalSystem
       let curriculum = null;
-      if (typeof row.CurriculumGrade === 'string') {
-        curriculum = await Curriculum.findOne({ gradeLevel: row.CurriculumGrade });
+      if (educationalSystem) {
+        curriculum = await Curriculum.findOne({ educationalSystem: educationalSystem._id });
         if (!curriculum) {
-          errors.push(`Curriculum not found for grade: ${row.CurriculumGrade}`);
+          errors.push(`Curriculum not found for educational system: ${EducationalSystemName}`);
           continue;
         }
       }
@@ -410,12 +422,15 @@ exports.bulkUploadClasses = async (req, res) => {
       let homeroomTeachers = [];
       if (HomeroomTeacherEmails) {
         const emails = HomeroomTeacherEmails.split(",").map((e) => e.trim());
+        console.log('👨‍🏫 Looking for teachers with emails:', emails);
         for (const email of emails) {
           const teacher = await Teacher.findOne({ email });
           if (!teacher) {
+            console.log(`❌ Teacher not found for email: ${email}`);
             errors.push(`Teacher not found for email: ${email}`);
             continue;
           }
+          console.log(`✅ Found teacher: ${teacher.fullname} (${teacher.email})`);
           homeroomTeachers.push(teacher._id);
         }
       }
@@ -452,6 +467,7 @@ exports.bulkUploadClasses = async (req, res) => {
 
     return res.json({ message: `Imported ${classesToInsert.length} classes successfully` });
   } catch (err) {
+    console.error('❌ Error in bulkUploadClasses:', err);
     return res.status(500).json({ error: err.message });
   }
 };
