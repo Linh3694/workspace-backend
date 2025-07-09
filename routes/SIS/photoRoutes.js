@@ -3,7 +3,29 @@ const router = express.Router();
 const Photo = require("../../models/Photo");
 const { authenticateToken, isAdmin } = require("../../middleware/auth");
 
-// GET all photos
+// PUBLIC GET all photos (dành cho Hall of Honor)
+router.get("/public", async (req, res) => {
+  try {
+    const photos = await Photo.find()
+      .populate('student', 'name studentCode')
+      .populate('class', 'className')
+      .populate('schoolYear', 'name code');
+    
+    // Normalize photoUrl to ensure it starts with /
+    const normalizedPhotos = photos.map(photo => ({
+      ...photo.toObject(),
+      photoUrl: photo.photoUrl && !photo.photoUrl.startsWith('/') 
+        ? `/${photo.photoUrl}` 
+        : photo.photoUrl
+    }));
+    
+    res.json(normalizedPhotos);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET all photos (authenticated)
 router.get("/", authenticateToken, async (req, res) => {
   try {
     const photos = await Photo.find()

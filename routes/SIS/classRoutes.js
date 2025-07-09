@@ -4,8 +4,29 @@ const classController = require("../../controllers/SIS/classController");
 const { authenticateToken, isAdmin } = require("../../middleware/auth");
 const uploadClass = require("../../middleware/uploadClass");
 const uploadExcel = require("../../middleware/uploadExcel");
+const Class = require("../../models/Class");
 
-// Áp dụng middleware xác thực cho tất cả các route
+// PUBLIC endpoint for class images (dành cho Hall of Honor)
+router.get("/images/public", async (req, res) => {
+  try {
+    const classes = await Class.find({ classImage: { $exists: true, $ne: null } })
+      .select('_id className classImage')
+      .populate('schoolYear', 'name code');
+    
+    const classImages = classes.map(cls => ({
+      _id: cls._id,
+      className: cls.className,
+      classImage: cls.classImage,
+      schoolYear: cls.schoolYear
+    }));
+    
+    res.json(classImages);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Áp dụng middleware xác thực cho tất cả các route khác
 router.use(authenticateToken);
 
 // Route: Lấy tất cả lớp học
