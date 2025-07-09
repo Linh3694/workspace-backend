@@ -3,10 +3,8 @@ const router = express.Router();
 const schoolYearController = require("../../controllers/SIS/schoolYearController");
 const multer = require("multer");
 const upload = multer({ dest: "uploads/" });
-const { authenticateToken, isAdmin } = require("../../middleware/auth");
+const { authenticateToken } = require("../../middleware/auth");
 
-// Áp dụng middleware xác thực cho tất cả các route
-router.use(authenticateToken);
 
 // Các routes cho quản lý năm học
 router.post("/", schoolYearController.createSchoolYear);
