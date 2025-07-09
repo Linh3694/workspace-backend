@@ -283,37 +283,11 @@ exports.getAllAwardRecords = async (req, res) => {
                             ],
                           },
                         },
-                        in: {
-                          $let: {
-                            vars: {
-                              selectedPhoto: {
-                                $cond: {
-                                  if: { $ne: ["$$primaryPhoto", null] },
-                                  then: "$$primaryPhoto",
-                                  else: "$$fallbackPhoto",
-                                },
-                              },
-                            },
-                            in: {
-                              $cond: {
-                                if: { $ne: ["$$selectedPhoto", null] },
-                                then: {
-                                  $mergeObjects: [
-                                    "$$selectedPhoto",
-                                    {
-                                      photoUrl: {
-                                        $cond: {
-                                          if: { $regexMatch: { input: "$$selectedPhoto.photoUrl", regex: "^/" } },
-                                          then: "$$selectedPhoto.photoUrl",
-                                          else: { $concat: ["/", "$$selectedPhoto.photoUrl"] },
-                                        },
-                                      },
-                                    },
-                                  ],
-                                },
-                                else: null,
-                              },
-                            },
+                                                in: {
+                          $cond: {
+                            if: { $ne: ["$$primaryPhoto", null] },
+                            then: "$$primaryPhoto",
+                            else: "$$fallbackPhoto",
                           },
                         },
                       },
@@ -384,7 +358,7 @@ exports.getAllAwardRecords = async (req, res) => {
                 $and: [
                   { $ne: ["$$stu.student.name", null] },
                   { $ne: ["$$stu.student.name", ""] },
-                  { $type: ["$$stu.student.name", "string"] }
+                  { $ne: ["$$stu.student", null] }
                 ]
               }
             }
