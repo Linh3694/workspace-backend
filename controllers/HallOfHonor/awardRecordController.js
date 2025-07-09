@@ -284,10 +284,36 @@ exports.getAllAwardRecords = async (req, res) => {
                           },
                         },
                         in: {
-                          $cond: {
-                            if: { $ne: ["$$primaryPhoto", null] },
-                            then: "$$primaryPhoto",
-                            else: "$$fallbackPhoto",
+                          $let: {
+                            vars: {
+                              selectedPhoto: {
+                                $cond: {
+                                  if: { $ne: ["$$primaryPhoto", null] },
+                                  then: "$$primaryPhoto",
+                                  else: "$$fallbackPhoto",
+                                },
+                              },
+                            },
+                            in: {
+                              $cond: {
+                                if: { $ne: ["$$selectedPhoto", null] },
+                                then: {
+                                  $mergeObjects: [
+                                    "$$selectedPhoto",
+                                    {
+                                      photoUrl: {
+                                        $cond: {
+                                          if: { $regexMatch: { input: "$$selectedPhoto.photoUrl", regex: "^/" } },
+                                          then: "$$selectedPhoto.photoUrl",
+                                          else: { $concat: ["/", "$$selectedPhoto.photoUrl"] },
+                                        },
+                                      },
+                                    },
+                                  ],
+                                },
+                                else: null,
+                              },
+                            },
                           },
                         },
                       },
@@ -347,6 +373,24 @@ exports.getAllAwardRecords = async (req, res) => {
           }
         }
       },
+      // (6b) Filter out students with null/undefined names
+      {
+        $addFields: {
+          students: {
+            $filter: {
+              input: "$students",
+              as: "stu",
+              cond: {
+                $and: [
+                  { $ne: ["$$stu.student.name", null] },
+                  { $ne: ["$$stu.student.name", ""] },
+                  { $type: ["$$stu.student.name", "string"] }
+                ]
+              }
+            }
+          }
+        }
+      },
       // (7) Loại bỏ các trường tạm thời
       {
         $project: {
@@ -386,11 +430,15 @@ exports.getAllAwardRecords = async (req, res) => {
     console.log(`📸 Award Records with photos: ${records.length} records`);
     records.forEach((record, index) => {
       if (index < 2) { // Log first 2 records
+        const studentsWithUndefinedName = record.students.filter(s => !s.student?.name);
         console.log(`Record ${index + 1}:`, {
-          students: record.students.map(s => ({
+          totalStudents: record.students.length,
+          studentsWithUndefinedName: studentsWithUndefinedName.length,
+          students: record.students.slice(0, 3).map(s => ({
             name: s.student?.name,
             hasPhoto: !!s.photo,
-            photoUrl: s.photo?.photoUrl
+            photoUrl: s.photo?.photoUrl,
+            photoUrlFixed: s.photo?.photoUrl && !s.photo.photoUrl.startsWith('/') ? `/${s.photo.photoUrl}` : s.photo?.photoUrl
           }))
         });
       }
