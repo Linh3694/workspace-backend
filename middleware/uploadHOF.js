@@ -14,7 +14,7 @@ const storage = multer.diskStorage({
   }
 });
 
-// Lọc file: chỉ cho phép upload ảnh (jpeg, jpg, png, gif)
+// Lọc file: chỉ cho phép upload ảnh (jpeg, jpg, png, webp)
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|webp/;
   const extName = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -22,7 +22,7 @@ const fileFilter = (req, file, cb) => {
   if (extName && mimeType) {
     return cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed!'));
+    cb(new Error('Chỉ cho phép upload file ảnh (JPEG, JPG, PNG, WebP)!'));
   }
 };
 
