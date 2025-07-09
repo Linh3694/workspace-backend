@@ -153,8 +153,29 @@ exports.getAllAwardRecords = async (req, res) => {
                 },
               },
             },
+            { $sort: { createdAt: -1 } }, // Lấy ảnh mới nhất
           ],
           as: "photos",
+        },
+      },
+      // (2b) Lookup ảnh Photo fallback cho current school year
+      {
+        $lookup: {
+          from: "photos",
+          let: {
+            studentIds: "$students.student",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ["$student", "$$studentIds"],
+                },
+              },
+            },
+            { $sort: { createdAt: -1 } }, // Lấy ảnh mới nhất
+          ],
+          as: "fallbackPhotos",
         },
       },
       // (3) Lookup AwardCategory
@@ -235,16 +256,41 @@ exports.getAllAwardRecords = async (req, res) => {
                       ],
                     },
                     photo: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: "$photos",
-                            as: "ph",
-                            cond: { $eq: ["$$stu.student", "$$ph.student"] },
+                      $let: {
+                        vars: {
+                          primaryPhoto: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: "$photos",
+                                  as: "ph",
+                                  cond: { $eq: ["$$stu.student", "$$ph.student"] },
+                                },
+                              },
+                              0,
+                            ],
+                          },
+                          fallbackPhoto: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: "$fallbackPhotos",
+                                  as: "fph",
+                                  cond: { $eq: ["$$stu.student", "$$fph.student"] },
+                                },
+                              },
+                              0,
+                            ],
                           },
                         },
-                        0,
-                      ],
+                        in: {
+                          $cond: {
+                            if: { $ne: ["$$primaryPhoto", null] },
+                            then: "$$primaryPhoto",
+                            else: "$$fallbackPhoto",
+                          },
+                        },
+                      },
                     },
                     currentClass: {
                       $let: {
@@ -307,6 +353,7 @@ exports.getAllAwardRecords = async (req, res) => {
           populatedStudents: 0,
           studentEnrollments: 0,
           photos: 0,
+          fallbackPhotos: 0,
           awardClassesInfo: 0
         },
       },
@@ -334,6 +381,20 @@ exports.getAllAwardRecords = async (req, res) => {
     );
 
     const records = await AwardRecord.aggregate(pipeline);
+
+    // Debug: Log photo info
+    console.log(`📸 Award Records with photos: ${records.length} records`);
+    records.forEach((record, index) => {
+      if (index < 2) { // Log first 2 records
+        console.log(`Record ${index + 1}:`, {
+          students: record.students.map(s => ({
+            name: s.student?.name,
+            hasPhoto: !!s.photo,
+            photoUrl: s.photo?.photoUrl
+          }))
+        });
+      }
+    });
 
     res.json(records);
   } catch (error) {
