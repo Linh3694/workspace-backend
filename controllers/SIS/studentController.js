@@ -622,59 +622,49 @@ exports.bulkUploadStudentImages = asyncHandler(async (req, res) => {
           continue;
         }
 
-        // Parse tên file: 2024-2025/12ADN3.jpg -> className = 12ADN3
+        // Parse tên file: 2024-2025/WS12310360.jpg -> studentCode = WS12310360
         const pathParts = fileName.split('/');
         const fileNameOnly = pathParts[pathParts.length - 1]; // Lấy tên file cuối cùng
-        const className = fileNameOnly.split('.')[0]; // Bỏ extension
+        const studentCode = fileNameOnly.split('.')[0].trim(); // Bỏ extension và trim space
 
-        // Tìm lớp học theo className
-        const classRecord = await Class.findOne({ className: className });
-        if (!classRecord) {
-          results.errors.push(`File ${fileName}: Không tìm thấy lớp học với tên ${className}`);
-          continue;
-        }
-
-        // Tìm tất cả học sinh trong lớp
-        const students = await Student.find({ class: classRecord._id });
-        if (students.length === 0) {
-          results.errors.push(`File ${fileName}: Không tìm thấy học sinh nào trong lớp ${className}`);
+        // Tìm học sinh theo studentCode
+        const student = await Student.findOne({ studentCode: studentCode });
+        if (!student) {
+          results.errors.push(`File ${fileName}: Không tìm thấy học sinh với mã ${studentCode}`);
           continue;
         }
 
         // Trích xuất và lưu file
         const timestamp = Date.now();
-        const newFileName = `class-${timestamp}-${className}.${fileExt}`;
+        const newFileName = `student-${timestamp}-${studentCode}.${fileExt}`;
         const outputPath = `/uploads/Students/${newFileName}`;
 
         // Lưu file vào thư mục
         zip.extractEntryTo(entry, `${__dirname}/../../uploads/Students/`, false, true, newFileName);
 
-        // Tạo/cập nhật photo cho tất cả học sinh trong lớp
-        for (const student of students) {
-          // Kiểm tra xem đã có photo cho student trong năm học này chưa
-          const existingPhoto = await Photo.findOne({
-            student: student._id,
-            schoolYear: schoolYear
-          });
+        // Tạo/cập nhật photo cho học sinh cụ thể
+        const existingPhoto = await Photo.findOne({
+          student: student._id,
+          schoolYear: schoolYear
+        });
 
-          if (existingPhoto) {
-            // Cập nhật photo cũ
-            existingPhoto.photoUrl = outputPath;
-            existingPhoto.updatedAt = Date.now();
-            await existingPhoto.save();
-          } else {
-            // Tạo photo mới
-            const photoData = {
-              student: student._id,
-              schoolYear: schoolYear,
-              photoUrl: outputPath,
-              description: `Avatar lớp ${className} từ bulk upload`
-            };
-            await Photo.create(photoData);
-          }
+        if (existingPhoto) {
+          // Cập nhật photo cũ
+          existingPhoto.photoUrl = outputPath;
+          existingPhoto.updatedAt = Date.now();
+          await existingPhoto.save();
+        } else {
+          // Tạo photo mới
+          const photoData = {
+            student: student._id,
+            schoolYear: schoolYear,
+            photoUrl: outputPath,
+            description: `Avatar học sinh ${studentCode} từ bulk upload`
+          };
+          await Photo.create(photoData);
         }
 
-        results.success.push(`${className}: Upload thành công cho ${students.length} học sinh`);
+        results.success.push(`${studentCode}: Upload thành công cho học sinh ${student.name}`);
 
       } catch (entryError) {
         console.error(`Error processing ${entry.entryName}:`, entryError);
