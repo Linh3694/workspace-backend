@@ -370,8 +370,10 @@ exports.bulkUploadClasses = async (req, res) => {
     const classesToInsert = [];
     const errors = [];
 
-    for (const row of data) {
+    for (const [index, row] of data.entries()) {
       const { ClassName, SchoolYearCode, EducationalSystemName, GradeLevelCode, HomeroomTeacherEmails } = row;
+      
+      console.log(`🔍 Processing row ${index + 1}:`, { ClassName, SchoolYearCode, EducationalSystemName, GradeLevelCode });
 
       // Kiểm tra dữ liệu bắt buộc
       if (!ClassName || !SchoolYearCode || !GradeLevelCode) {
@@ -380,33 +382,43 @@ exports.bulkUploadClasses = async (req, res) => {
       }
 
       // Tìm schoolYear
+      console.log(`🗓️ Looking for school year with code: ${SchoolYearCode}`);
       const schoolYear = await SchoolYear.findOne({ code: SchoolYearCode });
       if (!schoolYear) {
+        console.log(`❌ School year not found for code: ${SchoolYearCode}`);
         errors.push(`School year not found for code: ${SchoolYearCode}`);
         continue;
       }
+      console.log(`✅ Found school year: ${schoolYear.code} (${schoolYear._id})`);
 
       // Tìm educationalSystem (nếu có)
       let educationalSystem = null;
       if (EducationalSystemName) {
+        console.log(`🎓 Looking for educational system with name: ${EducationalSystemName}`);
         educationalSystem = await EducationalSystem.findOne({ name: EducationalSystemName });
         if (!educationalSystem) {
+          console.log(`❌ Educational system not found: ${EducationalSystemName}`);
           errors.push(`Educational system not found: ${EducationalSystemName}`);
           continue;
         }
+        console.log(`✅ Found educational system: ${educationalSystem.name} (${educationalSystem._id})`);
       }
 
-      // Tìm gradeLevel
+      // Tìm gradeLevel (convert GradeLevelCode to string if it's a number)
+      const gradeLevelCodeStr = String(GradeLevelCode);
+      console.log(`📚 Looking for grade level with code/name: ${gradeLevelCodeStr}`);
       const gradeLevelRec = await GradeLevel.findOne({
         $or: [
-          { code: GradeLevelCode },
-          { name: GradeLevelCode }
+          { code: gradeLevelCodeStr },
+          { name: gradeLevelCodeStr }
         ]
       });
       if (!gradeLevelRec) {
-        errors.push(`Grade level not found for code or name: ${GradeLevelCode}`);
+        console.log(`❌ Grade level not found for code or name: ${gradeLevelCodeStr}`);
+        errors.push(`Grade level not found for code or name: ${gradeLevelCodeStr}`);
         continue;
       }
+      console.log(`✅ Found grade level: ${gradeLevelRec.name} (${gradeLevelRec._id})`);
 
       // Tìm curriculum dựa trên educationalSystem
       let curriculum = null;
