@@ -575,7 +575,7 @@ exports.deleteStudent = asyncHandler(async (req, res) => {
 });
 
 // Upload hàng loạt ảnh học sinh từ file ZIP
-const bulkUploadStudentImages = asyncHandler(async (req, res) => {
+exports.bulkUploadStudentImages = asyncHandler(async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "Không có file ZIP được upload" });
@@ -694,6 +694,6 @@ module.exports = {
   getStudentPhotoByYear: exports.getStudentPhotoByYear,
   getAllStudentPhotos: exports.getAllStudentPhotos,
   getCurrentStudentPhoto: exports.getCurrentStudentPhoto,
-  bulkUploadStudentImages: bulkUploadStudentImages,
+  bulkUploadStudentImages: exports.bulkUploadStudentImages,
   removeFamilyFromStudent: exports.removeFamilyFromStudent
 };
