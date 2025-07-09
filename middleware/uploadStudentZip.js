@@ -70,7 +70,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: { 
-    fileSize: 1024 * 1024 * 1024 // 1GB cho ZIP, 5MB cho ảnh đơn lẻ
+    fileSize: 4 * 1024 * 1024 * 1024 // 4GB cho ZIP, 5MB cho ảnh đơn lẻ
   }
 });
 
