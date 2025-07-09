@@ -407,6 +407,11 @@ exports.bulkUploadClasses = async (req, res) => {
       // Tìm gradeLevel (convert GradeLevelCode to string if it's a number)
       const gradeLevelCodeStr = String(GradeLevelCode);
       console.log(`📚 Looking for grade level with code/name: ${gradeLevelCodeStr}`);
+      
+      // Debug: List all grade levels to see what's available
+      const allGradeLevels = await GradeLevel.find({}, 'name code order');
+      console.log('📋 Available grade levels:', allGradeLevels.map(g => ({ name: g.name, code: g.code, order: g.order })));
+      
       const gradeLevelRec = await GradeLevel.findOne({
         $or: [
           { code: gradeLevelCodeStr },
