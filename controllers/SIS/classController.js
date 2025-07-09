@@ -498,6 +498,17 @@ exports.bulkUploadClassImages = async (req, res) => {
       return res.status(400).json({ message: "Không có file ZIP được upload" });
     }
 
+    const { schoolYear } = req.body;
+    if (!schoolYear) {
+      return res.status(400).json({ message: "Thiếu thông tin năm học" });
+    }
+
+    // Kiểm tra năm học có tồn tại
+    const schoolYearRecord = await SchoolYear.findById(schoolYear);
+    if (!schoolYearRecord) {
+      return res.status(400).json({ message: "Năm học không tồn tại" });
+    }
+
     const zipPath = req.file.path;
     const zip = new AdmZip(zipPath);
     const zipEntries = zip.getEntries();
@@ -505,59 +516,118 @@ exports.bulkUploadClassImages = async (req, res) => {
     const results = {
       success: [],
       errors: [],
-      total: zipEntries.length
+      total: 0
     };
 
-    for (const entry of zipEntries) {
-      try {
-        if (entry.isDirectory) continue;
+    // Lọc ra các file hợp lệ
+    const validEntries = zipEntries.filter(entry => {
+      if (entry.isDirectory) return false;
+      
+      const fileName = entry.entryName;
+      
+      // Bỏ qua file __MACOSX và hidden files
+      if (fileName.includes('__MACOSX') || 
+          fileName.includes('._') || 
+          fileName.startsWith('.') ||
+          fileName.includes('/.')) {
+        return false;
+      }
+      
+      const fileExt = fileName.toLowerCase().split('.').pop();
+      return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt);
+    });
 
+    results.total = validEntries.length;
+
+    for (const entry of validEntries) {
+      try {
         const fileName = entry.entryName;
         const fileExt = fileName.toLowerCase().split('.').pop();
         
-        // Kiểm tra định dạng file
-        if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
-          results.errors.push(`File ${fileName}: Định dạng không được hỗ trợ`);
-          continue;
-        }
-
-        // Tên file phải có định dạng: className_schoolYearCode.ext
-        // Ví dụ: 12A1_2023-2024.jpg
-        const baseName = fileName.split('.')[0];
-        const parts = baseName.split('_');
+        // Parse tên file với nhiều định dạng khác nhau
+        let className = '';
+        let targetSchoolYearCode = '';
         
-        if (parts.length < 2) {
-          results.errors.push(`File ${fileName}: Tên file phải có định dạng className_schoolYearCode.ext`);
+        // Lấy tên file cuối cùng từ path
+        const pathParts = fileName.split('/');
+        const fileNameOnly = pathParts[pathParts.length - 1];
+        const baseFileName = fileNameOnly.split('.')[0];
+        
+        // Định dạng 1: className_schoolYearCode.ext
+        if (baseFileName.includes('_')) {
+          const parts = baseFileName.split('_');
+          className = parts[0];
+          targetSchoolYearCode = parts.slice(1).join('_'); // Trong trường hợp năm học có dạng 2024-2025
+        }
+        // Định dạng 2: schoolYear/className.ext (file trong thư mục năm học)
+        else if (pathParts.length > 1) {
+          // Kiểm tra xem thư mục có phải là năm học không
+          const folderName = pathParts[pathParts.length - 2];
+          if (folderName && folderName.match(/^\d{4}-\d{4}$/)) {
+            className = baseFileName;
+            targetSchoolYearCode = folderName;
+          } else {
+            className = baseFileName;
+            targetSchoolYearCode = schoolYearRecord.code;
+          }
+        }
+        // Định dạng 3: className.ext (chỉ có tên lớp)
+        else {
+          className = baseFileName;
+          targetSchoolYearCode = schoolYearRecord.code;
+        }
+
+        if (!className) {
+          results.errors.push(`File ${fileName}: Không thể parse tên lớp`);
           continue;
         }
 
-        const className = parts[0];
-        const schoolYearCode = parts.slice(1).join('_');
-
-        // Tìm lớp học và năm học
-        const schoolYear = await SchoolYear.findOne({ code: schoolYearCode });
-        if (!schoolYear) {
-          results.errors.push(`File ${fileName}: Không tìm thấy năm học ${schoolYearCode}`);
-          continue;
+        // Tìm lớp học theo className và schoolYear
+        // Nếu có targetSchoolYearCode, tìm theo đó, không thì dùng schoolYear từ request
+        let classRecord;
+        
+        if (targetSchoolYearCode && targetSchoolYearCode !== schoolYearRecord.code) {
+          // Tìm năm học theo code
+          const targetSchoolYear = await SchoolYear.findOne({ code: targetSchoolYearCode });
+          if (!targetSchoolYear) {
+            results.errors.push(`File ${fileName}: Không tìm thấy năm học ${targetSchoolYearCode}`);
+            continue;
+          }
+          classRecord = await Class.findOne({ 
+            className: className, 
+            schoolYear: targetSchoolYear._id 
+          });
+        } else {
+          classRecord = await Class.findOne({ 
+            className: className, 
+            schoolYear: schoolYear 
+          });
         }
-
-        const classRecord = await Class.findOne({ 
-          className: className, 
-          schoolYear: schoolYear._id 
-        });
         
         if (!classRecord) {
-          results.errors.push(`File ${fileName}: Không tìm thấy lớp ${className} trong năm học ${schoolYearCode}`);
+          results.errors.push(`File ${fileName}: Không tìm thấy lớp ${className} trong năm học ${targetSchoolYearCode || schoolYearRecord.code}`);
           continue;
         }
 
         // Trích xuất và lưu file
         const timestamp = Date.now();
-        const newFileName = `class-${timestamp}-${className}-${schoolYearCode}.${fileExt}`;
+        const sanitizedClassName = className.replace(/[^a-zA-Z0-9]/g, '');
+        const sanitizedSchoolYear = (targetSchoolYearCode || schoolYearRecord.code).replace(/[^a-zA-Z0-9]/g, '');
+        const newFileName = `class-${timestamp}-${sanitizedClassName}-${sanitizedSchoolYear}.${fileExt}`;
         const outputPath = `uploads/Classes/${newFileName}`;
-        const fullPath = `${__dirname}/../../${outputPath}`;
 
-        zip.extractEntryTo(entry, `${__dirname}/../../uploads/Classes/`, false, true, newFileName);
+        // Tạo thư mục nếu chưa tồn tại
+        const fs = require('fs');
+        const path = require('path');
+        const uploadDir = path.join(__dirname, '../../uploads/Classes');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        // Trích xuất file từ ZIP
+        const fileContent = zip.readFile(entry);
+        const fullOutputPath = path.join(uploadDir, newFileName);
+        fs.writeFileSync(fullOutputPath, fileContent);
 
         // Cập nhật database
         await Class.findByIdAndUpdate(
@@ -565,7 +635,7 @@ exports.bulkUploadClassImages = async (req, res) => {
           { classImage: outputPath, updatedAt: Date.now() }
         );
 
-        results.success.push(`${className} (${schoolYearCode}): Upload thành công`);
+        results.success.push(`${className} (${targetSchoolYearCode || schoolYearRecord.code}): Upload thành công`);
 
       } catch (entryError) {
         console.error(`Error processing ${entry.entryName}:`, entryError);
