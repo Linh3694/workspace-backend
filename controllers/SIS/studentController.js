@@ -8,6 +8,7 @@ const SchoolYear = require('../../models/SchoolYear');
 const Class = require('../../models/Class');
 const AdmZip = require('adm-zip');
 const fs = require('fs');
+const path = require('path');
 
 // Display list of all Students
 exports.getStudents = asyncHandler(async (req, res) => {
@@ -638,9 +639,18 @@ exports.bulkUploadStudentImages = asyncHandler(async (req, res) => {
         const timestamp = Date.now();
         const newFileName = `student-${timestamp}-${studentCode}.${fileExt}`;
         const outputPath = `/uploads/Students/${newFileName}`;
+        
+        // Đảm bảo thư mục tồn tại
+        const uploadsDir = path.join(__dirname, '../../uploads/Students');
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
 
-        // Lưu file vào thư mục
-        zip.extractEntryTo(entry, `${__dirname}/../../uploads/Students/`, false, true, newFileName);
+        // Lưu file vào thư mục - trích xuất trực tiếp với tên mới
+        const fullOutputPath = path.join(uploadsDir, newFileName);
+        fs.writeFileSync(fullOutputPath, entry.getData());
+        
+        console.log(`✅ Đã lưu file: ${fullOutputPath}`);
 
         // Tạo/cập nhật photo cho học sinh cụ thể
         const existingPhoto = await Photo.findOne({
