@@ -4,6 +4,9 @@ const User = require('../../models/Users');
 const Family = require('../../models/Family');
 const Parent = require('../../models/Parent');
 const Photo = require('../../models/Photo');
+const SchoolYear = require('../../models/SchoolYear');
+const AdmZip = require('adm-zip');
+const fs = require('fs');
 
 // Display list of all Students
 exports.getStudents = asyncHandler(async (req, res) => {
@@ -569,4 +572,113 @@ exports.deleteStudent = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: 'Student not found' });
   }
   res.json({ message: 'Student deleted successfully' });
+});
+
+// Upload hàng loạt ảnh học sinh từ file ZIP
+exports.bulkUploadStudentImages = asyncHandler(async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Không có file ZIP được upload" });
+    }
+
+    const { schoolYear } = req.body;
+    if (!schoolYear) {
+      return res.status(400).json({ message: "Thiếu thông tin năm học" });
+    }
+
+    // Kiểm tra năm học có tồn tại
+    const schoolYearRecord = await SchoolYear.findById(schoolYear);
+    if (!schoolYearRecord) {
+      return res.status(400).json({ message: "Năm học không tồn tại" });
+    }
+
+    const zipPath = req.file.path;
+    const zip = new AdmZip(zipPath);
+    const zipEntries = zip.getEntries();
+
+    const results = {
+      success: [],
+      errors: [],
+      total: zipEntries.length
+    };
+
+    for (const entry of zipEntries) {
+      try {
+        if (entry.isDirectory) continue;
+
+        const fileName = entry.entryName;
+        const fileExt = fileName.toLowerCase().split('.').pop();
+        
+        // Kiểm tra định dạng file
+        if (!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)) {
+          results.errors.push(`File ${fileName}: Định dạng không được hỗ trợ`);
+          continue;
+        }
+
+        // Tên file phải có định dạng: studentCode.ext
+        // Ví dụ: HS001.jpg, ST12345.png
+        const baseName = fileName.split('.')[0];
+        const studentCode = baseName;
+
+        // Tìm học sinh theo studentCode
+        const student = await Student.findOne({ studentCode: studentCode });
+        if (!student) {
+          results.errors.push(`File ${fileName}: Không tìm thấy học sinh với mã ${studentCode}`);
+          continue;
+        }
+
+        // Trích xuất và lưu file
+        const timestamp = Date.now();
+        const newFileName = `student-${timestamp}-${studentCode}.${fileExt}`;
+        const outputPath = `/uploads/Students/${newFileName}`;
+
+        // Lưu file vào thư mục
+        zip.extractEntryTo(entry, `${__dirname}/../../uploads/Students/`, false, true, newFileName);
+
+        // Kiểm tra xem đã có photo cho student trong năm học này chưa
+        const existingPhoto = await Photo.findOne({
+          student: student._id,
+          schoolYear: schoolYear
+        });
+
+        if (existingPhoto) {
+          // Cập nhật photo cũ
+          existingPhoto.photoUrl = outputPath;
+          existingPhoto.updatedAt = Date.now();
+          await existingPhoto.save();
+        } else {
+          // Tạo photo mới
+          const photoData = {
+            student: student._id,
+            schoolYear: schoolYear,
+            photoUrl: outputPath,
+            description: 'Avatar học sinh từ bulk upload'
+          };
+          await Photo.create(photoData);
+        }
+
+        results.success.push(`${studentCode}: Upload thành công`);
+
+      } catch (entryError) {
+        console.error(`Error processing ${entry.entryName}:`, entryError);
+        results.errors.push(`File ${entry.entryName}: ${entryError.message}`);
+      }
+    }
+
+    // Xóa file ZIP tạm
+    try {
+      fs.unlinkSync(zipPath);
+    } catch (cleanupError) {
+      console.error('Error cleaning up ZIP file:', cleanupError);
+    }
+
+    return res.json({
+      message: `Xử lý hoàn tất: ${results.success.length} thành công, ${results.errors.length} lỗi`,
+      results: results
+    });
+
+  } catch (err) {
+    console.error('Error in bulk upload student images:', err);
+    return res.status(500).json({ error: err.message });
+  }
 });
