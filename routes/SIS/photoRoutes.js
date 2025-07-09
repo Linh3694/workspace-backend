@@ -6,8 +6,20 @@ const { authenticateToken, isAdmin } = require("../../middleware/auth");
 // GET all photos
 router.get("/", authenticateToken, async (req, res) => {
   try {
-    const photos = await Photo.find();
-    res.json(photos);
+    const photos = await Photo.find()
+      .populate('student', 'name studentCode')
+      .populate('class', 'className')
+      .populate('schoolYear', 'name code');
+    
+    // Normalize photoUrl to ensure it starts with /
+    const normalizedPhotos = photos.map(photo => ({
+      ...photo.toObject(),
+      photoUrl: photo.photoUrl && !photo.photoUrl.startsWith('/') 
+        ? `/${photo.photoUrl}` 
+        : photo.photoUrl
+    }));
+    
+    res.json(normalizedPhotos);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -16,11 +28,24 @@ router.get("/", authenticateToken, async (req, res) => {
 // GET photo by ID
 router.get("/:id", authenticateToken, async (req, res) => {
   try {
-    const photo = await Photo.findById(req.params.id);
+    const photo = await Photo.findById(req.params.id)
+      .populate('student', 'name studentCode')
+      .populate('class', 'className')
+      .populate('schoolYear', 'name code');
+    
     if (!photo) {
       return res.status(404).json({ message: "Photo not found" });
     }
-    res.json(photo);
+    
+    // Normalize photoUrl to ensure it starts with /
+    const normalizedPhoto = {
+      ...photo.toObject(),
+      photoUrl: photo.photoUrl && !photo.photoUrl.startsWith('/') 
+        ? `/${photo.photoUrl}` 
+        : photo.photoUrl
+    };
+    
+    res.json(normalizedPhoto);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

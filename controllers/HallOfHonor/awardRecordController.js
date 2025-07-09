@@ -286,9 +286,51 @@ exports.getAllAwardRecords = async (req, res) => {
                                                 in: {
                           $cond: {
                             if: { $ne: ["$$primaryPhoto", null] },
-                            then: "$$primaryPhoto",
-                            else: "$$fallbackPhoto",
-                          },
+                            then: {
+                              $mergeObjects: [
+                                "$$primaryPhoto",
+                                {
+                                  photoUrl: {
+                                    $cond: {
+                                      if: {
+                                        $and: [
+                                          { $ne: ["$$primaryPhoto.photoUrl", null] },
+                                          { $ne: [{ $substrCP: ["$$primaryPhoto.photoUrl", 0, 1] }, "/"] }
+                                        ]
+                                      },
+                                      then: { $concat: ["/", "$$primaryPhoto.photoUrl"] },
+                                      else: "$$primaryPhoto.photoUrl"
+                                    }
+                                  }
+                                }
+                              ]
+                            },
+                            else: {
+                              $cond: {
+                                if: { $ne: ["$$fallbackPhoto", null] },
+                                then: {
+                                  $mergeObjects: [
+                                    "$$fallbackPhoto",
+                                    {
+                                      photoUrl: {
+                                        $cond: {
+                                          if: {
+                                            $and: [
+                                              { $ne: ["$$fallbackPhoto.photoUrl", null] },
+                                              { $ne: [{ $substrCP: ["$$fallbackPhoto.photoUrl", 0, 1] }, "/"] }
+                                            ]
+                                          },
+                                          then: { $concat: ["/", "$$fallbackPhoto.photoUrl"] },
+                                          else: "$$fallbackPhoto.photoUrl"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                else: "$$fallbackPhoto"
+                              }
+                            }
+                          }
                         },
                       },
                     },
@@ -356,9 +398,9 @@ exports.getAllAwardRecords = async (req, res) => {
               as: "stu",
               cond: {
                 $and: [
-                  { $ne: ["$$stu.student.name", null] },
-                  { $ne: ["$$stu.student.name", ""] },
-                  { $ne: ["$$stu.student", null] }
+                  { $ne: ["$$stu.student", null] },
+                  { $ifNull: ["$$stu.student.name", false] },
+                  { $ne: ["$$stu.student.name", ""] }
                 ]
               }
             }
