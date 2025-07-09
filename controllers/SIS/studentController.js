@@ -682,3 +682,18 @@ exports.bulkUploadStudentImages = asyncHandler(async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+module.exports = {
+  getStudents: exports.getStudents,
+  getStudentById: exports.getStudentById,
+  createStudent: exports.createStudent,
+  updateStudent: exports.updateStudent,
+  deleteStudent: exports.deleteStudent,
+  searchStudents: exports.searchStudents,
+  uploadStudentPhoto: exports.uploadStudentPhoto,
+  getStudentPhotoByYear: exports.getStudentPhotoByYear,
+  getAllStudentPhotos: exports.getAllStudentPhotos,
+  getCurrentStudentPhoto: exports.getCurrentStudentPhoto,
+  bulkUploadStudentImages: exports.bulkUploadStudentImages,
+  removeFamilyFromStudent: exports.removeFamilyFromStudent
+};
