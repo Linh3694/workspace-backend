@@ -4,7 +4,6 @@ const studentController = require('../../controllers/SIS/studentController');
 const multer = require('multer');
 const upload = multer();
 const uploadStudentAvatar = require('../../middleware/uploadStudents');
-const uploadStudentZip = require('../../middleware/uploadStudentZip');
 
 // Define routes for Students
 router.get('/', studentController.getStudents);
@@ -15,9 +14,6 @@ router.post('/:id/photo', uploadStudentAvatar.single('avatar'), studentControlle
 router.get('/:id/photo/current', studentController.getCurrentStudentPhoto); // Lấy ảnh hiện tại
 router.get('/:id/photo/:schoolYear', studentController.getStudentPhotoByYear);
 router.get('/:id/photos', studentController.getAllStudentPhotos);
-
-// Route: Upload hàng loạt ảnh học sinh từ ZIP
-router.post('/bulk-upload-images', uploadStudentZip.single('zipFile'), studentController.bulkUploadStudentImages);
 
 // Routes generic - ĐẶT SAU routes cụ thể
 router.get('/:id', studentController.getStudentById);
