@@ -13,6 +13,7 @@ router.post("/upload-excel-classes", uploadExcel.single("file"),
 
 router.get("/:id", awardRecordController.getAwardRecordById);
 router.post("/", awardRecordController.createAwardRecord);
+router.post("/bulk-students", awardRecordController.bulkCreateStudentRecords);
 router.put("/:id", awardRecordController.updateAwardRecord);
 router.delete("/:id", awardRecordController.deleteAwardRecord);
 // Xoá 1 sub‑award (custom) + mọi record liên quan

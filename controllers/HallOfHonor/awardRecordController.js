@@ -681,7 +681,6 @@ exports.uploadExcelStudents = async (req, res) => {
     const students = data.map((row) => ({
       student: row["StudentCode"],
       exam: (row["Exam"] || "").toString().trim(),
-      // Score có thể là số hoặc chuỗi
       score:
         row["Score"] !== undefined && row["Score"] !== null
           ? isNaN(Number(row["Score"]))
@@ -710,10 +709,96 @@ exports.uploadExcelStudents = async (req, res) => {
       });
     }
 
+    // ✅ OPTION 1: Chỉ trả về students (giữ nguyên behavior cũ)
+    // Nếu không có thông tin award, chỉ trả về students để FE xử lý tiếp
+    if (!req.body.awardCategory || !req.body.subAward) {
+      return res.status(200).json({
+        message: "Đọc file thành công",
+        students: uniqueStudents,
+        totalStudents: uniqueStudents.length
+      });
+    }
+
+    // ✅ OPTION 2: Có thông tin award, tạo records luôn
+    const { awardCategory, subAward } = req.body;
+    
+    const results = {
+      success: [],
+      errors: [],
+      summary: {
+        total: uniqueStudents.length,
+        successful: 0,
+        failed: 0
+      }
+    };
+
+    // Parse subAward từ string nếu cần
+    let subAwardParsed;
+    try {
+      subAwardParsed = typeof subAward === 'string' ? JSON.parse(subAward) : subAward;
+    } catch (e) {
+      subAwardParsed = subAward;
+    }
+
+    // Base match criteria for duplicate checking
+    const baseMatch = {
+      awardCategory,
+      "subAward.type": subAwardParsed.type,
+      "subAward.label": subAwardParsed.label,
+      "subAward.schoolYear": subAwardParsed.schoolYear,
+    };
+    if (subAwardParsed.semester != null) baseMatch["subAward.semester"] = subAwardParsed.semester;
+    if (subAwardParsed.month != null) baseMatch["subAward.month"] = subAwardParsed.month;
+
+    // Process each student individually
+    for (const student of uniqueStudents) {
+      try {
+        // Check if this specific student already exists
+        const existingRecord = await AwardRecord.findOne({
+          ...baseMatch,
+          "students.student": student.student
+        }).lean();
+
+        if (existingRecord) {
+          results.errors.push({
+            student: student,
+            error: "Học sinh đã tồn tại trong loại vinh danh này"
+          });
+          results.summary.failed++;
+          continue;
+        }
+
+        // Create record for this student
+        const recordData = {
+          awardCategory,
+          subAward: {
+            ...subAwardParsed,
+            // Inherit priority and labelEng from category if custom type
+            ...(subAwardParsed.type === "custom" && await getCustomSubAwardProps(awardCategory, subAwardParsed.label))
+          },
+          students: [student],
+          awardClasses: []
+        };
+
+        const newRecord = await AwardRecord.create(recordData);
+        results.success.push({
+          student: student,
+          recordId: newRecord._id
+        });
+        results.summary.successful++;
+
+      } catch (error) {
+        results.errors.push({
+          student: student,
+          error: "Lỗi không xác định: " + error.message
+        });
+        results.summary.failed++;
+      }
+    }
+
     return res.status(200).json({
-      message: "Đọc file thành công",
-      students: uniqueStudents,
-      totalStudents: uniqueStudents.length
+      message: "Xử lý file Excel và tạo records thành công",
+      ...results
     });
 
   } catch (error) {
@@ -724,6 +809,103 @@ exports.uploadExcelStudents = async (req, res) => {
     });
   }
 };
+
+// Bulk create award records for students with individual validation
+exports.bulkCreateStudentRecords = async (req, res) => {
+  try {
+    const { awardCategory, subAward, students } = req.body;
+    
+    if (!students || !Array.isArray(students) || students.length === 0) {
+      return res.status(400).json({ message: "Danh sách học sinh không hợp lệ" });
+    }
+
+    const results = {
+      success: [],
+      errors: [],
+      summary: {
+        total: students.length,
+        successful: 0,
+        failed: 0
+      }
+    };
+
+    // Base match criteria for duplicate checking
+    const baseMatch = {
+      awardCategory,
+      "subAward.type": subAward.type,
+      "subAward.label": subAward.label,
+      "subAward.schoolYear": subAward.schoolYear,
+    };
+    if (subAward.semester != null) baseMatch["subAward.semester"] = subAward.semester;
+    if (subAward.month != null) baseMatch["subAward.month"] = subAward.month;
+
+    // Process each student individually
+    for (const student of students) {
+      try {
+        // Check if this specific student already exists
+        const existingRecord = await AwardRecord.findOne({
+          ...baseMatch,
+          "students.student": student.student
+        }).lean();
+
+        if (existingRecord) {
+          results.errors.push({
+            student: student,
+            error: "Học sinh đã tồn tại trong loại vinh danh này"
+          });
+          results.summary.failed++;
+          continue;
+        }
+
+        // Create record for this student
+        const recordData = {
+          awardCategory,
+          subAward: {
+            ...subAward,
+            // Inherit priority and labelEng from category if custom type
+            ...(subAward.type === "custom" && await getCustomSubAwardProps(awardCategory, subAward.label))
+          },
+          students: [student],
+          awardClasses: []
+        };
+
+        const newRecord = await AwardRecord.create(recordData);
+        results.success.push({
+          student: student,
+          recordId: newRecord._id
+        });
+        results.summary.successful++;
+
+      } catch (error) {
+        results.errors.push({
+          student: student,
+          error: "Lỗi không xác định: " + error.message
+        });
+        results.summary.failed++;
+      }
+    }
+
+    return res.status(200).json(results);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// Helper function to get custom subAward properties
+async function getCustomSubAwardProps(awardCategoryId, subAwardLabel) {
+  try {
+    const cat = await AwardCategory.findById(awardCategoryId);
+    const catSub = cat?.subAwards.find(
+      (s) => s.type === "custom" && s.label === subAwardLabel
+    );
+    const props = {};
+    if (catSub?.priority != null) props.priority = catSub.priority;
+    if (catSub?.labelEng) props.labelEng = catSub.labelEng;
+    return props;
+  } catch (error) {
+    return {};
+  }
+}
 
 // Thêm require model Class ở đầu file
 const Class = require("../../models/Class");
