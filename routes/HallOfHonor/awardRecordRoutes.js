@@ -1,15 +1,14 @@
 // backend/routes/awardRecordRoutes.js
 const express = require("express");
 const router = express.Router();
-const multer = require("multer");
-const upload = multer({ storage: multer.memoryStorage() });
+const uploadExcel = require("../../middleware/uploadExcel");
 const awardRecordController = require("../../controllers/HallOfHonor/awardRecordController");
 
 router.get("/", awardRecordController.getAllAwardRecords);
 
-router.post("/upload-excel", upload.single("file"),
+router.post("/upload-excel", uploadExcel.single("file"),
     awardRecordController.uploadExcelStudents);
-router.post("/upload-excel-classes", upload.single("file"),
+router.post("/upload-excel-classes", uploadExcel.single("file"),
     awardRecordController.uploadExcelClasses);
 
 router.get("/:id", awardRecordController.getAwardRecordById);
