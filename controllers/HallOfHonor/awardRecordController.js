@@ -1,5 +1,6 @@
 const AwardRecord = require("../../models/AwardRecord");
 const AwardCategory = require("../../models/AwardCategory");
+const Student = require("../../models/Student");
 const xlsx = require('xlsx');
 
 // awardRecordController.js
@@ -663,13 +664,32 @@ exports.deleteAwardRecord = async (req, res) => {
   }
 };
 
-// Xử lý upload file Excel cho học sinh
+// Xử lý upload file Excel cho học sinh - TỐI ƯU
 exports.uploadExcelStudents = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "Vui lòng tải lên file Excel" });
     }
 
+    // Kiểm tra thông tin award category và subAward
+    const { awardCategory, subAward } = req.body;
+    if (!awardCategory || !subAward) {
+      return res.status(400).json({ 
+        message: "Thiếu thông tin awardCategory hoặc subAward" 
+      });
+    }
+
+    // Parse subAward từ string nếu cần
+    let subAwardParsed;
+    try {
+      subAwardParsed = typeof subAward === 'string' ? JSON.parse(subAward) : subAward;
+    } catch (e) {
+      return res.status(400).json({ 
+        message: "Thông tin subAward không hợp lệ" 
+      });
+    }
+
+    // Đọc và parse Excel
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     const data = xlsx.utils.sheet_to_json(worksheet);
@@ -678,69 +698,90 @@ exports.uploadExcelStudents = async (req, res) => {
       return res.status(400).json({ message: "File Excel không có dữ liệu" });
     }
 
-    const students = data.map((row) => ({
-      student: row["StudentCode"],
-      exam: (row["Exam"] || "").toString().trim(),
-      score:
-        row["Score"] !== undefined && row["Score"] !== null
-          ? isNaN(Number(row["Score"]))
-            ? row["Score"].toString().trim()
-            : Number(row["Score"])
-          : "",
-    }));
+    // Parse dữ liệu Excel và validate format
+    const excelRows = data.map((row, index) => {
+      const studentCode = row["StudentCode"]?.toString().trim();
+      
+      if (!studentCode) {
+        throw new Error(`Dòng ${index + 2}: Thiếu StudentCode`);
+      }
 
-    // Remove duplicate student codes within the uploaded file itself
-    const seenIds = new Set();
-    const uniqueStudents = students.filter((s) => {
-      const id = s.student?.toString();
-      if (!id || seenIds.has(id)) return false;
-      seenIds.add(id);
-      return true;
+      // Tạo student data theo subAward type
+      const studentData = { studentCode };
+      
+      if (subAwardParsed.type === 'custom_with_description') {
+        const exam = row["Exam"]?.toString().trim();
+        const score = row["Score"]?.toString().trim();
+        
+        if (!exam || !score) {
+          throw new Error(`Dòng ${index + 2}: Thiếu thông tin Exam hoặc Score`);
+        }
+        
+        studentData.exam = exam;
+        studentData.score = score;
+      } else if (subAwardParsed.type === 'custom') {
+        // Cho phép activity là optional trong Excel, sẽ điền sau
+        studentData.activity = row["Activity"]?.toString().trim() || "";
+        studentData.activityEng = row["ActivityEng"]?.toString().trim() || "";
+      }
+      
+      studentData.note = row["Note"]?.toString().trim() || "";
+      studentData.noteEng = row["NoteEng"]?.toString().trim() || "";
+      
+      return studentData;
     });
 
-    // Validate dữ liệu
-    const invalidStudents = uniqueStudents.filter(
-      (s) => !s.student || !s.exam || s.score === "" || s.score === undefined
+    // Remove duplicates trong file Excel
+    const uniqueStudentCodes = [...new Set(excelRows.map(row => row.studentCode))];
+    const uniqueRows = uniqueStudentCodes.map(code => 
+      excelRows.find(row => row.studentCode === code)
     );
-    if (invalidStudents.length > 0) {
+
+    console.log(`📊 Processing ${uniqueRows.length} unique students from Excel`);
+
+    // 🚀 BATCH LOOKUP: Tìm tất cả students cùng lúc
+    const foundStudents = await Student.find({
+      studentCode: { $in: uniqueStudentCodes }
+    }).select('_id studentCode name').lean();
+
+    // Tạo map để lookup nhanh
+    const studentMap = new Map(
+      foundStudents.map(student => [student.studentCode, student])
+    );
+
+    // Kiểm tra students không tồn tại
+    const missingStudents = uniqueStudentCodes.filter(code => !studentMap.has(code));
+    if (missingStudents.length > 0) {
       return res.status(400).json({
-        message: `Có ${invalidStudents.length} dòng thiếu StudentCode, Exam hoặc Score`,
-        invalidRows: invalidStudents
+        message: `Không tìm thấy ${missingStudents.length} học sinh trong hệ thống`,
+        missingStudents: missingStudents.slice(0, 10), // Chỉ show 10 đầu
+        totalMissing: missingStudents.length
       });
     }
 
-    // ✅ OPTION 1: Chỉ trả về students (giữ nguyên behavior cũ)
-    // Nếu không có thông tin award, chỉ trả về students để FE xử lý tiếp
-    if (!req.body.awardCategory || !req.body.subAward) {
-      return res.status(200).json({
-        message: "Đọc file thành công",
-        students: uniqueStudents,
-        totalStudents: uniqueStudents.length
-      });
-    }
+    // Chuẩn bị dữ liệu để tạo records
+    const studentsToCreate = uniqueRows.map(row => {
+      const student = studentMap.get(row.studentCode);
+      
+      const studentRecord = {
+        student: student._id,
+        note: row.note || '',
+        noteEng: row.noteEng || ''
+      };
 
-    // ✅ OPTION 2: Có thông tin award, tạo records luôn
-    const { awardCategory, subAward } = req.body;
-    
-    const results = {
-      success: [],
-      errors: [],
-      summary: {
-        total: uniqueStudents.length,
-        successful: 0,
-        failed: 0
+      // Thêm fields specific cho từng loại award
+      if (subAwardParsed.type === 'custom_with_description') {
+        studentRecord.exam = row.exam;
+        studentRecord.score = row.score;
+      } else if (subAwardParsed.type === 'custom') {
+        studentRecord.activity = row.activity ? row.activity.split(',').map(s => s.trim()).filter(s => s) : [];
+        studentRecord.activityEng = row.activityEng ? row.activityEng.split(',').map(s => s.trim()).filter(s => s) : [];
       }
-    };
 
-    // Parse subAward từ string nếu cần
-    let subAwardParsed;
-    try {
-      subAwardParsed = typeof subAward === 'string' ? JSON.parse(subAward) : subAward;
-    } catch (e) {
-      subAwardParsed = subAward;
-    }
+      return studentRecord;
+    });
 
-    // Base match criteria for duplicate checking
+    // 🚀 BATCH DUPLICATE CHECK: Kiểm tra duplicate cùng lúc
     const baseMatch = {
       awardCategory,
       "subAward.type": subAwardParsed.type,
@@ -750,60 +791,80 @@ exports.uploadExcelStudents = async (req, res) => {
     if (subAwardParsed.semester != null) baseMatch["subAward.semester"] = subAwardParsed.semester;
     if (subAwardParsed.month != null) baseMatch["subAward.month"] = subAwardParsed.month;
 
-    // Process each student individually
-    for (const student of uniqueStudents) {
-      try {
-        // Check if this specific student already exists
-        const existingRecord = await AwardRecord.findOne({
-          ...baseMatch,
-          "students.student": student.student
-        }).lean();
+    const existingRecords = await AwardRecord.find({
+      ...baseMatch,
+      "students.student": { $in: foundStudents.map(s => s._id) }
+    }).select('students.student').lean();
 
-        if (existingRecord) {
-          results.errors.push({
-            student: student,
-            error: "Học sinh đã tồn tại trong loại vinh danh này"
-          });
-          results.summary.failed++;
-          continue;
-        }
+    // Tạo set các student IDs đã tồn tại
+    const existingStudentIds = new Set();
+    existingRecords.forEach(record => {
+      record.students.forEach(student => {
+        existingStudentIds.add(student.student.toString());
+      });
+    });
 
-        // Create record for this student
-        const recordData = {
-          awardCategory,
-          subAward: {
-            ...subAwardParsed,
-            // Inherit priority and labelEng from category if custom type
-            ...(subAwardParsed.type === "custom" && await getCustomSubAwardProps(awardCategory, subAwardParsed.label))
-          },
-          students: [student],
-          awardClasses: []
-        };
+    // Lọc ra students chưa tồn tại
+    const newStudents = studentsToCreate.filter(student => 
+      !existingStudentIds.has(student.student.toString())
+    );
 
-        const newRecord = await AwardRecord.create(recordData);
-        results.success.push({
-          student: student,
-          recordId: newRecord._id
-        });
-        results.summary.successful++;
-
-      } catch (error) {
-        results.errors.push({
-          student: student,
-          error: "Lỗi không xác định: " + error.message
-        });
-        results.summary.failed++;
-      }
+    if (newStudents.length === 0) {
+      return res.status(400).json({
+        message: "Tất cả học sinh đã tồn tại trong loại vinh danh này",
+        totalStudents: studentsToCreate.length,
+        existingStudents: studentsToCreate.length
+      });
     }
 
+    // Inherit custom subAward properties
+    if (subAwardParsed.type === "custom") {
+      const customProps = await getCustomSubAwardProps(awardCategory, subAwardParsed.label);
+      Object.assign(subAwardParsed, customProps);
+    }
+
+    // 🚀 BATCH CREATE: Tạo records cùng lúc
+    const recordsToCreate = newStudents.map(student => ({
+      awardCategory,
+      subAward: subAwardParsed,
+      students: [student],
+      awardClasses: []
+    }));
+
+    const createdRecords = await AwardRecord.insertMany(recordsToCreate);
+
+    // Tính toán kết quả
+    const duplicateCount = studentsToCreate.length - newStudents.length;
+    const duplicateStudents = studentsToCreate
+      .filter(student => existingStudentIds.has(student.student.toString()))
+      .map(student => {
+        const studentInfo = foundStudents.find(s => s._id.toString() === student.student.toString());
+        return studentInfo ? studentInfo.name || studentInfo.studentCode : 'Unknown';
+      });
+
+    console.log(`✅ Successfully created ${createdRecords.length} award records`);
+    console.log(`⚠️  Skipped ${duplicateCount} duplicate students`);
+
     return res.status(200).json({
-      message: "Xử lý file Excel và tạo records thành công",
-      ...results
+      success: true,
+      message: `Đã tạo thành công ${createdRecords.length} bản ghi vinh danh`,
+      summary: {
+        totalProcessed: studentsToCreate.length,
+        successful: createdRecords.length,
+        duplicates: duplicateCount,
+        failed: 0
+      },
+      details: {
+        createdRecords: createdRecords.length,
+        duplicateStudents: duplicateStudents.slice(0, 10), // Chỉ show 10 đầu
+        totalDuplicates: duplicateCount
+      }
     });
 
   } catch (error) {
-    console.error("Error processing Excel file:", error);
+    console.error("❌ Error processing Excel file:", error);
     return res.status(400).json({
+      success: false,
       message: "Có lỗi xảy ra khi xử lý file Excel",
       error: error.message
     });
