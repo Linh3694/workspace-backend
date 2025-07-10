@@ -371,16 +371,41 @@ exports.getAllAwardRecords = async (req, res) => {
                   "$$ac",
                   {
                     classInfo: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: "$awardClassesInfo",
-                            as: "info",
-                            cond: { $eq: ["$$info._id", "$$ac.class"] }
+                      $let: {
+                        vars: {
+                          foundClass: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: "$awardClassesInfo",
+                                  as: "info",
+                                  cond: { $eq: ["$$info._id", "$$ac.class"] }
+                                }
+                              },
+                              0
+                            ]
                           }
                         },
-                        0
-                      ]
+                        in: {
+                          $mergeObjects: [
+                            "$$foundClass",
+                            {
+                              classImage: {
+                                $cond: {
+                                  if: {
+                                    $and: [
+                                      { $ne: ["$$foundClass.classImage", null] },
+                                      { $ne: [{ $substrCP: ["$$foundClass.classImage", 0, 1] }, "/"] }
+                                    ]
+                                  },
+                                  then: { $concat: ["/", "$$foundClass.classImage"] },
+                                  else: "$$foundClass.classImage"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
                     }
                   }
                 ]
