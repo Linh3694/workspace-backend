@@ -12,6 +12,9 @@ router.get('/:id', parentController.getParentById);
 // Tạo phụ huynh mới
 router.post('/', authMiddleware, parentController.createParent);
 
+// Tạo phụ huynh mới kèm tài khoản User
+router.post('/with-account', authMiddleware, parentController.createParentWithAccount);
+
 // Cập nhật thông tin phụ huynh
 router.put('/:id', authMiddleware, parentController.updateParent);
 
