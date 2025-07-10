@@ -8,5 +8,6 @@ router.get("/:id", teacherController.getTeacherById);
 router.post("/", teacherController.createTeacher);
 router.put("/:id", teacherController.updateTeacher);
 router.delete("/:id", teacherController.deleteTeacher);
+router.post("/:id/sync-timetable", teacherController.syncTeacherTimetable);
 
 module.exports = router; 

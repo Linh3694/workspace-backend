@@ -222,6 +222,13 @@ exports.updateTeacher = async (req, res) => {
       { path: "educationalSystem", select: "name" }
     ]);
     if (subjectAssignments?.length) {
+      console.log('🔍 Starting timetable sync process...');
+      console.log('📊 Previous teacher assignments:', (teacher.teachingAssignments || []).map(ta => ({
+        class: ta.class?.toString(),
+        subjects: ta.subjects?.map(s => s.toString())
+      })));
+      console.log('📊 New subject assignments:', subjectAssignments);
+
       const prevMap = new Map(
         (teacher.teachingAssignments || []).map(ta => [
           ta.class.toString(),
@@ -234,7 +241,15 @@ exports.updateTeacher = async (req, res) => {
         const added = sa.subjectIds.filter(sid => !prevSubs.includes(sid));
         const removed = prevSubs.filter(sid => !sa.subjectIds.includes(sid));
 
+        console.log(`🔄 Processing class ${sa.classId}:`, {
+          prevSubs,
+          newSubs: sa.subjectIds,
+          added,
+          removed
+        });
+
         if (added.length) {
+          console.log(`➕ Adding teacher ${id} to subjects:`, added);
           await syncTimetableAfterAssignment({
             classId: sa.classId,
             subjectIds: added,
@@ -243,6 +258,7 @@ exports.updateTeacher = async (req, res) => {
           });
         }
         if (removed.length) {
+          console.log(`➖ Removing teacher ${id} from subjects:`, removed);
           await syncTimetableAfterAssignment({
             classId: sa.classId,
             subjectIds: removed,
@@ -251,6 +267,9 @@ exports.updateTeacher = async (req, res) => {
           });
         }
       }
+      console.log('✅ Timetable sync process completed');
+    } else {
+      console.log('⚠️ No subjectAssignments provided for sync');
     }
     res.json(updatedTeacher);
   } catch (error) {
@@ -312,6 +331,72 @@ exports.searchTeachers = async (req, res) => {
   } catch (err) {
     console.error("Error searching teachers:", err);
     return res.status(500).json({ message: "Không thể tìm giáo viên" });
+  }
+};
+
+// POST /teachers/:id/sync-timetable - Manual sync endpoint for testing
+exports.syncTeacherTimetable = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log(`🧪 Manual sync timetable for teacher ${id}`);
+    
+    const teacher = await Teacher.findById(id)
+      .populate({
+        path: 'teachingAssignments.class',
+        select: 'className'
+      })
+      .populate({
+        path: 'teachingAssignments.subjects',
+        select: 'name'
+      });
+    
+    if (!teacher) {
+      return res.status(404).json({ message: "Không tìm thấy giáo viên" });
+    }
+    
+    console.log(`👨‍🏫 Teacher: ${teacher.fullname}`);
+    console.log(`📚 Teaching assignments:`, teacher.teachingAssignments.map(ta => ({
+      class: ta.class?.className,
+      subjects: ta.subjects?.map(s => s.name)
+    })));
+    
+    const results = [];
+    
+    // Sync tất cả teaching assignments
+    for (const assignment of teacher.teachingAssignments) {
+      const classId = assignment.class._id.toString();
+      const subjectIds = assignment.subjects.map(s => s._id.toString());
+      
+      console.log(`🔄 Syncing class ${assignment.class.className} with subjects:`, assignment.subjects.map(s => s.name));
+      
+      const result = await syncTimetableAfterAssignment({
+        classId,
+        subjectIds,
+        teacherId: id,
+        action: "add"
+      });
+      
+      results.push({
+        class: assignment.class.className,
+        subjects: assignment.subjects.map(s => s.name),
+        result
+      });
+    }
+    
+    return res.json({
+      success: true,
+      teacher: {
+        id: teacher._id,
+        name: teacher.fullname,
+        assignments: teacher.teachingAssignments.length
+      },
+      syncResults: results
+    });
+    
+  } catch (error) {
+    console.error("Error syncing teacher timetable:", error);
+    return res.status(500).json({ message: "Lỗi khi đồng bộ thời khóa biểu" });
   }
 };
 

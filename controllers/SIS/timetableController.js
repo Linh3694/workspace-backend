@@ -1049,23 +1049,52 @@ exports.importTimetable = async (req, res) => {
       // ═══ Ưu tiên giáo viên từ teachingAssignments ═══
       let teachersFinal =
         Array.isArray(convertedRec.teachers) ? convertedRec.teachers.filter(Boolean) : [];
+      
+      console.log(`👥 Processing teachers for record:`, {
+        classCode: convertedRec.classCode,
+        subject: convertedRec.subject,
+        initialTeachers: teachersFinal
+      });
+      
       if (teachersFinal.length === 0) {
         // Tìm TẤT CẢ giáo viên dạy môn học này cho lớp này
+        console.log(`🔍 Searching teachers with query:`, {
+          "teachingAssignments.class": convertedRec.classId,
+          "teachingAssignments.subjects": convertedRec.subject,
+        });
+        
         const assigns = await Teacher.find({
           "teachingAssignments.class": convertedRec.classId,
           "teachingAssignments.subjects": convertedRec.subject,
-        }).select("_id fullname");
+        }).select("_id fullname teachingAssignments");
         
-        console.log(`🔍 Searching teachers for:`, {
-          classCode: convertedRec.classCode,
-          classId: convertedRec.classId,
-          subjectId: convertedRec.subject
-        });
-        console.log(`🔍 Found ${assigns.length} teachers:`, assigns.map(t => t.fullname));
+        console.log(`🔍 Found ${assigns.length} teachers:`, assigns.map(t => ({
+          id: t._id,
+          name: t.fullname,
+          assignments: t.teachingAssignments
+        })));
         
-        // Lấy tối đa 2 giáo viên đầu tiên
-        teachersFinal = assigns.map(t => t._id.toString()).slice(0, 2);
+        if (assigns.length === 0) {
+          console.log(`⚠️ No teachers found with teaching assignments for class ${convertedRec.classCode} and subject ${convertedRec.subject}`);
+          // Fallback: tìm teacher có subject này (cách cũ)
+          const fallbackTeachers = await Teacher.find({
+            subjects: convertedRec.subject
+          }).select("_id fullname subjects").limit(2);
+          
+          console.log(`🔍 Fallback: Found ${fallbackTeachers.length} teachers with subject:`, fallbackTeachers.map(t => t.fullname));
+          teachersFinal = fallbackTeachers.map(t => t._id.toString());
+        } else {
+          // Lấy tối đa 2 giáo viên đầu tiên
+          teachersFinal = assigns.map(t => t._id.toString()).slice(0, 2);
+        }
       }
+      
+      console.log(`✅ Final teachers for record:`, {
+        classCode: convertedRec.classCode,
+        subject: convertedRec.subject,
+        finalTeachers: teachersFinal
+      });
+      
       convertedRec.teachers = teachersFinal;          // bảo đảm luôn là mảng (≤2)
       
       validatedRecords.push(validation);
@@ -1282,5 +1311,124 @@ exports.getTeachersByClassSubject = async (req, res) => {
   } catch (err) {
     console.error("getTeachersByClassSubject", err);
     res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /timetables/debug/:classId - Debug endpoint to check timetable status
+exports.debugTimetableStatus = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    
+    console.log(`🧪 Debug timetable status for class: ${classId}`);
+    
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({ message: "Invalid class ID" });
+    }
+    
+    // Lấy thông tin class
+    const classInfo = await Class.findById(classId)
+      .populate('schoolYear', 'code')
+      .populate('gradeLevel', 'name code')
+      .select('className schoolYear gradeLevel');
+    
+    if (!classInfo) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+    
+    // Lấy tất cả timetable slots cho class này
+    const timetableSlots = await Timetable.find({ class: classId })
+      .populate('subject', 'name code')
+      .populate('teachers', 'fullname')
+      .populate('room', 'name')
+      .sort({ 'timeSlot.dayOfWeek': 1, 'timeSlot.startTime': 1 });
+    
+    // Tìm teachers có teaching assignments cho class này
+    const assignedTeachers = await Teacher.find({
+      'teachingAssignments.class': classId
+    })
+    .populate({
+      path: 'teachingAssignments.subjects',
+      select: 'name code'
+    })
+    .select('fullname teachingAssignments');
+    
+    // Phân tích data
+    const analysis = {
+      classInfo: {
+        id: classInfo._id,
+        name: classInfo.className,
+        schoolYear: classInfo.schoolYear?.code,
+        gradeLevel: classInfo.gradeLevel?.name
+      },
+      timetableStats: {
+        totalSlots: timetableSlots.length,
+        slotsWithTeachers: timetableSlots.filter(slot => slot.teachers.length > 0).length,
+        emptySlots: timetableSlots.filter(slot => slot.teachers.length === 0).length,
+        draftSlots: timetableSlots.filter(slot => slot.status === 'draft').length,
+        readySlots: timetableSlots.filter(slot => slot.status === 'ready').length
+      },
+      assignedTeachers: assignedTeachers.map(teacher => ({
+        id: teacher._id,
+        name: teacher.fullname,
+        assignments: teacher.teachingAssignments
+          .filter(ta => ta.class.toString() === classId)
+          .map(ta => ({
+            subjects: ta.subjects.map(s => ({ id: s._id, name: s.name }))
+          }))
+      })),
+      timetableSlots: timetableSlots.map(slot => ({
+        id: slot._id,
+        subject: slot.subject ? { id: slot.subject._id, name: slot.subject.name } : null,
+        teachers: slot.teachers.map(t => ({ id: t._id, name: t.fullname })),
+        room: slot.room ? { id: slot.room._id, name: slot.room.name } : null,
+        timeSlot: slot.timeSlot,
+        status: slot.status
+      }))
+    };
+    
+    // Tìm mismatches
+    const mismatches = [];
+    for (const teacher of assignedTeachers) {
+      for (const assignment of teacher.assignments) {
+        for (const subject of assignment.subjects) {
+          const slotsForSubject = timetableSlots.filter(slot => 
+            slot.subject && slot.subject._id.toString() === subject.id.toString()
+          );
+          
+          for (const slot of slotsForSubject) {
+            const hasTeacher = slot.teachers.some(t => t._id.toString() === teacher.id.toString());
+            if (!hasTeacher) {
+              mismatches.push({
+                teacher: teacher.name,
+                subject: subject.name,
+                slot: {
+                  id: slot._id,
+                  day: slot.timeSlot.dayOfWeek,
+                  time: `${slot.timeSlot.startTime}-${slot.timeSlot.endTime}`,
+                  currentTeachers: slot.teachers.map(t => t.fullname)
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    return res.json({
+      success: true,
+      analysis,
+      mismatches,
+      recommendations: mismatches.length > 0 ? [
+        'Có vẻ như có teaching assignments chưa được sync vào timetable.',
+        'Hãy thử gọi POST /teachers/:id/sync-timetable cho các teachers bị thiếu.',
+        'Hoặc kiểm tra xem timetable slots đã được tạo chưa.'
+      ] : [
+        'Tất cả teaching assignments đã được sync đúng vào timetable.'
+      ]
+    });
+    
+  } catch (error) {
+    console.error("Error debugging timetable status:", error);
+    return res.status(500).json({ message: "Lỗi khi debug timetable status" });
   }
 };

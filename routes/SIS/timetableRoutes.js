@@ -46,6 +46,9 @@ router.post("/import", isAdmin, timetableController.importTimetable);
 
 router.get("/teachers", timetableController.getTeachersByClassSubject);
 
+// Debug endpoint to check timetable status
+router.get("/debug/:classId", timetableController.debugTimetableStatus);
+
 // Lấy thời khóa biểu theo ID
 router.get("/:id", timetableController.getTimetableById);
 

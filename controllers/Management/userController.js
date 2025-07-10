@@ -216,7 +216,7 @@ exports.updateUser = async (req, res) => {
     ).select("-password");
 
     // Xử lý thay đổi role
-    if (role && role !== oldUser.role) {
+    if (role !== undefined && role !== oldUser.role) {
       // Nếu role cũ là teacher, xóa bản ghi teacher
       if (oldUser.role === "teacher") {
         await Teacher.findOneAndDelete({ user: id });
@@ -233,7 +233,7 @@ exports.updateUser = async (req, res) => {
           classes: []
         });
       }
-    } else if (role === "teacher") {
+    } else if (role === "teacher" || (role === undefined && oldUser.role === "teacher")) {
       // Nếu role không thay đổi và là teacher, cập nhật thông tin teacher
       await Teacher.findOneAndUpdate(
         { user: id },
@@ -809,11 +809,14 @@ exports.bulkUpdateUsers = async (req, res) => {
           continue;
         }
 
+        // Loại bỏ role khỏi dữ liệu cập nhật để không thay đổi role
+        const { role, ...updateData } = userData;
+
         const updatedUser = await User.findOneAndUpdate(
           { email: userData.email },
           { 
             $set: {
-              ...userData,
+              ...updateData,
               updatedAt: Date.now()
             }
           },
@@ -821,6 +824,19 @@ exports.bulkUpdateUsers = async (req, res) => {
         ).select("-password");
 
         if (updatedUser) {
+          // Cập nhật thông tin teacher nếu user hiện tại là teacher
+          if (updatedUser.role === "teacher") {
+            await Teacher.findOneAndUpdate(
+              { user: updatedUser._id },
+              {
+                fullname: updatedUser.fullname,
+                email: updatedUser.email,
+                avatarUrl: updatedUser.avatarUrl,
+                updatedAt: Date.now()
+              }
+            );
+          }
+
           // Xóa cache user (nếu có Redis)
           // await redisService.deleteUserCache(updatedUser._id);
           updateResults.push(updatedUser);
