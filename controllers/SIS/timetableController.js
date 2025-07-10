@@ -360,13 +360,37 @@ exports.deleteTimetable = async (req, res) => {
 exports.getTimetableByClass = async (req, res) => {
   try {
     const { classId } = req.params;
-    console.log('🔍 getTimetableByClass called with classId:', classId);
+    const { scheduleId } = req.query;
+    console.log('🔍 getTimetableByClass called with classId:', classId, 'scheduleId:', scheduleId);
 
     if (!mongoose.Types.ObjectId.isValid(classId)) {
       return res.status(400).json({ message: "ID lớp không hợp lệ" });
     }
 
-    const timetable = await Timetable.find({ class: classId })
+    // Xây dựng query với logic scheduleId giống getTimetableGridByClass
+    let timetableQuery = { class: classId };
+    
+    if (scheduleId) {
+      // Nếu có scheduleId, chỉ lấy timetable của schedule đó
+      timetableQuery.scheduleId = scheduleId;
+      console.log('📅 Filtering by scheduleId:', scheduleId);
+    } else {
+      // Nếu không có scheduleId, ưu tiên lấy timetable không có scheduleId (timetable cũ)
+      // Nhưng nếu không có, sẽ lấy tất cả (để tương thích ngược)
+      const oldTimetable = await Timetable.find({ 
+        class: classId, 
+        scheduleId: { $exists: false } 
+      }).limit(1);
+      
+      if (oldTimetable.length > 0) {
+        timetableQuery.scheduleId = { $exists: false };
+        console.log('📅 Using legacy timetable (no scheduleId)');
+      } else {
+        console.log('📅 No legacy timetable found, getting all timetable entries');
+      }
+    }
+
+    const timetable = await Timetable.find(timetableQuery)
       .populate("schoolYear", "code")
       .populate("class", "className")
       .populate("subject", "name")
@@ -383,6 +407,7 @@ exports.getTimetableByClass = async (req, res) => {
         subject: timetable[0].subject?.name,
         dayOfWeek: timetable[0].timeSlot?.dayOfWeek,
         startTime: timetable[0].timeSlot?.startTime,
+        scheduleId: timetable[0].scheduleId,
         teachers: timetable[0].teachers?.map(t => ({
           fullname: t.fullname || t.user?.fullname,
           avatarUrl: t.avatarUrl,

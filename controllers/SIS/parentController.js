@@ -122,6 +122,12 @@ exports.createParent = async (req, res) => {
 // Tạo phụ huynh mới kèm tài khoản User
 exports.createParentWithAccount = async (req, res) => {
     try {
+        console.log('🚀 [CreateParentWithAccount] Starting...');
+        console.log('📨 [CreateParentWithAccount] Request body:', {
+            ...req.body,
+            password: req.body.password ? '***hidden***' : undefined
+        });
+        
         const { 
             fullname, 
             phone, 
@@ -133,6 +139,7 @@ exports.createParentWithAccount = async (req, res) => {
         
         // Validate required fields
         if (!fullname || !email || !username || !password) {
+            console.log('❌ [CreateParentWithAccount] Missing required fields');
             return res.status(400).json({ 
                 message: 'Fullname, email, username, and password are required' 
             });
@@ -157,6 +164,16 @@ exports.createParentWithAccount = async (req, res) => {
         }
 
         // Tạo User account
+        console.log('🔐 [CreateParentWithAccount] Creating User with data:', {
+            username,
+            email,
+            fullname,
+            role: 'parent',
+            active: true,
+            phone,
+            password: '***hidden***'
+        });
+        
         const createdUser = await User.create({
             username,
             password,
@@ -166,8 +183,22 @@ exports.createParentWithAccount = async (req, res) => {
             active: true,
             phone
         });
+        console.log('✅ [CreateParentWithAccount] User created successfully:', {
+            _id: createdUser._id,
+            username: createdUser.username,
+            email: createdUser.email,
+            role: createdUser.role
+        });
 
         // Tạo Parent record
+        console.log('👤 [CreateParentWithAccount] Creating Parent with data:', {
+            user: createdUser._id,
+            fullname,
+            phone,
+            email,
+            students
+        });
+        
         const parent = await Parent.create({
             user: createdUser._id,
             fullname,
@@ -175,6 +206,7 @@ exports.createParentWithAccount = async (req, res) => {
             email,
             students
         });
+        console.log('✅ [CreateParentWithAccount] Parent created successfully:', parent._id);
 
         // Populate user data
         const populatedParent = await Parent.findById(parent._id)
@@ -183,7 +215,7 @@ exports.createParentWithAccount = async (req, res) => {
 
         console.log('✅ [CreateParentWithAccount] Parent with account created:', parent._id);
 
-        res.status(201).json({
+        const responseData = {
             parent: populatedParent,
             user: {
                 _id: createdUser._id,
@@ -192,10 +224,32 @@ exports.createParentWithAccount = async (req, res) => {
                 role: createdUser.role
             },
             message: 'Parent và tài khoản User đã được tạo thành công'
+        };
+        
+        console.log('📤 [CreateParentWithAccount] Sending response:', {
+            ...responseData,
+            parent: {
+                ...responseData.parent?.toObject(),
+                user: responseData.parent?.user ? { 
+                    _id: responseData.parent.user._id,
+                    username: responseData.parent.user.username,
+                    email: responseData.parent.user.email,
+                    role: responseData.parent.user.role 
+                } : undefined
+            }
         });
+
+        res.status(201).json(responseData);
     } catch (err) {
-        console.error('❌ [CreateParentWithAccount] Error:', err);
-        res.status(400).json({ message: err.message });
+        console.error('❌ [CreateParentWithAccount] Error details:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name
+        });
+        res.status(400).json({ 
+            message: err.message,
+            error: 'Failed to create parent with account'
+        });
     }
 };
 
