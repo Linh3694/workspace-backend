@@ -5,7 +5,7 @@ const path = require("path");
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
-  // Kiểm tra file Excel
+  // Kiểm tra file Excel nhé
   const allowedTypes = /xlsx|xls/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
   const mimetype = file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
