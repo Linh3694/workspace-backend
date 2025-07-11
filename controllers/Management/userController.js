@@ -169,7 +169,7 @@ exports.getUserById = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, phone, role, fullname, active } = req.body;
+    const { email, phone, role, fullname, active, school } = req.body;
     const avatarUrl = req.file ? `${req.file.filename}` : undefined;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -224,13 +224,25 @@ exports.updateUser = async (req, res) => {
 
       // Nếu role mới là teacher, tạo bản ghi teacher mới
       if (role === "teacher") {
+        // Kiểm tra và yêu cầu trường school khi chuyển role thành teacher
+        if (!school) {
+          return res.status(400).json({ 
+            message: "Trường học là bắt buộc khi chuyển role thành giáo viên",
+            code: "SCHOOL_REQUIRED"
+          });
+        }
+
         await Teacher.create({
           user: id,
           fullname: updatedUser.fullname,
           email: updatedUser.email,
+          phone: updatedUser.phone,
           avatarUrl: updatedUser.avatarUrl,
+          school: school,
           subjects: [],
-          classes: []
+          classes: [],
+          gradeLevels: [],
+          teachingAssignments: []
         });
       }
     } else if (role === "teacher" || (role === undefined && oldUser.role === "teacher")) {
@@ -240,17 +252,16 @@ exports.updateUser = async (req, res) => {
         {
           fullname: updatedUser.fullname,
           email: updatedUser.email,
+          phone: updatedUser.phone,
           avatarUrl: updatedUser.avatarUrl,
           updatedAt: Date.now()
         }
       );
     }
 
-    // Xóa cache user (nếu có Redis)
-    // await redisService.deleteUserCache(updatedUser._id);
-
     return res.json(updatedUser);
   } catch (err) {
+    console.error('Error updating user:', err);
     return res.status(500).json({ error: err.message });
   }
 };

@@ -60,40 +60,99 @@ async function syncTimetableAfterAssignment({
             return;
         }
 
-        // Gom nhóm assignments theo lớp và loại bỏ các assignment trống
-        const assignmentsByClass = {};
-        teacher.teachingAssignments.forEach(ta => {
-            const className = ta.class.className;
-            if (!assignmentsByClass[className]) {
-                assignmentsByClass[className] = [];
+        if (action === "add") {
+            // Gom nhóm assignments theo lớp và loại bỏ các assignment trống
+            const assignmentsByClass = {};
+            teacher.teachingAssignments.forEach(ta => {
+                const className = ta.class.className;
+                if (!assignmentsByClass[className]) {
+                    assignmentsByClass[className] = [];
+                }
+                if (ta.subjects && ta.subjects.length > 0) {
+                    assignmentsByClass[className].push(ta);
+                }
+            });
+
+            // Chỉ giữ lại một assignment cho mỗi lớp (ưu tiên assignment có nhiều subjects nhất)
+            const uniqueAssignments = Object.values(assignmentsByClass).map(assignments => {
+                return assignments.reduce((prev, curr) => 
+                    (curr.subjects?.length || 0) > (prev.subjects?.length || 0) ? curr : prev
+                );
+            });
+
+            // Cập nhật teachingAssignments của giáo viên
+            teacher.teachingAssignments = uniqueAssignments;
+
+            // Thêm assignment mới hoặc cập nhật assignment hiện tại
+            const existingAssignment = uniqueAssignments.find(a => a.class._id.toString() === classId);
+            if (existingAssignment) {
+                // Gộp subjects và loại bỏ trùng lặp
+                const updatedSubjects = [...new Set([
+                    ...existingAssignment.subjects.map(s => s.toString()),
+                    ...subjectIds
+                ])];
+                existingAssignment.subjects = updatedSubjects;
+            } else {
+                // Tạo assignment mới
+                teacher.teachingAssignments.push({
+                    class: classId,
+                    subjects: subjectIds
+                });
             }
-            if (ta.subjects && ta.subjects.length > 0) {
-                assignmentsByClass[className].push(ta);
-            }
-        });
 
-        // Chỉ giữ lại một assignment cho mỗi lớp (ưu tiên assignment có nhiều subjects nhất)
-        const uniqueAssignments = Object.values(assignmentsByClass).map(assignments => {
-            return assignments.reduce((prev, curr) => 
-                (curr.subjects?.length || 0) > (prev.subjects?.length || 0) ? curr : prev
-            );
-        });
+            await teacher.save();
 
-        // Cập nhật teachingAssignments của giáo viên
-        teacher.teachingAssignments = uniqueAssignments;
-        await teacher.save();
-
-        // Tìm các slot timetable của class + subject
-        const slots = await Timetable.find({ class: classId, subject: { $in: subjectIds } });
-        const slotsToUpdate = slots.filter(slot =>
-            !slot.teachers.includes(teacherId) && slot.teachers.length < 2
-        );
-        if (slotsToUpdate.length > 0) {
+            // Đồng bộ với thời khóa biểu
             await Timetable.updateMany(
-                { _id: { $in: slotsToUpdate.map(s => s._id) } },
-                { $addToSet: { teachers: teacherId }, status: "ready", updatedAt: new Date() }
+                {
+                    class: classId,
+                    subject: { $in: subjectIds },
+                    teachers: { $ne: teacherId },
+                    $expr: { $lt: [{ $size: "$teachers" }, 2] }
+                },
+                {
+                    $addToSet: { teachers: teacherId },
+                    $set: { updatedAt: new Date() }
+                }
             );
+
+        } else if (action === "remove") {
+            // Xóa subjects khỏi assignment
+            const existingAssignment = teacher.teachingAssignments.find(
+                ta => ta.class._id.toString() === classId
+            );
+
+            if (existingAssignment) {
+                existingAssignment.subjects = existingAssignment.subjects.filter(
+                    s => !subjectIds.includes(s.toString())
+                );
+
+                // Nếu không còn subjects nào, xóa assignment
+                if (existingAssignment.subjects.length === 0) {
+                    teacher.teachingAssignments = teacher.teachingAssignments.filter(
+                        ta => ta.class._id.toString() !== classId
+                    );
+                }
+
+                await teacher.save();
+
+                // Xóa giáo viên khỏi các slot timetable
+                await Timetable.updateMany(
+                    { class: classId, subject: { $in: subjectIds }, teachers: teacherId },
+                    { 
+                        $pull: { teachers: teacherId },
+                        $set: { updatedAt: new Date() }
+                    }
+                );
+
+                // Nếu slot không còn giáo viên nào, chuyển về draft
+                await Timetable.updateMany(
+                    { class: classId, subject: { $in: subjectIds }, teachers: { $size: 0 } },
+                    { $set: { status: "draft" } }
+                );
+            }
         }
+
     } catch (error) {
         console.error('Error in syncTimetableAfterAssignment:', error);
         throw error;
