@@ -10,6 +10,7 @@
  */
 
 const Timetable = require("../models/Timetable");
+const Teacher = require("../models/Teacher");
 
 async function syncTimetableAfterAssignment({
     classId,
@@ -30,7 +31,37 @@ async function syncTimetableAfterAssignment({
     }
 
     try {
+        // Kiểm tra và cập nhật teachingAssignments
+        const teacher = await Teacher.findById(teacherId);
+        if (!teacher) {
+            console.log('❌ Teacher not found');
+            return;
+        }
+
         if (action === "add") {
+            // Tìm assignment hiện tại cho lớp này
+            const existingAssignment = teacher.teachingAssignments.find(
+                ta => ta.class.toString() === classId
+            );
+
+            if (existingAssignment) {
+                // Cập nhật subjects cho assignment hiện tại
+                const updatedSubjects = [...new Set([
+                    ...existingAssignment.subjects.map(s => s.toString()),
+                    ...subjectIds
+                ])];
+                existingAssignment.subjects = updatedSubjects;
+            } else {
+                // Tạo assignment mới
+                teacher.teachingAssignments.push({
+                    class: classId,
+                    subjects: subjectIds
+                });
+            }
+
+            // Lưu thay đổi
+            await teacher.save();
+
             // Tìm các slot timetable của class + subject
             const slots = await Timetable.find({ class: classId, subject: { $in: subjectIds } });
             const slotsToUpdate = slots.filter(slot =>
@@ -43,6 +74,27 @@ async function syncTimetableAfterAssignment({
                 );
             }
         } else if (action === "remove") {
+            // Xóa subjects khỏi teachingAssignments
+            const existingAssignment = teacher.teachingAssignments.find(
+                ta => ta.class.toString() === classId
+            );
+
+            if (existingAssignment) {
+                existingAssignment.subjects = existingAssignment.subjects.filter(
+                    s => !subjectIds.includes(s.toString())
+                );
+
+                // Nếu không còn subjects nào, xóa assignment
+                if (existingAssignment.subjects.length === 0) {
+                    teacher.teachingAssignments = teacher.teachingAssignments.filter(
+                        ta => ta.class.toString() !== classId
+                    );
+                }
+
+                await teacher.save();
+            }
+
+            // Xóa giáo viên khỏi các slot timetable
             await Timetable.updateMany(
                 { class: classId, subject: { $in: subjectIds } },
                 { $pull: { teachers: teacherId }, updatedAt: new Date() }
@@ -76,15 +128,8 @@ async function syncTimetableAfterRoomUpdate({ subjectId, roomId }) {
         console.error("Timetable room-sync error:", err.message);
     }
 }
-function canAddTeacher(timetableDoc) {
-    return (
-        timetableDoc &&
-        Array.isArray(timetableDoc.teachers) &&
-        timetableDoc.teachers.length < 2
-    );
-}
+
 module.exports = {
     syncTimetableAfterAssignment,
     syncTimetableAfterRoomUpdate,
-    canAddTeacher,
 };
