@@ -103,18 +103,27 @@ async function syncTimetableAfterAssignment({
             await teacher.save();
 
             // Đồng bộ với thời khóa biểu
-            await Timetable.updateMany(
+            const updateResult = await Timetable.updateMany(
                 {
                     class: classId,
                     subject: { $in: subjectIds },
-                    teachers: { $ne: teacherId },
-                    $expr: { $lt: [{ $size: "$teachers" }, 2] }
+                    $or: [
+                        { teachers: { $exists: false } },
+                        { teachers: null },
+                        { teachers: [] },
+                        { teachers: { $ne: teacherId }, $expr: { $lt: [{ $size: "$teachers" }, 2] } }
+                    ]
                 },
                 {
                     $addToSet: { teachers: teacherId },
-                    $set: { updatedAt: new Date() }
+                    $set: { 
+                        updatedAt: new Date(),
+                        status: "ready" // Đảm bảo trạng thái là ready khi có giáo viên
+                    }
                 }
             );
+            
+            console.log(`✅ Timetable update result: ${updateResult.matchedCount} matched, ${updateResult.modifiedCount} modified`);
 
         } else if (action === "remove") {
             // Xóa subjects khỏi assignment
