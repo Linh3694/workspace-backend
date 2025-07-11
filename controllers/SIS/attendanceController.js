@@ -5,14 +5,226 @@ const Student = require('../../models/Student');
 const Timetable = require('../../models/Timetable');
 const Teacher = require('../../models/Teacher');
 const TimeAttendance = require('../../models/TimeAttendance');
+const PeriodDefinition = require('../../models/PeriodDefinition');
+const mongoose = require('mongoose');
+
+// ✅ THÊM: Helper function để chuyển đổi date thành dayOfWeek
+const getDayOfWeek = (dateString) => {
+  const date = new Date(dateString);
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[date.getDay()];
+};
+
+// ✅ THÊM: Lấy danh sách tiết học cho một lớp
+exports.getPeriodsByClass = async (req, res) => {
+  try {
+    const { classId, schoolYearId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(schoolYearId)) {
+      return res.status(400).json({ message: "ID lớp hoặc ID năm học không hợp lệ" });
+    }
+
+    // Lấy thông tin class để biết school
+    const classInfo = await Class.findById(classId)
+      .populate({
+        path: 'gradeLevel',
+        populate: { path: 'school' }
+      });
+    
+    if (!classInfo) {
+      return res.status(404).json({ message: "Không tìm thấy lớp học" });
+    }
+
+    const schoolId = classInfo.gradeLevel?.school?._id;
+    if (!schoolId) {
+      return res.status(400).json({ message: "Không tìm thấy thông tin trường của lớp học" });
+    }
+
+    // Lấy period definitions (chỉ regular periods)
+    const periods = await PeriodDefinition.find({
+      schoolYear: schoolYearId,
+      school: schoolId,
+      type: 'regular'
+    }).sort({ periodNumber: 1 });
+
+    res.json({ periods });
+  } catch (err) {
+    console.error("Error getting periods by class:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ✅ THÊM: Lấy timetable slots cho một lớp theo ngày
+exports.getTimetableSlotsByDate = async (req, res) => {
+  try {
+    const { classId, date } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({ message: "ID lớp không hợp lệ" });
+    }
+
+    // Chuyển date string thành dayOfWeek
+    const dayOfWeek = getDayOfWeek(date);
+    
+    const timetableSlots = await Timetable.find({
+      class: classId,
+      'timeSlot.dayOfWeek': dayOfWeek
+    })
+    .populate('subject', 'name')
+    .populate('teachers', 'fullname')
+    .populate('room', 'name')
+    .sort({ 'timeSlot.startTime': 1 });
+
+    res.json({ timetableSlots });
+  } catch (err) {
+    console.error("Error getting timetable slots by date:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ✅ THÊM: Lấy danh sách môn học có trong thời khóa biểu của lớp theo ngày
+exports.getSubjectsByClassAndDate = async (req, res) => {
+  try {
+    const { classId, date } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({ message: "ID lớp không hợp lệ" });
+    }
+
+    const dayOfWeek = getDayOfWeek(date);
+    
+    const timetableSlots = await Timetable.find({
+      class: classId,
+      'timeSlot.dayOfWeek': dayOfWeek
+    })
+    .populate('subject', 'name')
+    .populate('teachers', 'fullname')
+    .sort({ 'timeSlot.startTime': 1 });
+
+    // Lấy danh sách unique subjects
+    const subjects = [];
+    const seenSubjects = new Set();
+    
+    timetableSlots.forEach(slot => {
+      if (slot.subject && !seenSubjects.has(slot.subject._id.toString())) {
+        seenSubjects.add(slot.subject._id.toString());
+        subjects.push({
+          _id: slot.subject._id,
+          name: slot.subject.name,
+          teachers: slot.teachers.map(t => ({
+            _id: t._id,
+            fullname: t.fullname
+          }))
+        });
+      }
+    });
+
+    res.json({ subjects });
+  } catch (err) {
+    console.error("Error getting subjects by class and date:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ✅ THÊM: Lấy attendance theo class, date, subject
+exports.getAttendancesByClassDateSubject = async (req, res) => {
+  try {
+    const { classId, date, subjectId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({ message: "ID lớp hoặc ID môn học không hợp lệ" });
+    }
+
+    const attendances = await Attendance.find({
+      class: classId,
+      date: new Date(date),
+      subject: subjectId
+    })
+    .populate('student', 'name studentCode avatarUrl')
+    .populate('teacher', 'fullname')
+    .populate('subject', 'name')
+    .sort({ 'periodNumber': 1, 'student.name': 1 });
+
+    res.json(attendances);
+  } catch (err) {
+    console.error("Error getting attendances by class, date, subject:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ✅ THÊM: Tạo attendance cho một tiết học cụ thể
+exports.createPeriodAttendance = async (req, res) => {
+  try {
+    const { classId, date, subjectId, periodNumber, attendances } = req.body;
+    
+    if (!classId || !date || !subjectId || !periodNumber || !Array.isArray(attendances)) {
+      return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
+    }
+
+    // Lấy thông tin timetable slot để có periodStartTime và periodEndTime
+    const dayOfWeek = getDayOfWeek(date);
+    const timetableSlot = await Timetable.findOne({
+      class: classId,
+      subject: subjectId,
+      'timeSlot.dayOfWeek': dayOfWeek
+    });
+
+    if (!timetableSlot) {
+      return res.status(400).json({ message: "Không tìm thấy thông tin tiết học trong thời khóa biểu" });
+    }
+
+    // Tạo hoặc cập nhật attendance cho từng học sinh
+    const results = [];
+    for (const attendanceData of attendances) {
+      const { studentId, status, note, checkIn, checkOut } = attendanceData;
+      
+      const attendance = await Attendance.findOneAndUpdate(
+        {
+          class: classId,
+          date: new Date(date),
+          periodNumber: parseInt(periodNumber),
+          student: studentId,
+          subject: subjectId
+        },
+        {
+          teacher: req.user._id, // Từ middleware auth
+          periodStartTime: timetableSlot.timeSlot.startTime,
+          periodEndTime: timetableSlot.timeSlot.endTime,
+          timetableSlot: timetableSlot._id,
+          status,
+          note,
+          checkIn,
+          checkOut,
+          updatedAt: new Date()
+        },
+        { 
+          upsert: true, 
+          new: true 
+        }
+      ).populate('student teacher subject');
+
+      results.push(attendance);
+    }
+
+    res.status(201).json({ 
+      message: "Điểm danh thành công", 
+      attendances: results 
+    });
+  } catch (err) {
+    console.error("Error creating period attendance:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
 
 // Display list of all Attendances
 exports.getAttendances = asyncHandler(async (req, res) => {
-  const { class: classId, date } = req.query;
+  const { class: classId, date, periodNumber, subject } = req.query;
   let filter = {};
   if (classId) filter.class = classId;
   if (date) filter.date = date;
-  const attendances = await Attendance.find(filter).populate('student class teacher');
+  if (periodNumber) filter.periodNumber = parseInt(periodNumber);
+  if (subject) filter.subject = subject;
+  const attendances = await Attendance.find(filter).populate('student class teacher subject');
   res.json(attendances);
 });
 
