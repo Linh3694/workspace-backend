@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const attendanceController = require('../../controllers/SIS/attendanceController');
+const { authenticateToken } = require('../../middleware/auth');
 
 // ✅ THÊM: Routes mới cho điểm danh theo tiết học
 router.get('/periods/:classId/:schoolYearId', attendanceController.getPeriodsByClass);
 router.get('/timetable-slots/:classId/:date', attendanceController.getTimetableSlotsByDate);
 router.get('/subjects/:classId/:date', attendanceController.getSubjectsByClassAndDate);
 router.get('/by-class-date-subject/:classId/:date/:subjectId', attendanceController.getAttendancesByClassDateSubject);
-router.post('/period', attendanceController.createPeriodAttendance);
+router.post('/period', authenticateToken, attendanceController.createPeriodAttendance);
 
 // Define routes for Attendances
 router.get('/', attendanceController.getAttendances);
