@@ -232,6 +232,49 @@ exports.updateUser = async (req, res) => {
           });
         }
 
+        // Kiểm tra xem đã có teacher record chưa
+        const existingTeacher = await Teacher.findOne({ user: id });
+        if (!existingTeacher) {
+          try {
+            await Teacher.create({
+              user: id,
+              fullname: updatedUser.fullname,
+              email: updatedUser.email,
+              phone: updatedUser.phone,
+              avatarUrl: updatedUser.avatarUrl,
+              school: school,
+              subjects: [],
+              classes: [],
+              gradeLevels: [],
+              teachingAssignments: []
+            });
+          } catch (error) {
+            console.error('Error creating teacher record:', error);
+            // Rollback user update nếu tạo teacher thất bại
+            await User.findByIdAndUpdate(id, { role: oldUser.role });
+            return res.status(500).json({ 
+              message: "Không thể tạo hồ sơ giáo viên",
+              error: error.message 
+            });
+          }
+        }
+      }
+    } else if (role === "teacher" || (role === undefined && oldUser.role === "teacher")) {
+      // Nếu role không thay đổi và là teacher, cập nhật thông tin teacher
+      const teacher = await Teacher.findOne({ user: id });
+      if (teacher) {
+        await Teacher.findOneAndUpdate(
+          { user: id },
+          {
+            fullname: updatedUser.fullname,
+            email: updatedUser.email,
+            phone: updatedUser.phone,
+            avatarUrl: updatedUser.avatarUrl,
+            updatedAt: Date.now()
+          }
+        );
+      } else if (school) {
+        // Nếu không tìm thấy teacher record nhưng có school, tạo mới
         await Teacher.create({
           user: id,
           fullname: updatedUser.fullname,
@@ -245,18 +288,6 @@ exports.updateUser = async (req, res) => {
           teachingAssignments: []
         });
       }
-    } else if (role === "teacher" || (role === undefined && oldUser.role === "teacher")) {
-      // Nếu role không thay đổi và là teacher, cập nhật thông tin teacher
-      await Teacher.findOneAndUpdate(
-        { user: id },
-        {
-          fullname: updatedUser.fullname,
-          email: updatedUser.email,
-          phone: updatedUser.phone,
-          avatarUrl: updatedUser.avatarUrl,
-          updatedAt: Date.now()
-        }
-      );
     }
 
     return res.json(updatedUser);
