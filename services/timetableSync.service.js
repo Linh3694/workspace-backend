@@ -25,8 +25,14 @@ async function syncTimetableAfterAssignment({
         action
     });
 
-    if (!classId || !subjectIds?.length || !teacherId) {
-        console.log('❌ Missing required parameters for sync');
+    if (!classId || !teacherId) {
+        console.log('❌ Missing required parameters: classId or teacherId');
+        return;
+    }
+
+    // Bỏ qua nếu không có subjects để đồng bộ
+    if (!subjectIds?.length) {
+        console.log('ℹ️ No subjects to sync, skipping...');
         return;
     }
 
@@ -39,13 +45,32 @@ async function syncTimetableAfterAssignment({
         }
 
         if (action === "add") {
-            // Tìm assignment hiện tại cho lớp này
-            const existingAssignment = teacher.teachingAssignments.find(
-                ta => ta.class.toString() === classId
+            // Loại bỏ các duplicate assignments cho cùng một lớp
+            const existingAssignments = teacher.teachingAssignments.filter(
+                ta => ta.class.toString() === classId && ta.subjects?.length > 0
             );
 
-            if (existingAssignment) {
+            if (existingAssignments.length > 1) {
+                // Nếu có nhiều assignments cho cùng một lớp, gộp subjects lại
+                const mergedSubjects = [...new Set(
+                    existingAssignments.flatMap(ta => 
+                        ta.subjects.map(s => s.toString())
+                    )
+                )];
+
+                // Xóa tất cả assignments cũ của lớp này
+                teacher.teachingAssignments = teacher.teachingAssignments.filter(
+                    ta => ta.class.toString() !== classId
+                );
+
+                // Tạo assignment mới với subjects đã gộp
+                teacher.teachingAssignments.push({
+                    class: classId,
+                    subjects: mergedSubjects
+                });
+            } else if (existingAssignments.length === 1) {
                 // Cập nhật subjects cho assignment hiện tại
+                const existingAssignment = existingAssignments[0];
                 const updatedSubjects = [...new Set([
                     ...existingAssignment.subjects.map(s => s.toString()),
                     ...subjectIds
