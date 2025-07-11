@@ -173,6 +173,12 @@ exports.createPeriodAttendance = async (req, res) => {
       return res.status(400).json({ message: "Không tìm thấy thông tin tiết học trong thời khóa biểu" });
     }
 
+    // Kiểm tra giáo viên
+    const isTeacherOfSlot = timetableSlot.teachers.some(tid => tid.toString() === req.user._id.toString());
+    if (!isTeacherOfSlot) {
+      return res.status(403).json({ message: "Bạn không phải giáo viên của tiết này, không thể điểm danh." });
+    }
+
     // Tạo hoặc cập nhật attendance cho từng học sinh
     const results = [];
     for (const attendanceData of attendances) {
