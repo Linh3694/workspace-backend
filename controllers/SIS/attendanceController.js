@@ -126,6 +126,32 @@ exports.getSubjectsByClassAndDate = async (req, res) => {
   }
 };
 
+// ✅ THÊM: Lấy attendance theo student và date
+exports.getAttendancesByStudentAndDate = async (req, res) => {
+  try {
+    const { studentId, date } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ message: "ID học sinh không hợp lệ" });
+    }
+
+    const attendances = await Attendance.find({
+      student: studentId,
+      date: new Date(date)
+    })
+    .populate('student', 'name studentCode avatarUrl')
+    .populate('teacher', 'fullname')
+    .populate('subject', 'name')
+    .populate('class', 'className')
+    .sort({ 'periodNumber': 1 });
+
+    res.json(attendances);
+  } catch (err) {
+    console.error("Error getting attendances by student and date:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // ✅ THÊM: Lấy attendance theo class, date, subject
 exports.getAttendancesByClassDateSubject = async (req, res) => {
   try {

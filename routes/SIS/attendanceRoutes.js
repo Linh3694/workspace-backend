@@ -10,6 +10,9 @@ router.get('/subjects/:classId/:date', attendanceController.getSubjectsByClassAn
 router.get('/by-class-date-subject/:classId/:date/:subjectId', attendanceController.getAttendancesByClassDateSubject);
 router.post('/period', authenticateToken, attendanceController.createPeriodAttendance);
 
+// ✅ THÊM: Route lấy attendance theo student và date
+router.get('/student/:studentId/:date', attendanceController.getAttendancesByStudentAndDate);
+
 // Define routes for Attendances
 router.get('/', attendanceController.getAttendances);
 router.get('/classes-by-role', attendanceController.getClassesByRole);
