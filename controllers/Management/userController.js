@@ -224,14 +224,6 @@ exports.updateUser = async (req, res) => {
 
       // Nếu role mới là teacher, tạo bản ghi teacher mới
       if (role === "teacher") {
-        // Kiểm tra và yêu cầu trường school khi chuyển role thành teacher
-        if (!school) {
-          return res.status(400).json({ 
-            message: "Trường học là bắt buộc khi chuyển role thành giáo viên",
-            code: "SCHOOL_REQUIRED"
-          });
-        }
-
         // Kiểm tra xem đã có teacher record chưa
         const existingTeacher = await Teacher.findOne({ user: id });
         if (!existingTeacher) {
@@ -242,7 +234,8 @@ exports.updateUser = async (req, res) => {
               email: updatedUser.email,
               phone: updatedUser.phone,
               avatarUrl: updatedUser.avatarUrl,
-              school: school,
+              // Không yêu cầu school là bắt buộc, có thể phân công sau
+              school: school || null,
               subjects: [],
               classes: [],
               gradeLevels: [],
@@ -273,15 +266,15 @@ exports.updateUser = async (req, res) => {
             updatedAt: Date.now()
           }
         );
-      } else if (school) {
-        // Nếu không tìm thấy teacher record nhưng có school, tạo mới
+      } else {
+        // Nếu không tìm thấy teacher record, tạo mới
         await Teacher.create({
           user: id,
           fullname: updatedUser.fullname,
           email: updatedUser.email,
           phone: updatedUser.phone,
           avatarUrl: updatedUser.avatarUrl,
-          school: school,
+          school: null, // Có thể phân công trường sau
           subjects: [],
           classes: [],
           gradeLevels: [],
