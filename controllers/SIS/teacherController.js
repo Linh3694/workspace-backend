@@ -362,30 +362,68 @@ exports.syncTeacherTimetable = async (req, res) => {
     })));
     
     const results = [];
+    let totalUpdated = 0;
     
     // Sync tất cả teaching assignments
-    for (const assignment of teacher.teachingAssignments) {
+    for (const assignment of teacher.teachingAssignments || []) {
+      if (!assignment.class || !assignment.class._id) {
+        console.log('⚠️ Invalid class in assignment, skipping');
+        continue;
+      }
+      
+      if (!assignment.subjects || assignment.subjects.length === 0) {
+        console.log(`⚠️ No subjects for class ${assignment.class.className}, skipping`);
+        continue;
+      }
+      
       const classId = assignment.class._id.toString();
       const subjectIds = assignment.subjects.map(s => s._id.toString());
       
       console.log(`🔄 Syncing class ${assignment.class.className} with subjects:`, assignment.subjects.map(s => s.name));
       
-      const result = await syncTimetableAfterAssignment({
-        classId,
-        subjectIds,
-        teacherId: id,
-        action: "add"
-      });
-      
-      results.push({
-        class: assignment.class.className,
-        subjects: assignment.subjects.map(s => s.name),
-        result
+      try {
+        // Đồng bộ thời khóa biểu với action="add"
+        const { syncTimetableAfterAssignment } = require('../../services/timetableSync.service');
+        const result = await syncTimetableAfterAssignment({
+          classId,
+          subjectIds,
+          teacherId: id,
+          action: "add"
+        });
+        
+        results.push({
+          class: assignment.class.className,
+          subjects: assignment.subjects.map(s => s.name),
+          success: true
+        });
+        
+        totalUpdated++;
+      } catch (error) {
+        console.error(`Error syncing class ${assignment.class.className}:`, error);
+        results.push({
+          class: assignment.class.className,
+          subjects: assignment.subjects.map(s => s.name),
+          success: false,
+          error: error.message
+        });
+      }
+    }
+    
+    // Nếu không có teaching assignments, thông báo
+    if (teacher.teachingAssignments?.length === 0) {
+      return res.json({
+        success: false,
+        message: "Giáo viên chưa được phân công lớp và môn học",
+        teacher: {
+          id: teacher._id,
+          name: teacher.fullname
+        }
       });
     }
     
     return res.json({
       success: true,
+      message: `Đã đồng bộ ${totalUpdated} phân công giảng dạy vào thời khóa biểu`,
       teacher: {
         id: teacher._id,
         name: teacher.fullname,
@@ -396,7 +434,7 @@ exports.syncTeacherTimetable = async (req, res) => {
     
   } catch (error) {
     console.error("Error syncing teacher timetable:", error);
-    return res.status(500).json({ message: "Lỗi khi đồng bộ thời khóa biểu" });
+    return res.status(500).json({ message: "Lỗi khi đồng bộ thời khóa biểu", error: error.message });
   }
 };
 
