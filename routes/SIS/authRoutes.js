@@ -127,6 +127,7 @@ router.post('/mobile/login', async (req, res) => {
         students: parent.students.map(stu => ({
           id: stu._id,
           name: stu.name,
+          studentCode: stu.studentCode,
           class: stu.class,
           avatarUrl: stu.avatarUrl
         }))
