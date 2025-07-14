@@ -735,17 +735,39 @@ exports.getTimetableGridByClass = async (req, res) => {
           const weekEnd = new Date(weekStart);
           weekEnd.setDate(weekStart.getDate() + 4); // Thứ 2 đến thứ 6
           
-          console.log("Week range:", {
-            weekStart: weekStart.toISOString(),
-            weekEnd: weekEnd.toISOString()
+          // Normalize dates để chỉ so sánh ngày, không có giờ
+          const normalizeDate = (date) => {
+            const normalized = new Date(date);
+            normalized.setHours(0, 0, 0, 0);
+            return normalized;
+          };
+          
+          const normalizedWeekStart = normalizeDate(weekStart);
+          const normalizedWeekEnd = normalizeDate(weekEnd);
+          const normalizedScheduleStart = normalizeDate(schedule.startDate);
+          const normalizedScheduleEnd = normalizeDate(schedule.endDate);
+          
+          console.log("Week range (normalized):", {
+            weekStart: normalizedWeekStart.toISOString(),
+            weekEnd: normalizedWeekEnd.toISOString(),
+            scheduleStart: normalizedScheduleStart.toISOString(),
+            scheduleEnd: normalizedScheduleEnd.toISOString()
           });
           
-          // ✅ SỬA: Logic kiểm tra overlap linh hoạt hơn
+          // ✅ SỬA: Logic kiểm tra overlap linh hoạt hơn với normalized dates
           // Kiểm tra xem tuần này có overlap với khoảng thời gian của schedule không
-          const hasOverlap = weekStart <= schedule.endDate && weekEnd >= schedule.startDate;
+          const hasOverlap = normalizedWeekStart <= normalizedScheduleEnd && normalizedWeekEnd >= normalizedScheduleStart;
+          
+          console.log("Overlap check:", {
+            hasOverlap,
+            condition1: `${normalizedWeekStart.toISOString()} <= ${normalizedScheduleEnd.toISOString()}`,
+            condition2: `${normalizedWeekEnd.toISOString()} >= ${normalizedScheduleStart.toISOString()}`,
+            result1: normalizedWeekStart <= normalizedScheduleEnd,
+            result2: normalizedWeekEnd >= normalizedScheduleStart
+          });
           
           if (hasOverlap) {
-            console.log("Week overlaps with schedule range");
+            console.log("Week overlaps with schedule range - proceeding with timetable fetch");
           } else {
             console.log("Week does not overlap with schedule range - returning empty grid");
             // Trả về lưới trống nếu tuần không overlap với khoảng thời gian của schedule
