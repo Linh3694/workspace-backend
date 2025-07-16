@@ -746,7 +746,7 @@ exports.uploadHandoverReport = async (req, res) => {
       laptop.assignmentHistory.push({
         user: new mongoose.Types.ObjectId(userId),
         startDate: new Date(),
-        document: originalFileName,
+        document: sanitizedName, // Sửa: luôn lưu tên đã sanitize
       });
 
       currentAssignment = laptop.assignmentHistory[laptop.assignmentHistory.length - 1];
@@ -771,10 +771,22 @@ exports.uploadHandoverReport = async (req, res) => {
 // Endpoint để trả file PDF
 exports.getHandoverReport = async (req, res) => {
   const { filename } = req.params;
-  const filePath = path.join(__dirname, "../../uploads/Handovers", filename);
+  
+  // Decode URL encoding trước
+  const decodedFilename = decodeURIComponent(filename);
+  
+  // Thử tìm file với tên được decode trước
+  let filePath = path.join(__dirname, "../../uploads/Handovers", decodedFilename);
+  
+  // Nếu không tìm thấy, thử với tên đã sanitize (thay khoảng trắng bằng dấu gạch dưới)
+  if (!fs.existsSync(filePath)) {
+    const sanitizedFilename = sanitizeFileName(decodedFilename);
+    filePath = path.join(__dirname, "../../uploads/Handovers", sanitizedFilename);
+  }
 
   // Kiểm tra file có tồn tại không
   if (!fs.existsSync(filePath)) {
+    console.error(`❌ Không tìm thấy file: ${decodedFilename} hoặc ${sanitizeFileName(decodedFilename)}`);
     return res.status(404).json({ message: "Không tìm thấy file." });
   }
 

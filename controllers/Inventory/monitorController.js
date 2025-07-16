@@ -595,7 +595,25 @@ exports.uploadHandoverReport = async (req, res) => {
 
     console.log("✅ Trong Controller - username nhận được:", username);
 
-    const filePath = req.file.path;
+    const originalFileName = path.basename(req.file.path); 
+    // => "BBBG-Nguyễn Hải Linh-2025-03-10.pdf"
+
+    // sanitize
+    const sanitizeFileName = (originalName) => {
+      let temp = originalName.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // bỏ dấu
+      temp = temp.replace(/\s+/g, "_"); // chuyển dấu cách -> _
+      return temp;
+    };
+
+    const sanitizedName = sanitizeFileName(originalFileName);
+    // => "BBBG-Nguyen_Hai_Linh-2025-03-10.pdf"
+
+    // Đổi tên file trên ổ cứng 
+    const oldPath = path.join(__dirname, "../../uploads/Handovers", originalFileName);
+    const newPath = path.join(__dirname, "../../uploads/Handovers", sanitizedName);
+    fs.renameSync(oldPath, newPath);
+
+    const filePath = `/uploads/Handovers/${sanitizedName}`;
     console.log("✅ Đường dẫn file đã lưu:", filePath);
 
     const monitor = await Monitor.findById(monitorId);
@@ -617,13 +635,13 @@ exports.uploadHandoverReport = async (req, res) => {
       monitor.assignmentHistory.push({
         user: new mongoose.Types.ObjectId(userId),
         startDate: new Date(),
-        document: filePath,
+        document: sanitizedName, // Sửa: luôn lưu tên đã sanitize
       });
 
       currentAssignment = monitor.assignmentHistory[monitor.assignmentHistory.length - 1];
     } else {
       console.log("🔄 Cập nhật lịch sử bàn giao hiện tại.");
-      currentAssignment.document = filePath;
+      currentAssignment.document = sanitizedName;
     }
 
     monitor.status = "Active";
@@ -642,10 +660,29 @@ exports.uploadHandoverReport = async (req, res) => {
 // Endpoint để trả file PDF
 exports.getHandoverReport = async (req, res) => {
   const { filename } = req.params;
-  const filePath = path.join(__dirname, "../../uploads/Handovers", filename);
+  
+  // Decode URL encoding trước
+  const decodedFilename = decodeURIComponent(filename);
+  
+  // Hàm sanitize để thử tìm file
+  const sanitizeFileName = (originalName) => {
+    let temp = originalName.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // bỏ dấu
+    temp = temp.replace(/\s+/g, "_"); // chuyển dấu cách -> _
+    return temp;
+  };
+  
+  // Thử tìm file với tên được decode trước
+  let filePath = path.join(__dirname, "../../uploads/Handovers", decodedFilename);
+  
+  // Nếu không tìm thấy, thử với tên đã sanitize (thay khoảng trắng bằng dấu gạch dưới)
+  if (!fs.existsSync(filePath)) {
+    const sanitizedFilename = sanitizeFileName(decodedFilename);
+    filePath = path.join(__dirname, "../../uploads/Handovers", sanitizedFilename);
+  }
 
   // Kiểm tra file có tồn tại không
   if (!fs.existsSync(filePath)) {
+    console.error(`❌ Không tìm thấy file: ${decodedFilename} hoặc ${sanitizeFileName(decodedFilename)}`);
     return res.status(404).json({ message: "Không tìm thấy file." });
   }
 
