@@ -57,13 +57,21 @@ const updateDocumentNames = async (Model, modelName) => {
 // Hàm chính
 const main = async () => {
   try {
-    // Kết nối MongoDB
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/workspace', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    // Kiểm tra MONGO_URI
+    const mongoUri = process.env.MONGO_URI;
+    if (!mongoUri) {
+      console.error('❌ Lỗi: MONGO_URI không được thiết lập');
+      console.log('💡 Hướng dẫn: Đặt MONGO_URI=mongodb://app:wellspring@172.16.20.130:27017/workspace?authSource=workspace');
+      process.exit(1);
+    }
     
-    console.log('🔗 Đã kết nối MongoDB');
+    console.log('🔗 Đang kết nối MongoDB...');
+    console.log(`📍 URI: ${mongoUri.replace(/\/\/.*@/, '//*****@')}`); // Ẩn password
+    
+    // Kết nối MongoDB (loại bỏ deprecated options)
+    await mongoose.connect(mongoUri);
+    
+    console.log('✅ Đã kết nối MongoDB thành công');
     
     // Cập nhật từng model
     let totalUpdated = 0;
@@ -77,7 +85,13 @@ const main = async () => {
     console.log(`\n🎉 Hoàn thành! Đã cập nhật tổng cộng ${totalUpdated} thiết bị`);
     
   } catch (error) {
-    console.error('❌ Lỗi:', error);
+    console.error('❌ Lỗi:', error.message);
+    if (error.name === 'MongooseServerSelectionError') {
+      console.log('💡 Hướng dẫn:');
+      console.log('   1. Kiểm tra MONGO_URI có đúng không');
+      console.log('   2. Kiểm tra kết nối mạng tới MongoDB server');
+      console.log('   3. Kiểm tra MongoDB server có đang chạy không');
+    }
   } finally {
     // Đóng kết nối
     await mongoose.connection.close();
