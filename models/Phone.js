@@ -34,7 +34,8 @@ const phoneSchema = new mongoose.Schema({
   specs: {
     processor: { type: String }, // CPU
     ram: { type: String }, // RAM
-    storage: { type: String } // Ổ cứng
+    storage: { type: String }, // Ổ cứng
+    display: { type: String } // Màn hình
   },
 }, { timestamps: true });
 

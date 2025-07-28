@@ -10,7 +10,9 @@ const {
   updatePhoneStatus,
   getPhoneById,
   updatePhoneSpecs,
-  getPhoneFilterOptions
+  getPhoneFilterOptions,
+  uploadHandoverReport,
+  getHandoverReport
 } = require("../../controllers/Inventory/phoneController");
 const Phone = require("../../models/Phone"); // Import model
 const validateToken = require("../../middleware/validateToken");
@@ -24,8 +26,8 @@ router.get("/", getPhones);
 router.post("/", createPhone);
 router.put("/:id", updatePhone);
 router.delete("/:id", deletePhone);
-router.post("/upload", upload.single("file"), processFile, require("../../controllers/Inventory/laptopController").uploadHandoverReport);
-router.get("/handover/:filename", require("../../controllers/Inventory/laptopController").getHandoverReport);
+router.post("/upload", upload.single("file"), processFile, uploadHandoverReport);
+router.get("/handover/:filename", getHandoverReport);
 router.post("/:id/assign", assignPhone);
 router.post("/:id/revoke", revokePhone);
 router.put("/:id/status", updatePhoneStatus);

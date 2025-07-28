@@ -424,7 +424,6 @@ exports.assignPhone = async (req, res) => {
   try {
     const { id } = req.params;
     const { newUserId, notes } = req.body;
-    const userId = req.headers["user-id"];
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID điện thoại không hợp lệ!" });
@@ -434,31 +433,52 @@ exports.assignPhone = async (req, res) => {
       return res.status(400).json({ message: "ID người dùng không hợp lệ!" });
     }
 
-    // Tìm phone
-    const phone = await Phone.findById(id);
+    // Tìm phone với populated assigned
+    const phone = await Phone.findById(id).populate("assigned");
     if (!phone) {
       return res.status(404).json({ message: "Không tìm thấy điện thoại!" });
     }
 
-    // Tìm user
-    const user = await User.findById(newUserId);
-    if (!user) {
+    // Đóng tất cả assignmentHistory cũ
+    phone.assignmentHistory.forEach((entry) => {
+      if (!entry.endDate) {
+        entry.endDate = new Date();
+      }
+    });
+
+    const currentUser = req.user; // Sử dụng req.user thay vì header
+
+    // Nếu phone đã có assigned => đóng bản ghi cũ
+    if (phone.assigned?.length > 0) {
+      const oldUserId = phone.assigned[0]._id;
+      const lastHistory = phone.assignmentHistory.find(
+        (h) => h.user.toString() === oldUserId.toString() && !h.endDate
+      );
+      if (lastHistory) {
+        lastHistory.endDate = new Date();
+        lastHistory.revokedBy = currentUser?._id || req.headers["user-id"] || null;
+      }
+    }
+
+    // Tìm user mới
+    const newUser = await User.findById(newUserId);
+    if (!newUser) {
       return res.status(404).json({ message: "Không tìm thấy người dùng!" });
     }
 
-    // Cập nhật assignment
-    phone.assigned = [newUserId];
-    phone.status = "Active";
-
-    // Thêm vào assignment history
+    // Thêm record vào assignmentHistory
     phone.assignmentHistory.push({
-      user: newUserId,
-      userName: user.fullname,
-      jobTitle: user.jobTitle,
+      user: newUser._id,
+      userName: newUser.fullname,
+      jobTitle: newUser.jobTitle || "Không xác định",
       startDate: new Date(),
-      assignedBy: userId,
-      notes: notes || "Bàn giao điện thoại"
+      notes: notes || "Bàn giao điện thoại",
+      assignedBy: currentUser?._id || req.headers["user-id"] || null,
     });
+
+    // Cập nhật assigned và status
+    phone.assigned = [newUser._id];
+    phone.status = "PendingDocumentation"; // Chờ biên bản như laptop
 
     const updatedPhone = await phone.save();
 
@@ -488,32 +508,41 @@ exports.revokePhone = async (req, res) => {
   try {
     const { id } = req.params;
     const { reasons, status = 'Standby' } = req.body;
-    const userId = req.headers["user-id"];
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID điện thoại không hợp lệ!" });
     }
 
-    // Tìm phone
-    const phone = await Phone.findById(id);
+    // Tìm phone với populated assigned
+    const phone = await Phone.findById(id).populate("assigned");
     if (!phone) {
       return res.status(404).json({ message: "Không tìm thấy điện thoại!" });
     }
 
-    // Cập nhật assignment history hiện tại
-    const currentAssignment = phone.assignmentHistory.find(
-      history => history.user && !history.endDate
-    );
+    const currentUser = req.user; // Người thực hiện thu hồi
 
-    if (currentAssignment) {
-      currentAssignment.endDate = new Date();
-      currentAssignment.revokedBy = userId;
-      currentAssignment.revokedReason = reasons;
+    if (phone.assigned.length > 0) {
+      const oldUserId = phone.assigned[0]._id;
+      const lastHistory = phone.assignmentHistory.find(
+        (hist) => hist.user?.toString() === oldUserId.toString() && !hist.endDate
+      );
+      if (lastHistory) {
+        lastHistory.endDate = new Date();
+        lastHistory.revokedBy = currentUser?._id || req.headers["user-id"] || null;
+        lastHistory.revokedReason = reasons; // Ghi lý do thu hồi vào bản ghi hiện tại
+      }
+    } else {
+      // Nếu không có bản ghi nào đang mở, thêm một bản ghi mới
+      phone.assignmentHistory.push({
+        revokedBy: currentUser?._id || req.headers["user-id"] || null,
+        revokedReason: reasons,
+        endDate: new Date(),
+      });
     }
 
-    // Cập nhật phone
-    phone.assigned = [];
+    // Cập nhật trạng thái thiết bị
     phone.status = status;
+    phone.assigned = [];
 
     const updatedPhone = await phone.save();
 
@@ -537,6 +566,84 @@ exports.revokePhone = async (req, res) => {
     });
   }
 };
+
+// Upload handover report for phone
+exports.uploadHandoverReport = async (req, res) => {
+  console.log("📤 Phone handover data từ frontend:", req.body);
+  try {
+    const { phoneId, userId, username } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ message: "File không được tải lên." });
+    }
+
+    console.log("✅ Phone Controller - username nhận được:", username);
+
+    const originalFileName = path.basename(req.file.path);
+    
+    // Sanitize filename (function defined in laptopController, import if needed)
+    const sanitizeFileName = (originalName) => {
+      let temp = originalName.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      temp = temp.replace(/\s+/g, "_");
+      return temp;
+    };
+
+    const sanitizedName = sanitizeFileName(originalFileName);
+
+    // Rename file on disk
+    const oldPath = path.join(__dirname, "../../uploads/Handovers", originalFileName);
+    const newPath = path.join(__dirname, "../../uploads/Handovers", sanitizedName);
+    
+    if (fs.existsSync(oldPath)) {
+      fs.renameSync(oldPath, newPath);
+    }
+
+    const phone = await Phone.findById(phoneId);
+    if (!phone) {
+      return res.status(404).json({ message: "Không tìm thấy điện thoại." });
+    }
+
+    console.log("✅ Tìm thấy phone:", phone);
+
+    let currentAssignment = phone.assignmentHistory.find(
+      (history) => 
+        history.user && 
+        history.user.toString() === userId && 
+        !history.endDate
+    );
+
+    if (!currentAssignment) {
+      console.warn("⚠️ Không tìm thấy lịch sử bàn giao hợp lệ. Tạo bản ghi mới...");
+      phone.assignmentHistory.push({
+        user: new mongoose.Types.ObjectId(userId),
+        startDate: new Date(),
+        document: sanitizedName,
+      });
+
+      currentAssignment = phone.assignmentHistory[phone.assignmentHistory.length - 1];
+    } else {
+      console.log("🔄 Cập nhật lịch sử bàn giao hiện tại.");
+      currentAssignment.document = sanitizedName;
+    }
+
+    phone.status = "Active";
+    await phone.save();
+
+    // Xóa cache
+    await redisService.deleteDeviceCache('phone');
+
+    return res.status(200).json({
+      message: "Tải lên biên bản thành công!",
+      phone,
+    });
+  } catch (error) {
+    console.error("❌ Lỗi khi tải lên biên bản phone:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi server." });
+  }
+};
+
+// Get handover report for phone (reuse laptop's getHandoverReport)
+exports.getHandoverReport = require("../../controllers/Inventory/laptopController").getHandoverReport;
 
 // Update phone status
 exports.updatePhoneStatus = async (req, res) => {
