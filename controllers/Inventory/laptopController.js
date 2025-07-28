@@ -82,9 +82,10 @@ exports.getLaptops = async (req, res) => {
     let laptops, totalItems;
     
     if (search) {
-      // Sử dụng aggregation để tìm kiếm theo tên người sử dụng
+      // Sử dụng aggregation để tìm kiếm theo tên người sử dụng (hiện tại + lịch sử)
       const searchRegex = new RegExp(search, "i");
       const aggregationPipeline = [
+        // Lookup cho assigned users hiện tại
         {
           $lookup: {
             from: 'users',
@@ -93,13 +94,24 @@ exports.getLaptops = async (req, res) => {
             as: 'assignedUsers'
           }
         },
+        // Lookup cho assignment history users
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assignmentHistory.user',
+            foreignField: '_id',
+            as: 'historyUsers'
+          }
+        },
         {
           $match: {
             $or: [
               { name: searchRegex },
               { serial: searchRegex },
               { manufacturer: searchRegex },
-              { 'assignedUsers.fullname': searchRegex }
+              { 'assignedUsers.fullname': searchRegex }, // Người đang sử dụng
+              { 'historyUsers.fullname': searchRegex }, // Người đã từng sử dụng
+              { 'assignmentHistory.userName': searchRegex } // Backup tìm theo userName
             ]
           }
         },
