@@ -10,7 +10,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -18,53 +18,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'
-          
+          node-version: "20"
+
       - name: Install dependencies
         run: npm install
-
-      - name: Deploy through Load Balancer to BE-01
-        uses: appleboy/ssh-action@master
-        with:
-          host: 42.96.41.26
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            # SSH vào BE-01 và thực hiện deploy
-            ssh be-01 '
-              cd /srv/app/workspace-backend
-              
-              # Hiển thị remote URL hiện tại
-              echo "Current remote URL:"
-              git remote -v
-              
-              # Fetch latest changes từ main branch
-              echo "Fetching latest changes from main..."
-              git fetch origin main
-              git checkout main
-              
-              # Reset hard về FETCH_HEAD (latest commit từ remote)
-              echo "Updating to latest commit..."
-              git reset --hard FETCH_HEAD
-              git clean -fd
-              
-              # Đảm bảo local branch tracking đúng remote
-              git branch --set-upstream-to=origin/main main
-              echo "Git sync completed successfully"
-              
-              # Hiển thị thông tin git để debug
-              echo "Current git status:"
-              git status
-              echo "Latest commit:"
-              git log --oneline -1
-              
-              # Cài đặt dependencies và chạy script
-              npm install --production
-            
-              
-              # Reload ứng dụng
-              pm2 reload all
-            '
 
       - name: Deploy through Load Balancer to BE-02
         uses: appleboy/ssh-action@master
@@ -117,18 +74,15 @@ jobs:
           script: |
             # Chờ 30 giây cho các service khởi động
             sleep 30
-            
-            # Kiểm tra health của BE-01
-            BE1_HEALTH=$(ssh be-01 'curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/health')
-            
+
+
             # Kiểm tra health của BE-02
             BE2_HEALTH=$(ssh be-02 'curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/health')
-            
-            if [ "$BE1_HEALTH" != "200" ] || [ "$BE2_HEALTH" != "200" ]; then
+
+            if [ "$BE2_HEALTH" != "200" ]; then
               echo "Health check failed!"
-              echo "BE-01 health status: $BE1_HEALTH"
               echo "BE-02 health status: $BE2_HEALTH"
               exit 1
             fi
-            
-            echo "Deployment successful! Both backends are healthy." 
+
+            echo "Deployment successful! Both backends are healthy."
