@@ -97,7 +97,7 @@ exports.getPhones = async (req, res) => {
 
     // Cache chỉ khi không có filter
     if (!hasFilters) {
-      await redisService.cacheDevicePage('phone', page, limit, populatedPhones, totalItems);
+      await redisService.setDevicePage('phone', page, limit, populatedPhones, totalItems);
       console.log(`[Cache] Cached phones page ${page}`);
     }
 
@@ -217,7 +217,7 @@ exports.createPhone = async (req, res) => {
     const savedPhone = await newPhone.save();
 
     // Xóa cache khi có thiết bị mới
-    await redisService.clearDeviceCache('phone');
+    await redisService.deleteDeviceCache('phone');
 
     // Populate thông tin trước khi trả về
     const populatedPhone = await Phone.findById(savedPhone._id)
@@ -316,7 +316,7 @@ exports.updatePhone = async (req, res) => {
       .populate("room", "name location status");
 
     // Xóa cache
-    await redisService.clearDeviceCache('phone');
+    await redisService.deleteDeviceCache('phone');
 
     return res.status(200).json({
       message: "Cập nhật điện thoại thành công!",
@@ -348,7 +348,7 @@ exports.deletePhone = async (req, res) => {
     }
 
     // Xóa cache
-    await redisService.clearDeviceCache('phone');
+    await redisService.deleteDeviceCache('phone');
 
     return res.status(200).json({
       message: "Xóa điện thoại thành công!",
@@ -468,7 +468,7 @@ exports.assignPhone = async (req, res) => {
       .populate("room", "name location status");
 
     // Xóa cache
-    await redisService.clearDeviceCache('phone');
+    await redisService.deleteDeviceCache('phone');
 
     res.status(200).json({
       message: "Bàn giao điện thoại thành công!",
@@ -523,7 +523,7 @@ exports.revokePhone = async (req, res) => {
       .populate("room", "name location status");
 
     // Xóa cache
-    await redisService.clearDeviceCache('phone');
+    await redisService.deleteDeviceCache('phone');
 
     res.status(200).json({
       message: "Thu hồi điện thoại thành công!",
@@ -573,7 +573,7 @@ exports.updatePhoneStatus = async (req, res) => {
     }
 
     // Xóa cache
-    await redisService.clearDeviceCache('phone');
+    await redisService.deleteDeviceCache('phone');
 
     res.status(200).json({
       message: "Cập nhật trạng thái điện thoại thành công!",
@@ -615,7 +615,7 @@ exports.updatePhoneSpecs = async (req, res) => {
     }
 
     // Xóa cache
-    await redisService.clearDeviceCache('phone');
+    await redisService.deleteDeviceCache('phone');
 
     res.status(200).json({
       message: "Cập nhật thông số điện thoại thành công!",
