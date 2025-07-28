@@ -68,13 +68,12 @@ jobs:
       - name: Health Check
         uses: appleboy/ssh-action@master
         with:
-          host: 42.96.41.26
+          host: 42.96.40.246
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # Chờ 30 giây cho các service khởi động
             sleep 30
-
 
             # Kiểm tra health của BE-02
             BE2_HEALTH=$(ssh be-02 'curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/health')
