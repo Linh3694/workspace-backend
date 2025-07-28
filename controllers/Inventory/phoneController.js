@@ -196,6 +196,12 @@ exports.createPhone = async (req, res) => {
         .json({ message: "Lý do báo hỏng là bắt buộc khi trạng thái là 'Broken'!" });
     }
 
+    // Xác định status dựa trên assigned
+    let deviceStatus = status || "Standby";
+    if (assigned && assigned.length > 0 && !status) {
+      deviceStatus = "PendingDocumentation"; // Cần biên bản khi có người được assigned
+    }
+
     // Tạo phone mới
     const newPhone = new Phone({
       name,
@@ -206,11 +212,11 @@ exports.createPhone = async (req, res) => {
       phoneNumber,
       releaseYear,
       assigned: assigned || [],
-      status: status || "Standby",
+      status: deviceStatus,
       specs,
       type: type || "Phone",
       room: room || null,
-      brokenReason: status === "Broken" ? reason : null,
+      brokenReason: deviceStatus === "Broken" ? reason : null,
     });
 
     // Lưu phone vào database
@@ -226,10 +232,11 @@ exports.createPhone = async (req, res) => {
 
     // Tạo assignment history nếu có assigned
     if (assigned && assigned.length > 0) {
+      const currentUser = req.user; // Người tạo device
       const assignmentHistory = assigned.map(userId => ({
         user: userId,
         startDate: new Date(),
-        assignedBy: userId, // Có thể sử dụng req.user._id nếu có auth
+        assignedBy: currentUser?._id || req.headers["user-id"] || null, // Người tạo device
         notes: "Bàn giao ban đầu",
       }));
 
