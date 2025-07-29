@@ -161,6 +161,19 @@ router.post("/cleanup-raw-data", timeAttendanceController.cleanupOldRawData);
  */
 router.post("/cleanup-duplicates", timeAttendanceController.cleanupDuplicateRawData);
 
+/**
+ * POST /api/attendance/configure-filtering
+ * Admin endpoint để cấu hình event filtering (ignore old events)
+ * Body: { ignoreOlderThanMinutes?: number, resetServerStartTime?: boolean }
+ */
+router.post("/configure-filtering", timeAttendanceController.configureEventFiltering);
+
+/**
+ * GET /api/attendance/filtering-status
+ * Lấy trạng thái hiện tại của event filtering
+ */
+router.get("/filtering-status", timeAttendanceController.getEventFilteringStatus);
+
 // Health check endpoint
 router.get("/health", (req, res) => {
     res.status(200).json({

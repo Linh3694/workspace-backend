@@ -1,6 +1,48 @@
 const TimeAttendance = require("../models/TimeAttendance");
 const Users = require("../models/Users");
 
+// Timestamp khi server start - chỉ nhận events sau thời điểm này
+const SERVER_START_TIME = new Date();
+console.log(`🚀 Server started at: ${SERVER_START_TIME.toISOString()}`);
+console.log(`📅 Only processing events newer than: ${SERVER_START_TIME.toISOString()}`);
+
+// Cấu hình: ignore events cũ hơn X phút (tính từ lúc nhận)
+const IGNORE_EVENTS_OLDER_THAN_MINUTES = 5; // 5 phút
+
+// Helper function để kiểm tra event có quá cũ không
+const isEventTooOld = (eventTimestamp) => {
+    if (!eventTimestamp) return false;
+    
+    try {
+        const eventTime = new Date(eventTimestamp);
+        const now = new Date();
+        
+        // Sử dụng global variables nếu có, fallback về constants
+        const serverStartTime = global.SERVER_START_TIME || SERVER_START_TIME;
+        const ignoreMinutes = global.IGNORE_EVENTS_OLDER_THAN_MINUTES || IGNORE_EVENTS_OLDER_THAN_MINUTES;
+        
+        // Kiểm tra event có trước khi server start không
+        if (eventTime < serverStartTime) {
+            console.log(`⏰ Event from ${eventTime.toISOString()} is before server start time (${serverStartTime.toISOString()}), skipping`);
+            return true;
+        }
+        
+        // Kiểm tra event có quá cũ không (hơn X phút)
+        const diffInMinutes = (now - eventTime) / (1000 * 60);
+        if (diffInMinutes > ignoreMinutes) {
+            console.log(`⏰ Event from ${eventTime.toISOString()} is ${diffInMinutes.toFixed(1)} minutes old (limit: ${ignoreMinutes}min), skipping`);
+            return true;
+        }
+        
+        console.log(`✅ Event from ${eventTime.toISOString()} is fresh (${diffInMinutes.toFixed(1)} minutes old, limit: ${ignoreMinutes}min)`);
+        return false;
+        
+    } catch (error) {
+        console.log(`❌ Invalid timestamp format: ${eventTimestamp}`);
+        return false; // Nếu không parse được timestamp, vẫn xử lý
+    }
+};
+
 // Upload batch dữ liệu chấm công từ máy chấm công HIKVISION
 exports.uploadAttendanceBatch = async (req, res) => {
     try {
@@ -162,7 +204,19 @@ exports.handleHikvisionEvent = async (req, res) => {
             });
         }
 
+        // Bỏ qua event nếu quá cũ
+        if (isEventTooOld(dateTime)) {
+            return res.status(200).json({
+                status: "success",
+                message: "Event too old, skipping.",
+                eventType,
+                eventState,
+                timestamp: new Date().toISOString()
+            });
+        }
+
         let recordsProcessed = 0;
+        let recordsSkipped = 0;
         let errors = [];
 
         // Xử lý ActivePost array (có thể có nhiều entries)
@@ -173,6 +227,13 @@ exports.handleHikvisionEvent = async (req, res) => {
                     const employeeCode = post.FPID || post.cardNo || post.employeeCode || post.userID;
                     const timestamp = post.dateTime || dateTime;
                     const deviceId = post.ipAddress || eventData.ipAddress || post.deviceID;
+
+                    // Kiểm tra timestamp của post individual
+                    if (isEventTooOld(timestamp)) {
+                        console.log(`⏰ Skipping old post for employee ${employeeCode} at ${timestamp}`);
+                        recordsSkipped++;
+                        continue; // Skip post này, tiếp tục với post tiếp theo
+                    }
 
                     if (!employeeCode) {
                         errors.push({
@@ -245,7 +306,11 @@ exports.handleHikvisionEvent = async (req, res) => {
                 const timestamp = activePost.dateTime || dateTime;
                 const deviceId = activePost.ipAddress || eventData.ipAddress || activePost.deviceID;
 
-                if (employeeCode && timestamp) {
+                // Kiểm tra timestamp của single post
+                if (isEventTooOld(timestamp)) {
+                    console.log(`⏰ Skipping old single post for employee ${employeeCode} at ${timestamp}`);
+                    recordsSkipped++;
+                } else if (employeeCode && timestamp) {
                     const parsedTimestamp = TimeAttendance.parseAttendanceTimestamp(timestamp);
                     const attendanceRecord = await TimeAttendance.findOrCreateDayRecord(
                         employeeCode,
@@ -290,7 +355,11 @@ exports.handleHikvisionEvent = async (req, res) => {
                 const timestamp = dateTime;
                 const deviceId = eventData.ipAddress || eventData.deviceID;
 
-                if (employeeCode && timestamp) {
+                // Kiểm tra timestamp của root level event
+                if (isEventTooOld(timestamp)) {
+                    console.log(`⏰ Skipping old root level event for employee ${employeeCode} at ${timestamp}`);
+                    recordsSkipped++;
+                } else if (employeeCode && timestamp) {
                     const parsedTimestamp = TimeAttendance.parseAttendanceTimestamp(timestamp);
                     const attendanceRecord = await TimeAttendance.findOrCreateDayRecord(
                         employeeCode,
@@ -334,14 +403,15 @@ exports.handleHikvisionEvent = async (req, res) => {
             eventType,
             eventState,
             recordsProcessed,
-            totalErrors: errors.length
+            totalErrors: errors.length,
+            recordsSkipped: recordsSkipped
         };
 
         if (errors.length > 0) {
             response.errors = errors.slice(0, 5); // Chỉ trả về 5 lỗi đầu tiên
         }
 
-        console.log(`📊 Kết quả xử lý Hikvision event: ${recordsProcessed} thành công, ${errors.length} lỗi`);
+        console.log(`📊 Kết quả xử lý Hikvision event: ${recordsProcessed} thành công, ${errors.length} lỗi, ${recordsSkipped} bị bỏ qua`);
 
         res.status(200).json(response);
 
@@ -824,6 +894,75 @@ exports.cleanupDuplicateRawData = async (req, res) => {
         res.status(500).json({
             status: "error",
             message: "Lỗi server khi cleanup duplicate rawData",
+            error: error.message
+        });
+    }
+};
+
+// Admin endpoint để cấu hình event filtering
+exports.configureEventFiltering = async (req, res) => {
+    try {
+        const { ignoreOlderThanMinutes, resetServerStartTime } = req.body;
+        
+        // Cập nhật cấu hình nếu có
+        if (ignoreOlderThanMinutes !== undefined) {
+            // Sử dụng global variable để update (trong production nên dùng database hoặc config file)
+            global.IGNORE_EVENTS_OLDER_THAN_MINUTES = parseInt(ignoreOlderThanMinutes);
+            console.log(`📝 Updated event filter to ignore events older than ${ignoreOlderThanMinutes} minutes`);
+        }
+        
+        // Reset server start time nếu yêu cầu
+        if (resetServerStartTime === true) {
+            global.SERVER_START_TIME = new Date();
+            console.log(`🔄 Reset server start time to: ${global.SERVER_START_TIME.toISOString()}`);
+        }
+        
+        res.status(200).json({
+            status: "success",
+            message: "Cấu hình event filtering đã được cập nhật",
+            config: {
+                serverStartTime: global.SERVER_START_TIME || SERVER_START_TIME,
+                ignoreOlderThanMinutes: global.IGNORE_EVENTS_OLDER_THAN_MINUTES || IGNORE_EVENTS_OLDER_THAN_MINUTES,
+                currentTime: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error("Lỗi cấu hình event filtering:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Lỗi server khi cấu hình event filtering",
+            error: error.message
+        });
+    }
+};
+
+// Get current event filtering status
+exports.getEventFilteringStatus = async (req, res) => {
+    try {
+        const currentTime = new Date();
+        const startTime = global.SERVER_START_TIME || SERVER_START_TIME;
+        const filterMinutes = global.IGNORE_EVENTS_OLDER_THAN_MINUTES || IGNORE_EVENTS_OLDER_THAN_MINUTES;
+        
+        const uptime = (currentTime - startTime) / (1000 * 60); // minutes
+        
+        res.status(200).json({
+            status: "success",
+            data: {
+                serverStartTime: startTime.toISOString(),
+                currentTime: currentTime.toISOString(),
+                uptimeMinutes: Math.round(uptime * 100) / 100,
+                ignoreOlderThanMinutes: filterMinutes,
+                eventsAcceptedAfter: startTime.toISOString(),
+                eventsIgnoredOlderThan: new Date(currentTime - filterMinutes * 60 * 1000).toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error("Lỗi lấy event filtering status:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Lỗi server khi lấy trạng thái event filtering",
             error: error.message
         });
     }
