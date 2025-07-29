@@ -102,11 +102,24 @@ exports.handleHikvisionEvent = async (req, res) => {
         
         const eventData = req.body;
         
+        // Nếu body rỗng, có thể là heartbeat/keepalive từ máy
+        if (!eventData || Object.keys(eventData).length === 0) {
+            console.log('📡 Received heartbeat/keepalive from Hikvision device');
+            return res.status(200).json({
+                status: "success",
+                message: "Heartbeat received",
+                timestamp: new Date().toISOString()
+            });
+        }
+        
         // Kiểm tra định dạng event cơ bản
         if (!eventData.eventType && !eventData.EventNotificationAlert) {
-            return res.status(400).json({
-                status: "error",
-                message: "Không phải event notification hợp lệ từ Hikvision"
+            console.log('⚠️  Unknown event format, treating as heartbeat');
+            return res.status(200).json({
+                status: "success",
+                message: "Event received but no valid eventType found",
+                eventData: eventData,
+                timestamp: new Date().toISOString()
             });
         }
 

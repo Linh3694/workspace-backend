@@ -1,11 +1,47 @@
 const express = require("express");
 const router = express.Router();
+const multer = require("multer");
 const timeAttendanceController = require("../controllers/timeAttendanceController");
 // const { authenticate } = require("../middleware/authMiddleware"); // Middleware xác thực nếu có
+
+// Cấu hình multer để handle multipart/form-data từ máy Hikvision
+const upload = multer();
 
 // Middleware để log requests (tùy chọn)
 const logRequest = (req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    next();
+};
+
+// Middleware để handle multipart form data từ Hikvision
+const parseHikvisionData = (req, res, next) => {
+    if (req.path.includes('hikvision-event')) {
+        console.log('📦 Parsing Hikvision multipart data...');
+        console.log('Fields received:', req.body);
+        console.log('Files received:', req.files);
+        
+        // Nếu có dữ liệu trong form fields, parse thành JSON
+        if (req.body && Object.keys(req.body).length > 0) {
+            try {
+                // Hikvision có thể gửi JSON trong một field cụ thể
+                for (let key in req.body) {
+                    console.log(`Field "${key}":`, req.body[key]);
+                    try {
+                        // Thử parse field như JSON
+                        const parsed = JSON.parse(req.body[key]);
+                        req.body = parsed; // Replace body với parsed JSON
+                        console.log('✅ Successfully parsed JSON from field:', key);
+                        break;
+                    } catch (e) {
+                        // Không phải JSON, giữ nguyên
+                        console.log(`Field "${key}" is not JSON:`, req.body[key]);
+                    }
+                }
+            } catch (error) {
+                console.log('❌ Error parsing multipart data:', error.message);
+            }
+        }
+    }
     next();
 };
 
@@ -53,7 +89,11 @@ router.post("/upload", timeAttendanceController.uploadAttendanceBatch);
  * Body: Hikvision Event Notification JSON format
  * Không cần authentication để máy face ID có thể gửi trực tiếp
  */
-router.post("/hikvision-event", timeAttendanceController.handleHikvisionEvent);
+router.post("/hikvision-event", 
+    upload.any(), // Parse multipart/form-data
+    parseHikvisionData, // Parse Hikvision data format
+    timeAttendanceController.handleHikvisionEvent
+);
 
 /**
  * POST /api/attendance/test-hikvision-event
