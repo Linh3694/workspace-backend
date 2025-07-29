@@ -9,8 +9,35 @@ const logRequest = (req, res, next) => {
     next();
 };
 
-// Apply logging middleware cho tất cả routes
+// Middleware để handle raw body cho Hikvision events
+const handleRawBody = (req, res, next) => {
+    if (req.path.includes('hikvision-event')) {
+        let rawBody = '';
+        req.on('data', chunk => {
+            rawBody += chunk.toString();
+        });
+        req.on('end', () => {
+            console.log('Raw body from Hikvision:', rawBody);
+            // Thử parse JSON nếu có data
+            if (rawBody && rawBody.trim()) {
+                try {
+                    req.body = JSON.parse(rawBody);
+                } catch (e) {
+                    // Nếu không phải JSON, có thể là form-encoded
+                    console.log('Failed to parse as JSON, raw data:', rawBody);
+                    req.rawBody = rawBody;
+                }
+            }
+            next();
+        });
+    } else {
+        next();
+    }
+};
+
+// Apply middleware
 router.use(logRequest);
+// router.use(handleRawBody); // Tạm comment out để không conflict với express.json()
 
 // Routes cho upload dữ liệu từ máy chấm công (không cần auth để máy chấm công có thể gửi)
 /**

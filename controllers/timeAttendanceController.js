@@ -87,7 +87,18 @@ exports.uploadAttendanceBatch = async (req, res) => {
 // Xử lý real-time event notification từ máy face ID Hikvision
 exports.handleHikvisionEvent = async (req, res) => {
     try {
-        console.log(`[${new Date().toISOString()}] Hikvision Event Received:`, JSON.stringify(req.body, null, 2));
+        // Enhanced debugging
+        console.log(`[${new Date().toISOString()}] === HIKVISION EVENT DEBUG ===`);
+        console.log('Method:', req.method);
+        console.log('URL:', req.url);
+        console.log('Headers:', JSON.stringify(req.headers, null, 2));
+        console.log('Content-Type:', req.get('Content-Type'));
+        console.log('Content-Length:', req.get('Content-Length'));
+        console.log('Body type:', typeof req.body);
+        console.log('Body content:', JSON.stringify(req.body, null, 2));
+        console.log('Raw body keys:', Object.keys(req.body || {}));
+        console.log('Query params:', JSON.stringify(req.query, null, 2));
+        console.log('='.repeat(50));
         
         const eventData = req.body;
         
