@@ -84,6 +84,324 @@ exports.uploadAttendanceBatch = async (req, res) => {
     }
 };
 
+// Xử lý real-time event notification từ máy face ID Hikvision
+exports.handleHikvisionEvent = async (req, res) => {
+    try {
+        console.log(`[${new Date().toISOString()}] Hikvision Event Received:`, JSON.stringify(req.body, null, 2));
+        
+        const eventData = req.body;
+        
+        // Kiểm tra định dạng event cơ bản
+        if (!eventData.eventType && !eventData.EventNotificationAlert) {
+            return res.status(400).json({
+                status: "error",
+                message: "Không phải event notification hợp lệ từ Hikvision"
+            });
+        }
+
+        // Extract thông tin từ event notification
+        let eventType, eventState, dateTime, activePost;
+        
+        if (eventData.EventNotificationAlert) {
+            // Format mới của Hikvision
+            const alert = eventData.EventNotificationAlert;
+            eventType = alert.eventType;
+            eventState = alert.eventState;
+            dateTime = alert.dateTime;
+            activePost = alert.ActivePost;
+        } else {
+            // Format cũ hoặc custom format
+            eventType = eventData.eventType;
+            eventState = eventData.eventState;
+            dateTime = eventData.dateTime;
+            activePost = eventData.ActivePost || eventData.activePost;
+        }
+
+        // Chỉ xử lý face recognition events
+        const validEventTypes = ['faceSnapMatch', 'faceMatch', 'faceRecognition', 'accessControllerEvent'];
+        if (!validEventTypes.includes(eventType)) {
+            console.log(`Bỏ qua event type không liên quan: ${eventType}`);
+            return res.status(200).json({
+                status: "success",
+                message: `Event type '${eventType}' không được xử lý cho chấm công`,
+                eventType
+            });
+        }
+
+        // Chỉ xử lý active events
+        if (eventState !== 'active') {
+            console.log(`Bỏ qua event state: ${eventState}`);
+            return res.status(200).json({
+                status: "success",
+                message: `Event state '${eventState}' không được xử lý`,
+                eventState
+            });
+        }
+
+        let recordsProcessed = 0;
+        let errors = [];
+
+        // Xử lý ActivePost array (có thể có nhiều entries)
+        if (activePost && Array.isArray(activePost)) {
+            for (const post of activePost) {
+                try {
+                    // Trích xuất thông tin nhân viên
+                    const employeeCode = post.FPID || post.cardNo || post.employeeCode || post.userID;
+                    const timestamp = post.dateTime || dateTime;
+                    const deviceId = post.ipAddress || eventData.ipAddress || post.deviceID;
+
+                    if (!employeeCode) {
+                        errors.push({
+                            post,
+                            error: "Không tìm thấy mã nhân viên (FPID, cardNo, employeeCode, userID)"
+                        });
+                        continue;
+                    }
+
+                    if (!timestamp) {
+                        errors.push({
+                            post,
+                            error: "Không tìm thấy timestamp"
+                        });
+                        continue;
+                    }
+
+                    // Parse timestamp
+                    let parsedTimestamp;
+                    try {
+                        parsedTimestamp = TimeAttendance.parseAttendanceTimestamp(timestamp);
+                    } catch (parseError) {
+                        errors.push({
+                            post,
+                            error: `Format datetime không hợp lệ: ${parseError.message}`
+                        });
+                        continue;
+                    }
+
+                    // Tìm hoặc tạo attendance record
+                    const attendanceRecord = await TimeAttendance.findOrCreateDayRecord(
+                        employeeCode,
+                        parsedTimestamp,
+                        deviceId
+                    );
+
+                    // Thêm metadata từ Hikvision event
+                    attendanceRecord.notes = attendanceRecord.notes || '';
+                    if (post.name) {
+                        attendanceRecord.notes += `Face ID: ${post.name}; `;
+                    }
+                    if (post.similarity) {
+                        attendanceRecord.notes += `Similarity: ${post.similarity}%; `;
+                    }
+                    if (eventType) {
+                        attendanceRecord.notes += `Event: ${eventType}; `;
+                    }
+
+                    // Cập nhật thời gian chấm công
+                    attendanceRecord.updateAttendanceTime(parsedTimestamp, deviceId);
+
+                    // Lưu record
+                    await attendanceRecord.save();
+                    recordsProcessed++;
+
+                    console.log(`✅ Đã xử lý event cho nhân viên ${employeeCode} lúc ${parsedTimestamp.toISOString()}`);
+
+                } catch (error) {
+                    console.error(`❌ Lỗi xử lý ActivePost:`, error);
+                    errors.push({
+                        post,
+                        error: error.message
+                    });
+                }
+            }
+        } else if (activePost && !Array.isArray(activePost)) {
+            // Trường hợp ActivePost là object đơn
+            try {
+                const employeeCode = activePost.FPID || activePost.cardNo || activePost.employeeCode || activePost.userID;
+                const timestamp = activePost.dateTime || dateTime;
+                const deviceId = activePost.ipAddress || eventData.ipAddress || activePost.deviceID;
+
+                if (employeeCode && timestamp) {
+                    const parsedTimestamp = TimeAttendance.parseAttendanceTimestamp(timestamp);
+                    const attendanceRecord = await TimeAttendance.findOrCreateDayRecord(
+                        employeeCode,
+                        parsedTimestamp,
+                        deviceId
+                    );
+
+                    // Thêm metadata
+                    attendanceRecord.notes = attendanceRecord.notes || '';
+                    if (activePost.name) {
+                        attendanceRecord.notes += `Face ID: ${activePost.name}; `;
+                    }
+                    if (activePost.similarity) {
+                        attendanceRecord.notes += `Similarity: ${activePost.similarity}%; `;
+                    }
+                    if (eventType) {
+                        attendanceRecord.notes += `Event: ${eventType}; `;
+                    }
+
+                    attendanceRecord.updateAttendanceTime(parsedTimestamp, deviceId);
+                    await attendanceRecord.save();
+                    recordsProcessed++;
+
+                    console.log(`✅ Đã xử lý event cho nhân viên ${employeeCode} lúc ${parsedTimestamp.toISOString()}`);
+                } else {
+                    errors.push({
+                        activePost,
+                        error: "Thiếu employeeCode hoặc timestamp"
+                    });
+                }
+            } catch (error) {
+                console.error(`❌ Lỗi xử lý single ActivePost:`, error);
+                errors.push({
+                    activePost,
+                    error: error.message
+                });
+            }
+        } else {
+            // Không có ActivePost, thử parse từ root level
+            try {
+                const employeeCode = eventData.FPID || eventData.cardNo || eventData.employeeCode || eventData.userID;
+                const timestamp = dateTime;
+                const deviceId = eventData.ipAddress || eventData.deviceID;
+
+                if (employeeCode && timestamp) {
+                    const parsedTimestamp = TimeAttendance.parseAttendanceTimestamp(timestamp);
+                    const attendanceRecord = await TimeAttendance.findOrCreateDayRecord(
+                        employeeCode,
+                        parsedTimestamp,
+                        deviceId
+                    );
+
+                    attendanceRecord.notes = attendanceRecord.notes || '';
+                    if (eventData.name) {
+                        attendanceRecord.notes += `Face ID: ${eventData.name}; `;
+                    }
+                    if (eventType) {
+                        attendanceRecord.notes += `Event: ${eventType}; `;
+                    }
+
+                    attendanceRecord.updateAttendanceTime(parsedTimestamp, deviceId);
+                    await attendanceRecord.save();
+                    recordsProcessed++;
+
+                    console.log(`✅ Đã xử lý event cho nhân viên ${employeeCode} lúc ${parsedTimestamp.toISOString()}`);
+                } else {
+                    errors.push({
+                        eventData,
+                        error: "Không tìm thấy employeeCode hoặc timestamp ở root level"
+                    });
+                }
+            } catch (error) {
+                console.error(`❌ Lỗi xử lý root level event:`, error);
+                errors.push({
+                    eventData,
+                    error: error.message
+                });
+            }
+        }
+
+        // Trả về response
+        const response = {
+            status: "success",
+            message: `Đã xử lý ${recordsProcessed} event chấm công từ Hikvision`,
+            timestamp: new Date().toISOString(),
+            eventType,
+            eventState,
+            recordsProcessed,
+            totalErrors: errors.length
+        };
+
+        if (errors.length > 0) {
+            response.errors = errors.slice(0, 5); // Chỉ trả về 5 lỗi đầu tiên
+        }
+
+        console.log(`📊 Kết quả xử lý Hikvision event: ${recordsProcessed} thành công, ${errors.length} lỗi`);
+
+        res.status(200).json(response);
+
+    } catch (error) {
+        console.error("❌ Lỗi xử lý Hikvision event:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Lỗi server khi xử lý event từ Hikvision",
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+};
+
+// Test endpoint để simulate Hikvision event (chỉ dùng cho development)
+exports.testHikvisionEvent = async (req, res) => {
+    try {
+        // Sample Hikvision event data để test
+        const sampleEvent = {
+            ipAddress: "192.168.1.100",
+            portNo: 80,
+            protocol: "HTTP",
+            macAddress: "00:12:34:56:78:90",
+            channelID: 1,
+            dateTime: new Date().toISOString(),
+            activePostCount: 1,
+            eventType: "faceSnapMatch",
+            eventState: "active",
+            EventNotificationAlert: {
+                eventType: "faceSnapMatch",
+                eventState: "active",
+                eventDescription: "Face match successful",
+                dateTime: new Date().toISOString(),
+                ActivePost: [{
+                    channelID: 1,
+                    ipAddress: "192.168.1.100",
+                    portNo: 80,
+                    protocol: "HTTP",
+                    macAddress: "00:12:34:56:78:90",
+                    dynChannelID: 1,
+                    UniversalUniqueID: "550e8400-e29b-41d4-a716-446655440000",
+                    faceLibType: "blackFD",
+                    FDID: "1",
+                    FPID: req.body.employeeCode || "123456", // Sử dụng employeeCode từ request hoặc mặc định
+                    name: req.body.employeeName || "Test Employee",
+                    type: "faceMatch",
+                    similarity: req.body.similarity || 85,
+                    templateID: "template123",
+                    dateTime: new Date().toISOString()
+                }]
+            }
+        };
+
+        // Gọi handler thật để test
+        const mockReq = {
+            body: sampleEvent
+        };
+
+        const mockRes = {
+            status: (code) => ({
+                json: (data) => {
+                    res.status(200).json({
+                        status: "success",
+                        message: "Test event đã được gửi và xử lý",
+                        testData: sampleEvent,
+                        result: data
+                    });
+                }
+            })
+        };
+
+        // Gọi handler
+        await exports.handleHikvisionEvent(mockReq, mockRes);
+
+    } catch (error) {
+        console.error("Lỗi test Hikvision event:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Lỗi khi test event",
+            error: error.message
+        });
+    }
+};
+
 // Lấy dữ liệu chấm công theo filter
 exports.getAttendanceRecords = async (req, res) => {
     try {

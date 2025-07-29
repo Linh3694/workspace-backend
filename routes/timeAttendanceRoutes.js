@@ -20,6 +20,21 @@ router.use(logRequest);
  */
 router.post("/upload", timeAttendanceController.uploadAttendanceBatch);
 
+/**
+ * POST /api/attendance/hikvision-event
+ * Xử lý real-time event notification từ máy face ID Hikvision
+ * Body: Hikvision Event Notification JSON format
+ * Không cần authentication để máy face ID có thể gửi trực tiếp
+ */
+router.post("/hikvision-event", timeAttendanceController.handleHikvisionEvent);
+
+/**
+ * POST /api/attendance/test-hikvision-event
+ * Test endpoint để simulate Hikvision event (chỉ dùng development)
+ * Body: { employeeCode?: string, employeeName?: string, similarity?: number }
+ */
+router.post("/test-hikvision-event", timeAttendanceController.testHikvisionEvent);
+
 // Routes cần authentication (cho admin/user interface)
 // Uncomment dòng dưới nếu muốn bảo vệ các routes này
 // router.use(authenticate);
