@@ -174,6 +174,12 @@ router.post("/configure-filtering", timeAttendanceController.configureEventFilte
  */
 router.get("/filtering-status", timeAttendanceController.getEventFilteringStatus);
 
+/**
+ * POST /api/attendance/reset-start-time
+ * ADMIN ONLY: Reset server start time để bỏ qua tất cả events cũ
+ */
+router.post("/reset-start-time", timeAttendanceController.resetServerStartTime);
+
 // Health check endpoint
 router.get("/health", (req, res) => {
     res.status(200).json({

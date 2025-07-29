@@ -7,7 +7,7 @@ console.log(`🚀 Server started at: ${SERVER_START_TIME.toISOString()}`);
 console.log(`📅 Only processing events newer than: ${SERVER_START_TIME.toISOString()}`);
 
 // Cấu hình: ignore events cũ hơn X phút (tính từ lúc nhận)
-const IGNORE_EVENTS_OLDER_THAN_MINUTES = 5; // 5 phút
+const IGNORE_EVENTS_OLDER_THAN_MINUTES = 1440; // 24 giờ = 1440 phút (thay vì 5 phút)
 
 // Helper function để kiểm tra event có quá cũ không
 const isEventTooOld = (eventTimestamp) => {
@@ -184,7 +184,7 @@ exports.handleHikvisionEvent = async (req, res) => {
         }
 
         // Chỉ xử lý face recognition events
-        const validEventTypes = ['faceSnapMatch', 'faceMatch', 'faceRecognition', 'accessControllerEvent'];
+        const validEventTypes = ['faceSnapMatch', 'faceMatch', 'faceRecognition', 'accessControllerEvent', 'AccessControllerEvent'];
         if (!validEventTypes.includes(eventType)) {
             console.log(`Bỏ qua event type không liên quan: ${eventType}`);
             return res.status(200).json({
@@ -954,7 +954,7 @@ exports.getEventFilteringStatus = async (req, res) => {
                 uptimeMinutes: Math.round(uptime * 100) / 100,
                 ignoreOlderThanMinutes: filterMinutes,
                 eventsAcceptedAfter: startTime.toISOString(),
-                eventsIgnoredOlderThan: new Date(currentTime - filterMinutes * 60 * 1000).toISOString()
+                eventsIgnoredBefore: new Date(currentTime - filterMinutes * 60 * 1000).toISOString()
             }
         });
         
@@ -963,6 +963,35 @@ exports.getEventFilteringStatus = async (req, res) => {
         res.status(500).json({
             status: "error",
             message: "Lỗi server khi lấy trạng thái event filtering",
+            error: error.message
+        });
+    }
+};
+
+// Reset server start time để bỏ qua tất cả events cũ (ADMIN ONLY)
+exports.resetServerStartTime = async (req, res) => {
+    try {
+        const newStartTime = new Date();
+        global.SERVER_START_TIME = newStartTime;
+        
+        console.log(`🔄 ADMIN RESET: Server start time reset to ${newStartTime.toISOString()}`);
+        console.log(`📅 All events before ${newStartTime.toISOString()} will be ignored`);
+        
+        res.status(200).json({
+            status: "success",
+            message: "Server start time đã được reset - chỉ nhận events mới từ bây giờ",
+            data: {
+                newServerStartTime: newStartTime.toISOString(),
+                previousStartTime: SERVER_START_TIME.toISOString(),
+                ignoreOlderThanMinutes: global.IGNORE_EVENTS_OLDER_THAN_MINUTES || IGNORE_EVENTS_OLDER_THAN_MINUTES
+            }
+        });
+        
+    } catch (error) {
+        console.error("Lỗi reset server start time:", error);
+        res.status(500).json({
+            status: "error", 
+            message: "Lỗi server khi reset start time",
             error: error.message
         });
     }

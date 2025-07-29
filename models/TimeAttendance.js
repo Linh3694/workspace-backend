@@ -86,48 +86,98 @@ timeAttendanceSchema.index({ employeeCode: 1, date: 1 }, { unique: true });
 // Index để tìm kiếm nhanh theo ngày
 timeAttendanceSchema.index({ date: -1 });
 
-// Instance method để cập nhật thời gian chấm công với deduplication cải thiện
+// Instance method để cập nhật thời gian chấm công với logic check-in/check-out thông minh
 timeAttendanceSchema.methods.updateAttendanceTime = function (timestamp, deviceId) {
     const checkTime = new Date(timestamp);
     const deviceIdToUse = deviceId || this.deviceId;
 
     // CẢI THIỆN: Deduplication nghiêm ngặt hơn
-    // Kiểm tra exact timestamp match (trong vòng 10 giây) để tránh duplicate hoàn toàn
+    // Kiểm tra exact timestamp match (trong vòng 30 giây) để tránh duplicate hoàn toàn
     const existingRawData = this.rawData.find(item => {
         const timeDiff = Math.abs(new Date(item.timestamp).getTime() - checkTime.getTime());
         const sameDevice = item.deviceId === deviceIdToUse;
 
-        // Duplicate check logic without logging
-
-        return timeDiff < 10000 && sameDevice; // Nghiêm ngặt: 10 giây thay vì 1 phút
+        return timeDiff < 30000 && sameDevice; // 30 giây để tránh duplicate
     });
 
-    if (!existingRawData) {
-        // Thêm vào raw data nếu chưa có
-        this.rawData.push({
-            timestamp: checkTime,
-            deviceId: deviceIdToUse,
-            recordedAt: new Date()
-        });
-
-        // Tăng số lần chấm công
-        this.totalCheckIns += 1;
+    if (existingRawData) {
+        console.log(`⚠️  Duplicate attendance detected within 30 seconds, skipping`);
+        return this;
     }
+
+    // Thêm vào raw data
+    this.rawData.push({
+        timestamp: checkTime,
+        deviceId: deviceIdToUse,
+        recordedAt: new Date()
+    });
 
     // Cleanup rawData cũ hơn 7 ngày
     this.cleanupOldRawData();
 
-    // Cập nhật check-in time (lần đầu tiên trong ngày)
-    if (!this.checkInTime || checkTime < this.checkInTime) {
-        this.checkInTime = checkTime;
-    }
-
-    // Cập nhật check-out time (lần cuối cùng trong ngày)
-    if (!this.checkOutTime || checkTime > this.checkOutTime) {
-        this.checkOutTime = checkTime;
-    }
+    // LOGIC THÔNG MINH: Xác định check-in vs check-out
+    this.updateCheckInOutTimes(checkTime);
 
     return this;
+};
+
+// Helper method để cập nhật check-in/check-out thông minh
+timeAttendanceSchema.methods.updateCheckInOutTimes = function (newTime) {
+    const currentHour = newTime.getHours();
+    
+    // Logic phân biệt check-in vs check-out dựa trên giờ
+    const isLikelyCheckIn = currentHour >= 6 && currentHour <= 12;  // 6h-12h: check-in
+    const isLikelyCheckOut = currentHour >= 15 && currentHour <= 22; // 15h-22h: check-out
+    
+    // Nếu chưa có check-in hoặc thời gian mới rất sớm
+    if (!this.checkInTime || (isLikelyCheckIn && newTime < this.checkInTime)) {
+        console.log(`📥 Setting check-in time: ${newTime.toISOString()}`);
+        this.checkInTime = newTime;
+        this.totalCheckIns = Math.max(1, this.totalCheckIns);
+    }
+    // Nếu chưa có check-out hoặc thời gian mới rất muộn
+    else if (!this.checkOutTime || (isLikelyCheckOut && newTime > this.checkOutTime)) {
+        console.log(`📤 Setting check-out time: ${newTime.toISOString()}`);
+        this.checkOutTime = newTime;
+        this.totalCheckIns = Math.max(2, this.totalCheckIns);
+    }
+    // Nếu có cả check-in và check-out rồi
+    else if (this.checkInTime && this.checkOutTime) {
+        // Xác định nên update check-in hay check-out dựa trên khoảng cách thời gian
+        const distanceToCheckIn = Math.abs(newTime - this.checkInTime);
+        const distanceToCheckOut = Math.abs(newTime - this.checkOutTime);
+        
+        if (isLikelyCheckIn && distanceToCheckIn < distanceToCheckOut) {
+            // Update check-in nếu gần hơn và là giờ sáng
+            console.log(`🔄 Updating check-in time: ${this.checkInTime.toISOString()} → ${newTime.toISOString()}`);
+            this.checkInTime = newTime;
+        } else if (isLikelyCheckOut && distanceToCheckOut < distanceToCheckIn) {
+            // Update check-out nếu gần hơn và là giờ chiều
+            console.log(`🔄 Updating check-out time: ${this.checkOutTime.toISOString()} → ${newTime.toISOString()}`);
+            this.checkOutTime = newTime;
+        } else {
+            console.log(`ℹ️  Ignoring additional attendance at ${newTime.toISOString()} (already have check-in and check-out)`);
+        }
+    }
+    // Fallback: nếu chỉ có check-in, thì đây là check-out
+    else if (this.checkInTime && !this.checkOutTime) {
+        if (newTime > this.checkInTime) {
+            console.log(`📤 Setting check-out time: ${newTime.toISOString()}`);
+            this.checkOutTime = newTime;
+            this.totalCheckIns = 2;
+        } else {
+            console.log(`🔄 Updating check-in time: ${this.checkInTime.toISOString()} → ${newTime.toISOString()}`);
+            this.checkInTime = newTime;
+        }
+    }
+    
+    // Đảm bảo check-in luôn trước check-out
+    if (this.checkInTime && this.checkOutTime && this.checkInTime > this.checkOutTime) {
+        console.log(`🔀 Swapping check-in and check-out times`);
+        const temp = this.checkInTime;
+        this.checkInTime = this.checkOutTime;
+        this.checkOutTime = temp;
+    }
 };
 
 // Instance method để cleanup rawData cũ hơn 7 ngày
