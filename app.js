@@ -197,6 +197,7 @@ const corsOptions = {
     'https://api-dev.wellspring.edu.vn',
     'https://library.wellspring.edu.vn',
     'https://tuyendung.wellspring.edu.vn',
+    'https://career.wellspring.edu.vn',
     'https://honor.wellspring.edu.vn'
   ],
   credentials: true,
