@@ -23,7 +23,18 @@ router.post('/bulk-upload-images', uploadStudentZip.single('zipFile'), studentCo
 // Route: Import hàng loạt học sinh từ Excel
 router.post('/import', excelUpload.single('excelFile'), studentController.bulkImportStudents);
 
+// Test route để debug
+router.get('/test-import', (req, res) => {
+  res.json({
+    message: 'Student import route is working!',
+    timestamp: new Date(),
+    route: '/api/students/import (POST)',
+    expectedField: 'excelFile'
+  });
+});
+
 // Routes generic - ĐẶT SAU routes cụ thể
+// Đảm bảo /:id không conflict với /import
 router.get('/:id', studentController.getStudentById);
 router.post('/', uploadStudentAvatar.single('avatar'), studentController.createStudent);
 router.put('/:id', uploadStudentAvatar.single('avatar'), studentController.updateStudent);
