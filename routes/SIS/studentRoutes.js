@@ -20,16 +20,26 @@ router.get('/:id/photos', studentController.getAllStudentPhotos);
 // Route: Upload hàng loạt ảnh học sinh từ ZIP
 router.post('/bulk-upload-images', uploadStudentZip.single('zipFile'), studentController.bulkUploadStudentImages);
 
-// Route: Import hàng loạt học sinh từ Excel
-router.post('/import', excelUpload.single('excelFile'), studentController.bulkImportStudents);
+// Route: Import hàng loạt học sinh từ Excel (tạm thời bỏ middleware để test)
+router.post('/bulk-import-students', studentController.bulkImportStudents);
 
 // Test route để debug
-router.get('/test-import', (req, res) => {
+router.get('/test-bulk-import', (req, res) => {
   res.json({
-    message: 'Student import route is working!',
+    message: 'Student bulk import route is working!',
     timestamp: new Date(),
-    route: '/api/students/import (POST)',
+    route: '/api/students/bulk-import-students (POST)',
     expectedField: 'excelFile'
+  });
+});
+
+// Route test đơn giản
+router.post('/test-upload', (req, res) => {
+  res.json({
+    message: 'Test upload endpoint working!',
+    receivedBody: !!req.body,
+    receivedFile: !!req.file,
+    timestamp: new Date()
   });
 });
 

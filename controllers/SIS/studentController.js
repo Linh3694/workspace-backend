@@ -756,14 +756,24 @@ exports.bulkUploadStudentImages = asyncHandler(async (req, res) => {
 // Import hàng loạt học sinh từ Excel
 exports.bulkImportStudents = asyncHandler(async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "Vui lòng tải lên file Excel" });
-    }
+    // Handle file upload manually without middleware
+    const multer = require('multer');
+    const upload = multer({ dest: 'uploads/excelTmp/' });
 
-    const xlsx = require('xlsx');
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    const excelRows = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
+    upload.single('excelFile')(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({ message: "Lỗi upload file: " + err.message });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "Vui lòng tải lên file Excel" });
+      }
+
+      try {
+        const xlsx = require('xlsx');
+        const workbook = xlsx.readFile(req.file.path, { type: 'file' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const excelRows = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
 
     if (!excelRows || excelRows.length === 0) {
       return res.status(400).json({ message: "File Excel không có dữ liệu" });
@@ -879,18 +889,40 @@ exports.bulkImportStudents = asyncHandler(async (req, res) => {
       }
     }
 
-    console.log(`✅ Successfully imported ${results.success.length} students`);
-    console.log(`❌ Failed to import ${results.errors.length} students`);
+        console.log(`✅ Successfully imported ${results.success.length} students`);
+        console.log(`❌ Failed to import ${results.errors.length} students`);
 
-    return res.status(200).json({
-      message: `Import hoàn tất: ${results.success.length} thành công, ${results.errors.length} lỗi`,
-      summary: {
-        total: results.total,
-        successful: results.success.length,
-        failed: results.errors.length
-      },
-      results: results.success,
-      errors: results.errors
+        // Cleanup uploaded file
+        const fs = require('fs');
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (cleanupError) {
+          console.warn('Warning: Could not cleanup temp file:', cleanupError.message);
+        }
+
+        return res.status(200).json({
+          message: `Import hoàn tất: ${results.success.length} thành công, ${results.errors.length} lỗi`,
+          summary: {
+            total: results.total,
+            successful: results.success.length,
+            failed: results.errors.length
+          },
+          results: results.success,
+          errors: results.errors
+        });
+
+      } catch (innerError) {
+        // Cleanup on error
+        const fs = require('fs');
+        try {
+          if (req.file && req.file.path) {
+            fs.unlinkSync(req.file.path);
+          }
+        } catch (cleanupError) {
+          console.warn('Warning: Could not cleanup temp file on error:', cleanupError.message);
+        }
+        return res.status(500).json({ error: innerError.message });
+      }
     });
 
   } catch (error) {
