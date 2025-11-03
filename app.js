@@ -65,11 +65,9 @@ const socketGroupChat = require('./socketGroupChat');
 const socketTicketChat = require('./socketTicketChat');
 const notificationRoutes = require("./routes/Notification/notificationRoutes");
 const emojiRoutes = require('./routes/Chat/emojiRoutes');
-const postRoutes = require('./routes/Newfeed/postRoutes');
 const timeAttendanceRoutes = require('./routes/timeAttendanceRoutes');
 const leaveRequestRoutes = require('./routes/SIS/leaveRequestRoutes');
 const microsoftSyncRoutes = require('./routes/MicrosoftSync/microsoftSyncRoutes');
-const NewfeedSocket = require('./utils/newfeedSocket');
 
 const app = express();
 // Tạo HTTP server và tích hợp Socket.IO
@@ -154,9 +152,7 @@ socketGroupChat(groupChatNamespace); // Socket riêng cho group chat
 // Expose group chat namespace để controllers có thể sử dụng
 app.set("groupChatNamespace", groupChatNamespace);
 
-// Initialize newfeed socket
-const newfeedSocket = new NewfeedSocket(io);
-app.set('newfeedSocket', newfeedSocket);
+// Newfeed socket moved to social-service
 
 // Kết nối MongoDB và Redis
 const connectDB = async () => {
@@ -296,7 +292,7 @@ app.use("/api/admissions", admissionRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/emoji", emojiRoutes);
-app.use("/api/posts", postRoutes);
+// Posts have been migrated to social-service. Remove local mount to avoid conflict.
 app.use("/api/attendance", timeAttendanceRoutes);
 app.use("/api/leave-requests", leaveRequestRoutes);
 app.use("/api/microsoft-sync", microsoftSyncRoutes);

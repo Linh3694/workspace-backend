@@ -22,6 +22,8 @@ exports.createAwardRecord = async (req, res) => {
       }
     }
 
+    // DISABLED: Remove duplicates within the same request
+    /*
     if (Array.isArray(req.body.students)) {
       const seenStu = new Set();
       req.body.students = req.body.students.filter((s) => {
@@ -41,6 +43,7 @@ exports.createAwardRecord = async (req, res) => {
         return true;
       });
     }
+    */
     // 2) Prevent duplicates that already exist in **other** records
     const baseMatch = {
       awardCategory: req.body.awardCategory,
@@ -731,17 +734,23 @@ exports.uploadExcelStudents = async (req, res) => {
       return studentData;
     });
 
-    // Remove duplicates trong file Excel
+    // DISABLED: Remove duplicates trong file Excel - Cho phép duplicate
+    /*
     const uniqueStudentCodes = [...new Set(excelRows.map(row => row.studentCode))];
-    const uniqueRows = uniqueStudentCodes.map(code => 
+    const uniqueRows = uniqueStudentCodes.map(code =>
       excelRows.find(row => row.studentCode === code)
     );
+    */
 
-    console.log(`📊 Processing ${uniqueRows.length} unique students from Excel`);
+    // Sử dụng tất cả rows từ Excel (bao gồm duplicate)
+    const uniqueRows = excelRows;
+
+    console.log(`📊 Processing ${uniqueRows.length} students from Excel (including duplicates)`);
 
     // 🚀 BATCH LOOKUP: Tìm tất cả students cùng lúc
+    const allStudentCodes = uniqueRows.map(row => row.studentCode);
     const foundStudents = await Student.find({
-      studentCode: { $in: uniqueStudentCodes }
+      studentCode: { $in: allStudentCodes }
     }).select('_id studentCode name').lean();
 
     // Tạo map để lookup nhanh
@@ -750,7 +759,7 @@ exports.uploadExcelStudents = async (req, res) => {
     );
 
     // Kiểm tra students không tồn tại
-    const missingStudents = uniqueStudentCodes.filter(code => !studentMap.has(code));
+    const missingStudents = allStudentCodes.filter(code => !studentMap.has(code));
     if (missingStudents.length > 0) {
       return res.status(400).json({
         message: `Không tìm thấy ${missingStudents.length} học sinh trong hệ thống`,
