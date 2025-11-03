@@ -5,6 +5,7 @@ const multer = require('multer');
 const upload = multer();
 const uploadStudentAvatar = require('../../middleware/uploadStudents');
 const uploadStudentZip = require('../../middleware/uploadStudentZip');
+const excelUpload = require('../../middleware/excelUpload');
 
 // Define routes for Students
 router.get('/', studentController.getStudents);
@@ -18,6 +19,9 @@ router.get('/:id/photos', studentController.getAllStudentPhotos);
 
 // Route: Upload hàng loạt ảnh học sinh từ ZIP
 router.post('/bulk-upload-images', uploadStudentZip.single('zipFile'), studentController.bulkUploadStudentImages);
+
+// Route: Import hàng loạt học sinh từ Excel
+router.post('/import', excelUpload.single('excelFile'), studentController.bulkImportStudents);
 
 // Routes generic - ĐẶT SAU routes cụ thể
 router.get('/:id', studentController.getStudentById);

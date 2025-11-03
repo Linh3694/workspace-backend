@@ -753,6 +753,152 @@ exports.bulkUploadStudentImages = asyncHandler(async (req, res) => {
   }
 });
 
+// Import hàng loạt học sinh từ Excel
+exports.bulkImportStudents = asyncHandler(async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Vui lòng tải lên file Excel" });
+    }
+
+    const xlsx = require('xlsx');
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const excelRows = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
+
+    if (!excelRows || excelRows.length === 0) {
+      return res.status(400).json({ message: "File Excel không có dữ liệu" });
+    }
+
+    console.log(`📊 Processing ${excelRows.length} students from Excel`);
+
+    const results = {
+      success: [],
+      errors: [],
+      total: excelRows.length
+    };
+
+    for (let i = 0; i < excelRows.length; i++) {
+      const row = excelRows[i];
+      const rowNum = i + 2; // Excel row number (starting from 2)
+
+      try {
+        // Validate required fields
+        if (!row.StudentCode || !row.Name) {
+          results.errors.push({
+            row: rowNum,
+            error: "Thiếu StudentCode hoặc Name",
+            data: row
+          });
+          continue;
+        }
+
+        // Check if student code already exists
+        const existingStudent = await Student.findOne({ studentCode: row.StudentCode });
+        if (existingStudent) {
+          results.errors.push({
+            row: rowNum,
+            error: `StudentCode ${row.StudentCode} đã tồn tại`,
+            data: row
+          });
+          continue;
+        }
+
+        // Prepare student data
+        const studentData = {
+          studentCode: row.StudentCode.trim(),
+          name: row.Name.trim(),
+          gender: row.Gender || undefined,
+          birthDate: row.BirthDate ? new Date(row.BirthDate) : undefined,
+          address: row.Address || undefined,
+          email: row.Email || undefined,
+          status: row.Status || 'active'
+        };
+
+        // Remove undefined fields
+        Object.keys(studentData).forEach(key => {
+          if (studentData[key] === undefined) {
+            delete studentData[key];
+          }
+        });
+
+        // Create student
+        const newStudent = await Student.create(studentData);
+
+        // Handle optional enrollment if ClassName and SchoolYearCode provided
+        if (row.ClassName && row.SchoolYearCode) {
+          try {
+            const SchoolYear = require("../../models/SchoolYear");
+            const Class = require("../../models/Class");
+
+            // Find school year
+            const schoolYear = await SchoolYear.findOne({ code: row.SchoolYearCode.trim() });
+            if (schoolYear) {
+              // Find class
+              const classDoc = await Class.findOne({
+                className: row.ClassName.trim(),
+                schoolYear: schoolYear._id
+              });
+
+              if (classDoc) {
+                // Create enrollment
+                const StudentClassEnrollment = require("../../models/StudentClassEnrollment");
+                await StudentClassEnrollment.create({
+                  student: newStudent._id,
+                  class: classDoc._id,
+                  schoolYear: schoolYear._id,
+                  status: 'active'
+                });
+
+                // Update class and student references
+                await Class.findByIdAndUpdate(classDoc._id, {
+                  $addToSet: { students: newStudent._id }
+                });
+                await Student.findByIdAndUpdate(newStudent._id, {
+                  $addToSet: { class: classDoc._id }
+                });
+              }
+            }
+          } catch (enrollmentError) {
+            console.warn(`Warning: Could not enroll student ${row.StudentCode}:`, enrollmentError.message);
+          }
+        }
+
+        results.success.push({
+          row: rowNum,
+          studentCode: row.StudentCode,
+          studentId: newStudent._id,
+          name: row.Name
+        });
+
+      } catch (error) {
+        results.errors.push({
+          row: rowNum,
+          error: error.message,
+          data: row
+        });
+      }
+    }
+
+    console.log(`✅ Successfully imported ${results.success.length} students`);
+    console.log(`❌ Failed to import ${results.errors.length} students`);
+
+    return res.status(200).json({
+      message: `Import hoàn tất: ${results.success.length} thành công, ${results.errors.length} lỗi`,
+      summary: {
+        total: results.total,
+        successful: results.success.length,
+        failed: results.errors.length
+      },
+      results: results.success,
+      errors: results.errors
+    });
+
+  } catch (error) {
+    console.error("Error in bulk import students:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = {
   getStudents: exports.getStudents,
   getStudentById: exports.getStudentById,
@@ -765,5 +911,6 @@ module.exports = {
   getAllStudentPhotos: exports.getAllStudentPhotos,
   getCurrentStudentPhoto: exports.getCurrentStudentPhoto,
   bulkUploadStudentImages: exports.bulkUploadStudentImages,
+  bulkImportStudents: exports.bulkImportStudents,
   removeFamilyFromStudent: exports.removeFamilyFromStudent,
 };
