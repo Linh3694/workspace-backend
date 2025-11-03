@@ -813,12 +813,40 @@ exports.bulkImportStudents = asyncHandler(async (req, res) => {
           continue;
         }
 
+        // Map gender values (support both English and Vietnamese)
+        let genderValue = undefined;
+        if (row.Gender) {
+          const genderStr = row.Gender.toString().trim().toLowerCase();
+          if (genderStr === 'male' || genderStr === 'nam') {
+            genderValue = 'male';
+          } else if (genderStr === 'female' || genderStr === 'nữ' || genderStr === 'nu') {
+            genderValue = 'female';
+          } else if (genderStr === 'other' || genderStr === 'khác' || genderStr === 'khac') {
+            genderValue = 'other';
+          }
+        }
+
+        // Parse birth date (support both BirthDate and BirthDay columns)
+        let birthDateValue = undefined;
+        const birthDateStr = row.BirthDate || row.BirthDay;
+        if (birthDateStr) {
+          try {
+            // Try different date formats
+            const dateStr = birthDateStr.toString().trim();
+            // Handle format DD/MM/YYYY or DD//MM/YYYY
+            const normalizedDate = dateStr.replace(/\/\//g, '/');
+            birthDateValue = new Date(normalizedDate);
+          } catch (dateError) {
+            console.warn(`Invalid birth date format: ${birthDateStr}`);
+          }
+        }
+
         // Prepare student data
         const studentData = {
           studentCode: row.StudentCode.trim(),
           name: row.Name.trim(),
-          gender: row.Gender || undefined,
-          birthDate: row.BirthDate ? new Date(row.BirthDate) : undefined,
+          gender: genderValue,
+          birthDate: birthDateValue,
           address: row.Address || undefined,
           email: row.Email || undefined,
           status: row.Status || 'active'
