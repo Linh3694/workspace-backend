@@ -191,7 +191,6 @@ AwardRecordSchema.index(
   },
   {
     unique: true,
-    sparse: true,
     name: 'unique_student_award',
     partialFilterExpression: {
       'students.student': { $ne: null }
