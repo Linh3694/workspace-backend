@@ -180,7 +180,7 @@ AwardRecordSchema.index({
   isActive: 1,
 });
 
-// Unique constraint để tránh duplicate - chỉ áp dụng khi students.student không null
+// Unique constraint để tránh duplicate - chỉ áp dụng khi students.student là ObjectId (không null)
 AwardRecordSchema.index(
   {
     awardCategory: 1,
@@ -193,7 +193,7 @@ AwardRecordSchema.index(
     unique: true,
     name: 'unique_student_award',
     partialFilterExpression: {
-      'students.student': { $ne: null }
+      'students.student': { $type: 'objectId' }
     }
   }
 );

@@ -17,7 +17,7 @@ async function fixIndex() {
       console.log('ℹ️  Old index not found or already dropped');
     }
 
-    // Create new index with partial filter
+    // Create new index with partial filter - chỉ áp dụng cho documents có students.student là ObjectId
     await collection.createIndex(
       {
         awardCategory: 1,
@@ -30,7 +30,7 @@ async function fixIndex() {
         unique: true,
         name: 'unique_student_award',
         partialFilterExpression: {
-          'students.student': { $ne: null }
+          'students.student': { $type: 'objectId' }
         }
       }
     );
