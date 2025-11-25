@@ -287,7 +287,6 @@ app.use("/api/trips", tripRoutes);
 app.use("/api/daily-trips", dailyTripRoutes);
 app.use("/api/libraries", libraryRoutes);
 app.use("/api/library-activities", libraryActivityRoutes);
-app.use("/api/email", require("./routes/Ticket/emailRoutes"));
 app.use("/api/admissions", admissionRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
@@ -307,8 +306,6 @@ const PORT = process.env.PORT;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
-require("./cronEmail");
 
 // Khởi động scheduled jobs
 const AttendanceCleanupJob = require('./jobs/attendanceCleanupJob');
