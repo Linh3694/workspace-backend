@@ -13,8 +13,7 @@ const passport = require('passport');
 const { BearerStrategy } = require('passport-azure-ad');
 const jwt = require('jsonwebtoken');
 const User = require('../../models/Users');
-const { isAllowedEmail } = require('../../config/recruitmentAllowedEmails');
-
+const { isAllowedEmail } = require('../../config/recruitmentAllowedEmails.js');
 const router = express.Router();
 
 /* ------------------------------------------------------------------ */
