@@ -13,6 +13,7 @@ const passport = require('passport');
 const { BearerStrategy } = require('passport-azure-ad');
 const jwt = require('jsonwebtoken');
 const User = require('../../models/Users');
+const { isAllowedEmail } = require('../../config/recruitmentAllowedEmails');
 
 const router = express.Router();
 
@@ -219,5 +220,125 @@ if (process.env.TENANT_ID && process.env.CLIENT_ID) {
     });
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* 3. Recruitment-specific Routes                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * POST /api/auth/microsoft/recruitment/login
+ * Endpoint dành riêng cho Recruitment Admin
+ * Chỉ cho phép email trong whitelist truy cập
+ * 
+ * Flow:
+ * 1. Verify Microsoft token
+ * 2. Extract email from token
+ * 3. Check if email is in allowed list (recruitmentAllowedEmails)
+ * 4. Check if user exists in DB
+ * 5. Return user data + JWT token
+ */
+router.post('/microsoft/recruitment/login', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authorization header missing or invalid' 
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    // Decode JWT token without verification (for development)
+    const decoded = jwt.decode(token);
+    
+    if (!decoded) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid token format' 
+      });
+    }
+
+    // Check if token is expired
+    if (decoded.exp && decoded.exp < Date.now() / 1000) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token has expired' 
+      });
+    }
+
+    // Extract email from Microsoft token
+    const email = decoded.email || decoded.preferred_username || decoded.upn;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'No email found in Microsoft token'
+      });
+    }
+
+    console.log('🔍 [Recruitment] Microsoft login attempt for email:', email);
+
+    // ✅ CHECK EMAIL WHITELIST - Đây là điểm khác biệt chính
+    if (!isAllowedEmail(email)) {
+      console.log('❌ [Recruitment] Email not in allowed list:', email);
+      return res.status(403).json({
+        success: false,
+        message: 'Tài khoản của bạn không có quyền truy cập Recruitment Admin. Vui lòng liên hệ HR để được cấp quyền.'
+      });
+    }
+
+    console.log('✅ [Recruitment] Email is in allowed list:', email);
+
+    // Check if user exists in database
+    let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (user) {
+      // User exists - return existing user data
+      console.log('✅ [Recruitment] User found in database:', user.fullname);
+      
+      // Generate JWT token for our system
+      const systemToken = jwt.sign(
+        { id: user._id, role: user.role, app: 'recruitment' },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Microsoft login successful',
+        token: systemToken,
+        user: {
+          _id: user._id,
+          email: user.email,
+          fullname: user.fullname,
+          role: user.role,
+          department: user.department,
+          jobTitle: user.jobTitle,
+          employeeCode: user.employeeCode,
+          avatarUrl: user.avatarUrl,
+          provider: 'microsoft',
+          app: 'recruitment'
+        }
+      });
+    } else {
+      // User doesn't exist in database
+      // Nhưng email đã được whitelist, có thể tự động tạo user mới (optional)
+      console.log('⚠️ [Recruitment] User not found in database for email:', email);
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Tài khoản chưa được tạo trong hệ thống. Vui lòng liên hệ IT để được hỗ trợ.'
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ [Recruitment] Error in Microsoft login:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;
