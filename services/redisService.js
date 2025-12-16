@@ -1,13 +1,6 @@
 const { createClient } = require('redis');
 require('dotenv').config();
 
-// Simple  replacement
-const  = {
-  info: (...args) => console.log('[Redis]', ...args),
-  warn: (...args) => console.warn('[Redis]', ...args),
-  error: (...args) => console.error('[Redis]', ...args)
-};
-
 const DEFAULT_TTL = process.env.REDIS_TTL_DEFAULT ? Number(process.env.REDIS_TTL_DEFAULT) : undefined;
 const ONLINE_TTL = process.env.REDIS_TTL_ONLINE ? Number(process.env.REDIS_TTL_ONLINE) : undefined;
 
@@ -26,9 +19,9 @@ class RedisService {
                     port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
                     reconnectStrategy: (retries) => {
                         const delay = Math.min(retries * 100, 3000);
-                        .warn(`[Redis] Retry #${retries}, delay ${delay}ms`);
+                        console.warn(`[Redis] Retry #${retries}, delay ${delay}ms`);
                         if (retries > 10) {
-                            .error('[Redis] connection lost. Max retries reached.');
+                            console.error('[Redis] connection lost. Max retries reached.');
                             return new Error('Redis max retries reached');
                         }
                         return delay;
@@ -37,10 +30,10 @@ class RedisService {
                 password: process.env.REDIS_PASSWORD
             });
 
-            this.client.on('error', (err) => .error('[Redis] Client Error', err));
+            this.client.on('error', (err) => console.error('[Redis] Client Error', err));
             this.client.connect();
         } else {
-            .info('[Redis] Running in local environment without Redis');
+            console.error('[Redis] Running in local environment without Redis');
             this.client = null;
         }
     }
@@ -48,7 +41,7 @@ class RedisService {
     // Helper method để stringify an toàn
     _safeStringify(data, methodName = 'unknown') {
         if (data === undefined || data === null) {
-            .warn(`[Redis][${methodName}] data is ${data}, cannot stringify`);
+            console.warn(`[Redis][${methodName}] data is ${data}, cannot stringify`);
             return null;
         }
         try {
@@ -67,10 +60,10 @@ class RedisService {
                     }
                     return val;
                 });
-                .warn(`[Redis][${methodName}] stringify succeeded with circular reference handling`);
+                console.warn(`[Redis][${methodName}] stringify succeeded with circular reference handling`);
                 return result;
             } catch (secondError) {
-                .error(`[Redis][${methodName}] stringify error even with circular reference handling: ${secondError.message}`);
+                console.error(`[Redis][${methodName}] stringify error even with circular reference handling: ${secondError.message}`);
                 return null;
             }
         }
@@ -100,7 +93,7 @@ class RedisService {
             }
             return String(userId);
         } catch (error) {
-            .error(`[Redis][_safeUserIdToString] Error converting userId to string in ${methodName}: ${error.message}, type: ${typeof userId}`);
+            console.error(`[Redis][_safeUserIdToString] Error converting userId to string in ${methodName}: ${error.message}, type: ${typeof userId}`);
             throw new Error(`Cannot convert userId to string in ${methodName}: ${error.message}`);
         }
     }
@@ -124,7 +117,7 @@ class RedisService {
             }
             return { success: true };
         } catch (error) {
-            .error(`[Redis][setUserData] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][setUserData] userId=${userId} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -137,7 +130,7 @@ class RedisService {
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            .error(`[Redis][getUserData] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][getUserData] userId=${userId} error=${error.message}`);
             return null;
         }
     }
@@ -154,7 +147,7 @@ class RedisService {
             const key = 'users:all';
             await this.client.setEx(key, expirationInSeconds, stringifiedUsers);
         } catch (error) {
-            .error(`[Redis][setAllUsers] error=${error.message}`);
+            console.error(`[Redis][setAllUsers] error=${error.message}`);
         }
     }
 
@@ -166,7 +159,7 @@ class RedisService {
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            .error(`[Redis][getAllUsers] error=${error.message}`);
+            console.error(`[Redis][getAllUsers] error=${error.message}`);
             return null;
         }
     }
@@ -178,7 +171,7 @@ class RedisService {
             const key = `user:${userId}`;
             await this.client.del(key);
         } catch (error) {
-            .error(`[Redis][deleteUserCache] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][deleteUserCache] userId=${userId} error=${error.message}`);
         }
     }
 
@@ -189,7 +182,7 @@ class RedisService {
             const key = 'users:all';
             await this.client.del(key);
         } catch (error) {
-            .error(`[Redis][deleteAllUsersCache] error=${error.message}`);
+            console.error(`[Redis][deleteAllUsersCache] error=${error.message}`);
         }
     }
 
@@ -202,7 +195,7 @@ class RedisService {
             const key = `auth:token:${userId}`;
             await this.client.setEx(key, expirationInSeconds, token);
         } catch (error) {
-            .error(`[Redis][setAuthToken] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][setAuthToken] userId=${userId} error=${error.message}`);
         }
     }
 
@@ -213,7 +206,7 @@ class RedisService {
             const key = `auth:token:${userId}`;
             return await this.client.get(key);
         } catch (error) {
-            .error(`[Redis][getAuthToken] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][getAuthToken] userId=${userId} error=${error.message}`);
             return null;
         }
     }
@@ -225,7 +218,7 @@ class RedisService {
             const key = `auth:token:${userId}`;
             await this.client.del(key);
         } catch (error) {
-            .error(`[Redis][deleteAuthToken] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][deleteAuthToken] userId=${userId} error=${error.message}`);
         }
     }
 
@@ -243,11 +236,11 @@ class RedisService {
             
             if (chat) {
                 await this.setChatData(chatId, chat, 3600); // 1 giờ
-                .info(`[Redis] Warmed cache for chat: ${chatId}`);
+                console.error(`[Redis] Warmed cache for chat: ${chatId}`);
             }
             return { success: true };
         } catch (error) {
-            .error(`[Redis][warmChatCache] chatId=${chatId} error=${error.message}`);
+            console.error(`[Redis][warmChatCache] chatId=${chatId} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -273,9 +266,9 @@ class RedisService {
             });
             
             await pipeline.exec();
-            .info(`[Redis] Invalidated caches for chat: ${chatId}`);
+            console.error(`[Redis] Invalidated caches for chat: ${chatId}`);
         } catch (error) {
-            .error(`[Redis][invalidateChatCaches] chatId=${chatId} error=${error.message}`);
+            console.error(`[Redis][invalidateChatCaches] chatId=${chatId} error=${error.message}`);
         }
     }
 
@@ -304,7 +297,7 @@ class RedisService {
             await this.client.setEx(key, ttl, JSON.stringify(data));
             return { success: true };
         } catch (error) {
-            .error(`[Redis][setChatData] chatId=${chatId} error=${error.message}`);
+            console.error(`[Redis][setChatData] chatId=${chatId} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -317,7 +310,7 @@ class RedisService {
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            .error(`[Redis][getChatData] chatId=${chatId} error=${error.message}`);
+            console.error(`[Redis][getChatData] chatId=${chatId} error=${error.message}`);
             return null;
         }
     }
@@ -328,39 +321,39 @@ class RedisService {
         
         // Validate userId and chats before proceeding
         if (!userId) {
-            .error(`[Redis][setUserChats] userId is undefined or null`);
+            console.error(`[Redis][setUserChats] userId is undefined or null`);
             return;
         }
         
         if (!chats) {
-            .error(`[Redis][setUserChats] userId=${userId} chats is undefined or null`);
+            console.error(`[Redis][setUserChats] userId=${userId} chats is undefined or null`);
             return;
         }
         
         try {
             // Log userId details for debugging
-            .info(`[Redis][setUserChats] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
+            console.error(`[Redis][setUserChats] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
             
             const userIdStr = this._safeUserIdToString(userId, 'setUserChats');
             const key = `user:chats:${userIdStr}`;
             
             // Validate chats data before stringifying
             if (!Array.isArray(chats)) {
-                .warn(`[Redis][setUserChats] chats is not an array, userId=${userIdStr}, chats type=${typeof chats}`);
+                console.warn(`[Redis][setUserChats] chats is not an array, userId=${userIdStr}, chats type=${typeof chats}`);
             }
             
             // Safely stringify chats data
             const stringifiedChats = this._safeStringify(chats, 'setUserChats');
             if (stringifiedChats === null) {
-                .error(`[Redis][setUserChats] Cannot stringify chats data for userId=${userIdStr}`);
+                console.error(`[Redis][setUserChats] Cannot stringify chats data for userId=${userIdStr}`);
                 return;
             }
             
             await this.client.setEx(key, expirationInSeconds, stringifiedChats);
-            .info(`[Redis][setUserChats] Successfully cached chats for userId=${userIdStr}`);
+            console.error(`[Redis][setUserChats] Successfully cached chats for userId=${userIdStr}`);
         } catch (error) {
-            .error(`[Redis][setUserChats] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
-            .error(`[Redis][setUserChats] Full error stack:`, error);
+            console.error(`[Redis][setUserChats] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
+            console.error(`[Redis][setUserChats] Full error stack:`, error);
         }
     }
 
@@ -370,21 +363,21 @@ class RedisService {
         
         // Validate userId before proceeding
         if (!userId) {
-            .error(`[Redis][getUserChats] userId is undefined or null`);
+            console.error(`[Redis][getUserChats] userId is undefined or null`);
             return null;
         }
         
         try {
-            .info(`[Redis][getUserChats] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
+            console.error(`[Redis][getUserChats] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
             const userIdStr = this._safeUserIdToString(userId, 'getUserChats');
             const key = `user:chats:${userIdStr}`;
             const data = await this.client.get(key);
             const result = data ? JSON.parse(data) : null;
-            .info(`[Redis][getUserChats] Retrieved cache for userId=${userIdStr}, hasData=${!!data}`);
+            console.error(`[Redis][getUserChats] Retrieved cache for userId=${userIdStr}, hasData=${!!data}`);
             return result;
         } catch (error) {
-            .error(`[Redis][getUserChats] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
-            .error(`[Redis][getUserChats] Full error stack:`, error);
+            console.error(`[Redis][getUserChats] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
+            console.error(`[Redis][getUserChats] Full error stack:`, error);
             return null;
         }
     }
@@ -399,7 +392,7 @@ class RedisService {
             }
             return { success: false, error: 'No data found' };
         } catch (error) {
-            .error(`[Redis][getChatMessages] cacheKey=${cacheKey} error=${error.message}`);
+            console.error(`[Redis][getChatMessages] cacheKey=${cacheKey} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -410,7 +403,7 @@ class RedisService {
         try {
             await this.client.setEx(cacheKey, expirationInSeconds, JSON.stringify(messages));
         } catch (error) {
-            .error(`[Redis][setChatMessages] cacheKey=${cacheKey} error=${error.message}`);
+            console.error(`[Redis][setChatMessages] cacheKey=${cacheKey} error=${error.message}`);
         }
     }
 
@@ -421,7 +414,7 @@ class RedisService {
             const key = `chat:${chatId}`;
             await this.client.del(key);
         } catch (error) {
-            .error(`[Redis][deleteChatCache] chatId=${chatId} error=${error.message}`);
+            console.error(`[Redis][deleteChatCache] chatId=${chatId} error=${error.message}`);
         }
     }
 
@@ -434,14 +427,14 @@ class RedisService {
             const keys = await this.client.keys(pattern);
             if (keys.length > 0) {
                 await this.client.del(keys);
-                .info(`[Redis] Deleted ${keys.length} message cache keys for chat: ${chatId}`);
+                console.error(`[Redis] Deleted ${keys.length} message cache keys for chat: ${chatId}`);
             }
             
             // Xóa cache cũ (backward compatibility)
             const oldKey = `chat:messages:${chatId}`;
             await this.client.del(oldKey);
         } catch (error) {
-            .error(`[Redis][deleteChatMessagesCache] chatId=${chatId} error=${error.message}`);
+            console.error(`[Redis][deleteChatMessagesCache] chatId=${chatId} error=${error.message}`);
         }
     }
 
@@ -451,19 +444,19 @@ class RedisService {
         
         // Validate userId before proceeding
         if (!userId) {
-            .error(`[Redis][deleteUserChatsCache] userId is undefined or null`);
+            console.error(`[Redis][deleteUserChatsCache] userId is undefined or null`);
             return;
         }
         
         try {
-            .info(`[Redis][deleteUserChatsCache] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
+            console.error(`[Redis][deleteUserChatsCache] Processing userId: ${typeof userId}, value: ${JSON.stringify(userId)}`);
             const userIdStr = this._safeUserIdToString(userId, 'deleteUserChatsCache');
             const key = `user:chats:${userIdStr}`;
             await this.client.del(key);
-            .info(`[Redis][deleteUserChatsCache] Successfully deleted cache for userId=${userIdStr}`);
+            console.error(`[Redis][deleteUserChatsCache] Successfully deleted cache for userId=${userIdStr}`);
         } catch (error) {
-            .error(`[Redis][deleteUserChatsCache] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
-            .error(`[Redis][deleteUserChatsCache] Full error stack:`, error);
+            console.error(`[Redis][deleteUserChatsCache] userId=${userId} (type: ${typeof userId}) error=${error.message}`);
+            console.error(`[Redis][deleteUserChatsCache] Full error stack:`, error);
         }
     }
 
@@ -481,7 +474,7 @@ class RedisService {
         
         // Validate userId before proceeding
         if (!userId) {
-            .error(`[Redis][setOnlineStatus] userId is undefined or null`);
+            console.error(`[Redis][setOnlineStatus] userId is undefined or null`);
             return { success: false, error: 'userId is undefined or null' };
         }
         
@@ -501,7 +494,7 @@ class RedisService {
             }
             return { success: true };
         } catch (error) {
-            .error(`[Redis][setOnlineStatus] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][setOnlineStatus] userId=${userId} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -512,7 +505,7 @@ class RedisService {
         
         // Validate userId before proceeding
         if (!userId) {
-            .error(`[Redis][getUserOnlineStatus] userId is undefined or null`);
+            console.error(`[Redis][getUserOnlineStatus] userId is undefined or null`);
             return null;
         }
         
@@ -522,7 +515,7 @@ class RedisService {
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            .error(`[Redis][getUserOnlineStatus] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][getUserOnlineStatus] userId=${userId} error=${error.message}`);
             return null;
         }
     }
@@ -542,7 +535,7 @@ class RedisService {
                 status: result ? JSON.parse(result) : null
             }));
         } catch (error) {
-            .error(`[Redis][getMultipleUsersOnlineStatus] error=${error.message}`);
+            console.error(`[Redis][getMultipleUsersOnlineStatus] error=${error.message}`);
             return null;
         }
     }
@@ -553,7 +546,7 @@ class RedisService {
         
         // Validate userId before proceeding
         if (!userId) {
-            .error(`[Redis][deleteUserOnlineStatus] userId is undefined or null`);
+            console.error(`[Redis][deleteUserOnlineStatus] userId is undefined or null`);
             return;
         }
         
@@ -562,7 +555,7 @@ class RedisService {
             const key = `user:online:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
-            .error(`[Redis][deleteUserOnlineStatus] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][deleteUserOnlineStatus] userId=${userId} error=${error.message}`);
         }
     }
 
@@ -593,14 +586,14 @@ class RedisService {
                             onlineUsers.push(userId);
                         }
                     } catch (parseError) {
-                        .error(`[Redis][getAllOnlineUsers] Parse error for key ${keys[index]}: ${parseError.message}`);
+                        console.error(`[Redis][getAllOnlineUsers] Parse error for key ${keys[index]}: ${parseError.message}`);
                     }
                 }
             });
 
             return onlineUsers;
         } catch (error) {
-            .error(`[Redis][getAllOnlineUsers] error=${error.message}`);
+            console.error(`[Redis][getAllOnlineUsers] error=${error.message}`);
             return [];
         }
     }
@@ -627,14 +620,14 @@ class RedisService {
                             offlineUsers.push(userId);
                         }
                     } catch (parseError) {
-                        .error(`[Redis][getAllOfflineUsers] Parse error for key ${keys[index]}: ${parseError.message}`);
+                        console.error(`[Redis][getAllOfflineUsers] Parse error for key ${keys[index]}: ${parseError.message}`);
                     }
                 }
             });
 
             return offlineUsers;
         } catch (error) {
-            .error(`[Redis][getAllOfflineUsers] error=${error.message}`);
+            console.error(`[Redis][getAllOfflineUsers] error=${error.message}`);
             return [];
         }
     }
@@ -645,12 +638,12 @@ class RedisService {
         
         // Validate userId and socketId before proceeding
         if (!userId) {
-            .error(`[Redis][setUserSocketId] userId is undefined or null`);
+            console.error(`[Redis][setUserSocketId] userId is undefined or null`);
             return { success: false, error: 'userId is undefined or null' };
         }
         
         if (!socketId) {
-            .error(`[Redis][setUserSocketId] userId=${userId} socketId is undefined or null`);
+            console.error(`[Redis][setUserSocketId] userId=${userId} socketId is undefined or null`);
             return { success: false, error: 'socketId is undefined or null' };
         }
         
@@ -660,7 +653,7 @@ class RedisService {
             await this.client.setEx(key, expirationInSeconds, socketId);
             return { success: true };
         } catch (error) {
-            .error(`[Redis][setUserSocketId] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][setUserSocketId] userId=${userId} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -671,7 +664,7 @@ class RedisService {
         
         // Validate userId before proceeding
         if (!userId) {
-            .error(`[Redis][getUserSocketId] userId is undefined or null`);
+            console.error(`[Redis][getUserSocketId] userId is undefined or null`);
             return null;
         }
         
@@ -680,7 +673,7 @@ class RedisService {
             const key = `user:socket:${userIdStr}`;
             return await this.client.get(key);
         } catch (error) {
-            .error(`[Redis][getUserSocketId] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][getUserSocketId] userId=${userId} error=${error.message}`);
             return null;
         }
     }
@@ -691,7 +684,7 @@ class RedisService {
         
         // Validate userId before proceeding
         if (!userId) {
-            .error(`[Redis][deleteUserSocketId] userId is undefined or null`);
+            console.error(`[Redis][deleteUserSocketId] userId is undefined or null`);
             return;
         }
         
@@ -700,7 +693,7 @@ class RedisService {
             const key = `user:socket:${userIdStr}`;
             await this.client.del(key);
         } catch (error) {
-            .error(`[Redis][deleteUserSocketId] userId=${userId} error=${error.message}`);
+            console.error(`[Redis][deleteUserSocketId] userId=${userId} error=${error.message}`);
         }
     }
 
@@ -712,7 +705,7 @@ class RedisService {
             await this.client.rPush(key, JSON.stringify(message));
             return { success: true };
         } catch (error) {
-            .error(`[Redis][pushChatMessage] chatId=${chatId} error=${error.message}`);
+            console.error(`[Redis][pushChatMessage] chatId=${chatId} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -729,7 +722,7 @@ class RedisService {
             const results = await pipeline.exec();
             return { success: true, data: results.map(list => list.map(msg => JSON.parse(msg))) };
         } catch (error) {
-            .error(`[Redis][getMultipleChatMessages] error=${error.message}`);
+            console.error(`[Redis][getMultipleChatMessages] error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -753,7 +746,7 @@ class RedisService {
             await this.client.setEx(key, expirationInSeconds, data);
             return { success: true };
         } catch (error) {
-            .error(`[Redis][setDevicePage] deviceType=${deviceType} page=${page} error=${error.message}`);
+            console.error(`[Redis][setDevicePage] deviceType=${deviceType} page=${page} error=${error.message}`);
             return { success: false, error };
         }
     }
@@ -771,7 +764,7 @@ class RedisService {
             const data = await this.client.get(key);
             return data ? JSON.parse(data) : null;
         } catch (error) {
-            .error(`[Redis][getDevicePage] deviceType=${deviceType} page=${page} error=${error.message}`);
+            console.error(`[Redis][getDevicePage] deviceType=${deviceType} page=${page} error=${error.message}`);
             return null;
         }
     }
@@ -787,10 +780,10 @@ class RedisService {
             const keys = await this.client.keys(pattern);
             if (keys.length > 0) {
                 await this.client.del(keys);
-                .info(`[Redis] Deleted ${keys.length} cache keys for device type: ${deviceType}`);
+                console.error(`[Redis] Deleted ${keys.length} cache keys for device type: ${deviceType}`);
             }
         } catch (error) {
-            .error(`[Redis][deleteDeviceCache] deviceType=${deviceType} error=${error.message}`);
+            console.error(`[Redis][deleteDeviceCache] deviceType=${deviceType} error=${error.message}`);
         }
     }
 
@@ -804,10 +797,10 @@ class RedisService {
             const keys = await this.client.keys(pattern);
             if (keys.length > 0) {
                 await this.client.del(keys);
-                .info(`[Redis] Deleted ${keys.length} device cache keys`);
+                console.error(`[Redis] Deleted ${keys.length} device cache keys`);
             }
         } catch (error) {
-            .error(`[Redis][deleteAllDeviceCache] error=${error.message}`);
+            console.error(`[Redis][deleteAllDeviceCache] error=${error.message}`);
         }
     }
 
@@ -818,9 +811,9 @@ class RedisService {
         if (this.client) {
             try {
                 await this.client.quit();
-                .info('[Redis] Client connection closed.');
+                console.error('[Redis] Client connection closed.');
             } catch (error) {
-                .error('[Redis] Error closing client:', error);
+                console.error('[Redis] Error closing client:', error);
             }
         }
     }
@@ -828,7 +821,7 @@ class RedisService {
     // Kiểm tra và khôi phục kết nối Redis
     async checkAndReconnect() {
         if (!this.client) {
-            .warn('[Redis] Client not initialized, attempting to reconnect...');
+            console.warn('[Redis] Client not initialized, attempting to reconnect...');
             await this.connect();
             return;
         }
@@ -838,24 +831,24 @@ class RedisService {
             await this.client.ping();
             this.isConnected = true;
         } catch (error) {
-            .error(`[Redis] Connection lost: ${error.message}`);
+            console.error(`[Redis] Connection lost: ${error.message}`);
             this.isConnected = false;
             
             if (this.connectionAttempts < this.maxConnectionAttempts) {
                 this.connectionAttempts++;
-                .info(`[Redis] Attempting to reconnect (${this.connectionAttempts}/${this.maxConnectionAttempts})...`);
+                console.error(`[Redis] Attempting to reconnect (${this.connectionAttempts}/${this.maxConnectionAttempts})...`);
                 
                 setTimeout(async () => {
                     try {
                         await this.connect();
                         this.connectionAttempts = 0;
-                        .info('[Redis] Reconnected successfully');
+                        console.error('[Redis] Reconnected successfully');
                     } catch (reconnectError) {
-                        .error(`[Redis] Reconnection failed: ${reconnectError.message}`);
+                        console.error(`[Redis] Reconnection failed: ${reconnectError.message}`);
                     }
                 }, this.reconnectDelay);
             } else {
-                .error('[Redis] Max reconnection attempts reached');
+                console.error('[Redis] Max reconnection attempts reached');
             }
         }
     }
@@ -889,10 +882,10 @@ class RedisService {
 
             await this.client.connect();
             this.isConnected = true;
-            .info('[Redis] Connected successfully');
+            console.error('[Redis] Connected successfully');
         } catch (error) {
             this.isConnected = false;
-            .error(`[Redis] Connection failed: ${error.message}`);
+            console.error(`[Redis] Connection failed: ${error.message}`);
             throw error;
         }
     }
