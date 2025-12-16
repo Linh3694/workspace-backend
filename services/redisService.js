@@ -1,5 +1,4 @@
 const { createClient } = require('redis');
-const logger = require('../logger');
 require('dotenv').config();
 
 const DEFAULT_TTL = process.env.REDIS_TTL_DEFAULT ? Number(process.env.REDIS_TTL_DEFAULT) : undefined;
