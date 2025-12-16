@@ -1,6 +1,13 @@
 const { createClient } = require('redis');
 require('dotenv').config();
 
+// Simple logger replacement
+const logger = {
+  info: (...args) => console.log('[Redis]', ...args),
+  warn: (...args) => console.warn('[Redis]', ...args),
+  error: (...args) => console.error('[Redis]', ...args)
+};
+
 const DEFAULT_TTL = process.env.REDIS_TTL_DEFAULT ? Number(process.env.REDIS_TTL_DEFAULT) : undefined;
 const ONLINE_TTL = process.env.REDIS_TTL_ONLINE ? Number(process.env.REDIS_TTL_ONLINE) : undefined;
 
