@@ -1,6 +1,5 @@
 const jwt = require("jsonwebtoken");
 const redisService = require('./services/redisService');
-const logger = require('./logger');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { createClient } = require('redis');
 
@@ -68,29 +67,29 @@ const subClient = pubClient.duplicate();
 
 // Xử lý lỗi Redis
 pubClient.on('error', (err) => {
-  logger.error(`[GroupChat] Redis PubClient error: ${err.message}`);
+  console.error(`[GroupChat] Redis PubClient error: ${err.message}`);
 });
 
 subClient.on('error', (err) => {
-  logger.error(`[GroupChat] Redis SubClient error: ${err.message}`);
+  console.error(`[GroupChat] Redis SubClient error: ${err.message}`);
 });
 
 // Xử lý reconnect
 pubClient.on('reconnecting', () => {
-  logger.info('[GroupChat] Redis PubClient reconnecting...');
+  console.info('[GroupChat] Redis PubClient reconnecting...');
 });
 
 subClient.on('reconnecting', () => {
-  logger.info('[GroupChat] Redis SubClient reconnecting...');
+  console.info('[GroupChat] Redis SubClient reconnecting...');
 });
 
 // Xử lý connect thành công
 pubClient.on('connect', () => {
-  logger.info('[GroupChat] Redis PubClient connected');
+  console.info('[GroupChat] Redis PubClient connected');
 });
 
 subClient.on('connect', () => {
-  logger.info('[GroupChat] Redis SubClient connected');
+  console.info('[GroupChat] Redis SubClient connected');
 });
 
 const typingUsers = {};
@@ -102,7 +101,7 @@ const safePublish = async (channel, message) => {
   try {
     await pubClient.publish(channel, JSON.stringify(message));
   } catch (err) {
-    logger.error(`[GroupChat] Error publishing to ${channel}: ${err.message}`);
+    console.error(`[GroupChat] Error publishing to ${channel}: ${err.message}`);
   }
 };
 
@@ -134,10 +133,10 @@ module.exports = async function (groupChatNamespace) {
         try {
           await redisService.setUserOnlineStatus(userId, false, Date.now());
           await safePublish('user:offline', { userId });
-          logger.info(`[GroupChat] User marked as offline due to inactivity: ${userId}`);
+          console.info(`[GroupChat] User marked as offline due to inactivity: ${userId}`);
           groupChatNamespace.emit("userOffline", { userId });
         } catch (err) {
-          logger.error(`[GroupChat] Error setting user offline: ${err.message}`);
+          console.error(`[GroupChat] Error setting user offline: ${err.message}`);
         }
         delete userActivityTimeouts[userId];
       }, USER_OFFLINE_TIMEOUT);
@@ -162,7 +161,7 @@ module.exports = async function (groupChatNamespace) {
 
       // Lắng nghe lỗi socket
       socket.on('error', (err) => {
-        logger.error(`[GroupChat][${socket.id}] error: ${err.message}`);
+        console.error(`[GroupChat][${socket.id}] error: ${err.message}`);
         socket.emit('error', { code: 500, message: 'Lỗi kết nối socket', detail: err.message });
       });
 
@@ -172,7 +171,7 @@ module.exports = async function (groupChatNamespace) {
         await redisService.setUserSocketId(currentUserId, socket.id);
         await pubClient.publish('user:online', JSON.stringify({ userId: currentUserId }));
 
-        logger.info(`[GroupChat][${socket.id}] User online: ${currentUserId}`);
+        console.info(`[GroupChat][${socket.id}] User online: ${currentUserId}`);
         groupChatNamespace.emit("userOnline", { userId: currentUserId });
 
         // Thiết lập timeout cho user
@@ -470,11 +469,11 @@ module.exports = async function (groupChatNamespace) {
           redisService.setUserOnlineStatus(currentUserId, false, Date.now())
             .then(() => {
               safePublish('user:offline', { userId: currentUserId });
-              logger.info(`[GroupChat] User marked as offline on disconnect: ${currentUserId}`);
+              console.info(`[GroupChat] User marked as offline on disconnect: ${currentUserId}`);
               groupChatNamespace.emit("userOffline", { userId: currentUserId });
             })
             .catch(err => {
-              logger.error(`[GroupChat] Error setting user offline on disconnect: ${err.message}`);
+              console.error(`[GroupChat] Error setting user offline on disconnect: ${err.message}`);
             });
         }
       });
@@ -492,9 +491,9 @@ module.exports = async function (groupChatNamespace) {
     });
 
     console.log('✅ [GroupChat] Connection event listener setup complete');
-    logger.info('[GroupChat] Socket handlers initialized successfully');
+    console.info('[GroupChat] Socket handlers initialized successfully');
   } catch (error) {
     console.error('❌ [GroupChat] Error initializing socket:', error);
-    logger.error(`[GroupChat] Error initializing socket: ${error.message}`);
+    console.error(`[GroupChat] Error initializing socket: ${error.message}`);
   }
 }; 
