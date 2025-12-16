@@ -2,14 +2,13 @@ const microsoftSyncService = require('../../services/microsoftSyncService');
 const MicrosoftUser = require('../../models/MicrosoftUser');
 const User = require('../../models/Users');
 const microsoftSyncJob = require('../../jobs/microsoftSyncJob');
-const  = require('../../');
 
 // @desc    Đồng bộ toàn bộ users từ Microsoft 365
 // @route   POST /api/microsoft-sync/sync-all
 // @access  Private (Admin only)
 const syncAllUsers = async (req, res) => {
   try {
-    .info('Manual sync all users requested');
+    console.info('Manual sync all users requested');
     
     const results = await microsoftSyncService.syncAllUsers();
     
@@ -19,7 +18,7 @@ const syncAllUsers = async (req, res) => {
       data: results
     });
   } catch (error) {
-    .error('Error in syncAllUsers controller:', error);
+    console.error('Error in syncAllUsers controller:', error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi đồng bộ users',
@@ -42,7 +41,7 @@ const syncUserById = async (req, res) => {
       });
     }
 
-    .info(`Manual sync user requested: ${microsoftId}`);
+    console.info(`Manual sync user requested: ${microsoftId}`);
     
     const result = await microsoftSyncService.syncUserById(microsoftId);
     
@@ -52,7 +51,7 @@ const syncUserById = async (req, res) => {
       data: result
     });
   } catch (error) {
-    .error(`Error in syncUserById controller for ${req.params.microsoftId}:`, error);
+    console.error(`Error in syncUserById controller for ${req.params.microsoftId}:`, error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi đồng bộ user',
@@ -73,7 +72,7 @@ const getSyncStats = async (req, res) => {
       data: stats
     });
   } catch (error) {
-    .error('Error in getSyncStats controller:', error);
+    console.error('Error in getSyncStats controller:', error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy thống kê đồng bộ',
@@ -122,7 +121,7 @@ const getMicrosoftUsers = async (req, res) => {
       data: result
     });
   } catch (error) {
-    .error('Error in getMicrosoftUsers controller:', error);
+    console.error('Error in getMicrosoftUsers controller:', error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy danh sách Microsoft users',
@@ -153,7 +152,7 @@ const getMicrosoftUserById = async (req, res) => {
       data: microsoftUser
     });
   } catch (error) {
-    .error(`Error in getMicrosoftUserById controller for ${req.params.id}:`, error);
+    console.error(`Error in getMicrosoftUserById controller for ${req.params.id}:`, error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy chi tiết Microsoft user',
@@ -204,7 +203,7 @@ const mapMicrosoftUser = async (req, res) => {
       }
     });
   } catch (error) {
-    .error(`Error in mapMicrosoftUser controller for ${req.params.id}:`, error);
+    console.error(`Error in mapMicrosoftUser controller for ${req.params.id}:`, error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi map user',
@@ -237,7 +236,7 @@ const unmapMicrosoftUser = async (req, res) => {
       message: 'Xóa mapping thành công'
     });
   } catch (error) {
-    .error(`Error in unmapMicrosoftUser controller for ${req.params.id}:`, error);
+    console.error(`Error in unmapMicrosoftUser controller for ${req.params.id}:`, error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi xóa mapping',
@@ -276,7 +275,7 @@ const retrySyncUser = async (req, res) => {
       data: result
     });
   } catch (error) {
-    .error(`Error in retrySyncUser controller for ${req.params.id}:`, error);
+    console.error(`Error in retrySyncUser controller for ${req.params.id}:`, error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi retry sync',
@@ -320,7 +319,7 @@ const getUnmappedLocalUsers = async (req, res) => {
       data: result
     });
   } catch (error) {
-    .error('Error in getUnmappedLocalUsers controller:', error);
+    console.error('Error in getUnmappedLocalUsers controller:', error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy danh sách unmapped users',
@@ -341,7 +340,7 @@ const getJobStatus = async (req, res) => {
       data: jobStatus
     });
   } catch (error) {
-    .error('Error in getJobStatus controller:', error);
+    console.error('Error in getJobStatus controller:', error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy trạng thái job',
@@ -355,7 +354,7 @@ const getJobStatus = async (req, res) => {
 // @access  Private (Admin only)
 const runManualJob = async (req, res) => {
   try {
-    .info('Manual job sync requested');
+    console.info('Manual job sync requested');
     
     const results = await microsoftSyncJob.runManualSync();
     
@@ -365,7 +364,7 @@ const runManualJob = async (req, res) => {
       data: results
     });
   } catch (error) {
-    .error('Error in runManualJob controller:', error);
+    console.error('Error in runManualJob controller:', error);
     res.status(500).json({
       success: false,
       message: 'Lỗi khi chạy job đồng bộ',
