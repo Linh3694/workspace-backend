@@ -1,6 +1,5 @@
 const jwt = require("jsonwebtoken");
 const redisService = require('./services/redisService');
-const logger = require('./logger');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { createClient } = require('redis');
 
@@ -56,7 +55,6 @@ const pubClient = createClient({
     reconnectStrategy: (retries) => {
       // Tăng thời gian chờ giữa các lần reconnect
       const delay = Math.min(retries * 50, 2000);
-      logger.info(`Redis reconnecting in ${delay}ms...`);
       return delay;
     }
   },
@@ -67,29 +65,27 @@ const subClient = pubClient.duplicate();
 
 // Xử lý lỗi Redis
 pubClient.on('error', (err) => {
-  logger.error(`Redis PubClient error: ${err.message}`);
 });
 
 subClient.on('error', (err) => {
-  logger.error(`Redis SubClient error: ${err.message}`);
 });
 
 // Xử lý reconnect
 pubClient.on('reconnecting', () => {
-  logger.info('Redis PubClient reconnecting...');
+  console.info('Redis PubClient reconnecting...');
 });
 
 subClient.on('reconnecting', () => {
-  logger.info('Redis SubClient reconnecting...');
+  console.info('Redis SubClient reconnecting...');
 });
 
 // Xử lý connect thành công
 pubClient.on('connect', () => {
-  logger.info('Redis PubClient connected');
+  console.info('Redis PubClient connected');
 });
 
 subClient.on('connect', () => {
-  logger.info('Redis SubClient connected');
+  console.info('Redis SubClient connected');
 });
 
 const typingUsers = {};
@@ -101,7 +97,7 @@ const safePublish = async (channel, message) => {
   try {
     await pubClient.publish(channel, JSON.stringify(message));
   } catch (err) {
-    logger.error(`Error publishing to ${channel}: ${err.message}`);
+    console.error(`Error publishing to ${channel}: ${err.message}`);
     // Có thể thêm logic retry ở đây nếu cần
   }
 };
@@ -146,7 +142,7 @@ module.exports = async function (io) {
 
       // Lắng nghe lỗi socket
       socket.on('error', (err) => {
-        logger.error(`[Socket][${socket.id}] error: ${err.message}`);
+        console.error(`[Socket][${socket.id}] error: ${err.message}`);
         socket.emit('error', { code: 500, message: 'Lỗi kết nối socket', detail: err.message });
       });
 
@@ -173,7 +169,7 @@ module.exports = async function (io) {
             await redisService.setUserSocketId(currentUserId, socket.id);
             await pubClient.publish('user:online', JSON.stringify({ userId: currentUserId }));
 
-            logger.info(`[Socket][${socket.id}] User online: ${currentUserId}`);
+            console.info(`[Socket][${socket.id}] User online: ${currentUserId}`);
             io.emit("userOnline", { userId: currentUserId });
 
             // Thiết lập timeout cho user
@@ -187,7 +183,7 @@ module.exports = async function (io) {
       } catch (err) {
         console.error(`❌ [AUTH][${socket.id}] Token verify error:`, err.message);
         console.error(`❌ [AUTH][${socket.id}] Full error:`, err);
-        logger.error(`[Socket][${socket.id}] Token verify error: ${err.message}`);
+        console.error(`[Socket][${socket.id}] Token verify error: ${err.message}`);
         socket.emit('error', { code: 401, message: 'Token không hợp lệ', detail: err.message });
       }
 
@@ -295,7 +291,7 @@ module.exports = async function (io) {
         if (userId) {
           await redisService.setUserOnlineStatus(userId, true, Date.now());
           await pubClient.publish('user:online', JSON.stringify({ userId }));
-          logger.info(`[Socket][${socket.id}] Ping from user: ${userId}`);
+          console.info(`[Socket][${socket.id}] Ping from user: ${userId}`);
         }
       });
 
@@ -491,7 +487,7 @@ module.exports = async function (io) {
           await redisService.setUserOnlineStatus(uid, false, Date.now());
           await redisService.deleteUserSocketId(uid);
           await pubClient.publish('user:offline', JSON.stringify({ userId: uid, lastSeen: Date.now() }));
-          logger.info(`[Socket][${socket.id}] User offline: ${uid}`);
+          console.info(`[Socket][${socket.id}] User offline: ${uid}`);
           io.emit("userOffline", { userId: uid });
           io.emit("userLastSeen", { userId: uid, lastSeen: new Date().toISOString() });
 
@@ -525,37 +521,37 @@ module.exports = async function (io) {
       await subClient.subscribe('user:online', (message) => {
         try {
           const { userId } = JSON.parse(message);
-          logger.info(`[PubSub] User online: ${userId}`);
+          console.info(`[PubSub] User online: ${userId}`);
           io.emit("userOnline", { userId });
         } catch (err) {
-          logger.error(`Error processing user:online message: ${err.message}`);
+          console.error(`Error processing user:online message: ${err.message}`);
         }
       });
 
       await subClient.subscribe('user:offline', (message) => {
         try {
           const { userId, lastSeen } = JSON.parse(message);
-          logger.info(`[PubSub] User offline: ${userId}`);
+          console.info(`[PubSub] User offline: ${userId}`);
           io.emit("userOffline", { userId });
           io.emit("userLastSeen", { userId, lastSeen });
         } catch (err) {
-          logger.error(`Error processing user:offline message: ${err.message}`);
+          console.error(`Error processing user:offline message: ${err.message}`);
         }
       });
     } catch (err) {
-      logger.error(`Error setting up Redis subscriptions: ${err.message}`);
+      console.error(`Error setting up Redis subscriptions: ${err.message}`);
       throw err; // Re-throw để xử lý ở cấp cao hơn
     }
 
     // Cleanup khi đóng kết nối
     process.on('SIGTERM', async () => {
-      logger.info('Cleaning up Redis connections...');
+      console.info('Cleaning up Redis connections...');
       try {
         await subClient.unsubscribe();
         await pubClient.quit();
         await subClient.quit();
       } catch (err) {
-        logger.error(`Error during Redis cleanup: ${err.message}`);
+        console.error(`Error during Redis cleanup: ${err.message}`);
       }
     });
 
@@ -604,7 +600,7 @@ module.exports = async function (io) {
     }, 120000); // Kiểm tra mỗi 2 phút
 
   } catch (err) {
-    logger.error(`Error initializing socket server: ${err.message}`);
+    console.error(`Error initializing socket server: ${err.message}`);
     throw err;
   }
 }; 
