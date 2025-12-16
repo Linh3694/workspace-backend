@@ -320,9 +320,9 @@ exports.sendMessage = async (req, res) => {
                     setTimeout(async () => await emitWithRetry(event, data, retries - 1), 1000);
                 } else {
                     console.error(`❌ [Backend] Failed to emit ${event} after all retries`);
-                    // Use logger if available, otherwise console.error
-                    if (typeof logger !== 'undefined' && logger.error) {
-                        logger.error(`Failed to emit ${event} after retries:`, error);
+                    // Use  if available, otherwise console.error
+                    if (typeof  !== 'undefined' && .error) {
+                        .error(`Failed to emit ${event} after retries:`, error);
                     }
                 }
             }

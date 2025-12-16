@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const microsoftSyncService = require('../services/microsoftSyncService');
-const logger = require('../logger');
+const  = require('../');
 
 class MicrosoftSyncJob {
   constructor() {
@@ -19,7 +19,7 @@ class MicrosoftSyncJob {
       timezone: "Asia/Ho_Chi_Minh"
     });
 
-    logger.info('Microsoft sync job scheduled for daily at 2:00 AM');
+    .info('Microsoft sync job scheduled for daily at 2:00 AM');
   }
 
   // Khởi tạo job đồng bộ hàng giờ (tùy chọn)
@@ -32,13 +32,13 @@ class MicrosoftSyncJob {
       timezone: "Asia/Ho_Chi_Minh"
     });
 
-    logger.info('Microsoft sync job scheduled for hourly');
+    .info('Microsoft sync job scheduled for hourly');
   }
 
   // Chạy đồng bộ hàng ngày
   async runDailySync() {
     if (this.isRunning) {
-      logger.info('Microsoft sync job is already running, skipping...');
+      .info('Microsoft sync job is already running, skipping...');
       return;
     }
 
@@ -46,19 +46,19 @@ class MicrosoftSyncJob {
       this.isRunning = true;
       this.lastRun = new Date();
       
-      logger.info('Starting daily Microsoft sync job...');
+      .info('Starting daily Microsoft sync job...');
       
       const results = await microsoftSyncService.syncAllUsers();
       
-      logger.info(`Daily Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
+      .info(`Daily Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
       
       // Log chi tiết lỗi nếu có
       if (results.errors && results.errors.length > 0) {
-        logger.error('Microsoft sync errors:', results.errors);
+        .error('Microsoft sync errors:', results.errors);
       }
       
     } catch (error) {
-      logger.error('Error in daily Microsoft sync job:', error);
+      .error('Error in daily Microsoft sync job:', error);
     } finally {
       this.isRunning = false;
     }
@@ -67,7 +67,7 @@ class MicrosoftSyncJob {
   // Chạy đồng bộ hàng giờ (chỉ sync những user có thay đổi)
   async runHourlySync() {
     if (this.isRunning) {
-      logger.info('Microsoft sync job is already running, skipping hourly sync...');
+      .info('Microsoft sync job is already running, skipping hourly sync...');
       return;
     }
 
@@ -75,7 +75,7 @@ class MicrosoftSyncJob {
       this.isRunning = true;
       this.lastRun = new Date();
       
-      logger.info('Starting hourly Microsoft sync job...');
+      .info('Starting hourly Microsoft sync job...');
       
       // Chỉ sync những user được cập nhật trong 24h qua
       const yesterday = new Date();
@@ -83,10 +83,10 @@ class MicrosoftSyncJob {
       
       const results = await microsoftSyncService.syncAllUsers();
       
-      logger.info(`Hourly Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
+      .info(`Hourly Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
       
     } catch (error) {
-      logger.error('Error in hourly Microsoft sync job:', error);
+      .error('Error in hourly Microsoft sync job:', error);
     } finally {
       this.isRunning = false;
     }
@@ -102,15 +102,15 @@ class MicrosoftSyncJob {
       this.isRunning = true;
       this.lastRun = new Date();
       
-      logger.info('Starting manual Microsoft sync...');
+      .info('Starting manual Microsoft sync...');
       
       const results = await microsoftSyncService.syncAllUsers();
       
-      logger.info(`Manual Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
+      .info(`Manual Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
       
       return results;
     } catch (error) {
-      logger.error('Error in manual Microsoft sync:', error);
+      .error('Error in manual Microsoft sync:', error);
       throw error;
     } finally {
       this.isRunning = false;
@@ -135,7 +135,7 @@ class MicrosoftSyncJob {
       }
     });
     
-    logger.info('Microsoft sync jobs stopped');
+    .info('Microsoft sync jobs stopped');
   }
 }
 
