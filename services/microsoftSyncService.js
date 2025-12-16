@@ -2,7 +2,6 @@ const { Client } = require('@microsoft/microsoft-graph-client');
 const { ClientSecretCredential } = require('@azure/identity');
 const MicrosoftUser = require('../models/MicrosoftUser');
 const User = require('../models/Users');
-const  = require('../');
 
 const GROUP_IDS = [
   '989da314-610e-4be4-9f67-1d6d63e2fc34', // Group 1
@@ -38,9 +37,9 @@ class MicrosoftSyncService {
       });
 
       this.isInitialized = true;
-      .info('Microsoft Graph Client initialized successfully');
+      console.info('Microsoft Graph Client initialized successfully');
     } catch (error) {
-      .error('Failed to initialize Microsoft Graph Client:', error);
+      console.error('Failed to initialize Microsoft Graph Client:', error);
       throw error;
     }
   }
@@ -170,7 +169,7 @@ class MicrosoftSyncService {
 
       return { microsoftUser, localUser };
     } catch (error) {
-      .error(`Error syncing Microsoft user ${microsoftUserData.id}:`, error);
+      console.error(`Error syncing Microsoft user ${microsoftUserData.id}:`, error);
       
       // Cập nhật trạng thái lỗi
       if (microsoftUser) {
@@ -200,10 +199,10 @@ class MicrosoftSyncService {
       const localUser = new User(userData);
       await localUser.save();
       
-      .info(`Created local user: ${localUser.email}`);
+      console.info(`Created local user: ${localUser.email}`);
       return localUser;
     } catch (error) {
-      .error(`Error creating local user for ${microsoftUser.id}:`, error);
+      console.error(`Error creating local user for ${microsoftUser.id}:`, error);
       throw error;
     }
   }
@@ -223,10 +222,10 @@ class MicrosoftSyncService {
       Object.assign(localUser, updates);
       await localUser.save();
       
-      .info(`Updated local user: ${localUser.email}`);
+      console.info(`Updated local user: ${localUser.email}`);
       return localUser;
     } catch (error) {
-      .error(`Error updating local user ${localUser.email}:`, error);
+      console.error(`Error updating local user ${localUser.email}:`, error);
       throw error;
     }
   }
@@ -234,7 +233,7 @@ class MicrosoftSyncService {
   // Đồng bộ toàn bộ users
   async syncAllUsers() {
     try {
-      .info('Starting Microsoft 365 user sync...');
+      console.info('Starting Microsoft 365 user sync...');
       
       const microsoftUsers = await this.fetchMicrosoftUsers();
       const results = {
@@ -257,10 +256,10 @@ class MicrosoftSyncService {
         }
       }
 
-      .info(`Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
+      console.info(`Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
       return results;
     } catch (error) {
-      .error('Error in syncAllUsers:', error);
+      console.error('Error in syncAllUsers:', error);
       throw error;
     }
   }
@@ -278,7 +277,7 @@ class MicrosoftSyncService {
 
       return await this.syncMicrosoftUser(userData);
     } catch (error) {
-      .error(`Error syncing user ${microsoftId}:`, error);
+      console.error(`Error syncing user ${microsoftId}:`, error);
       throw error;
     }
   }
@@ -307,7 +306,7 @@ class MicrosoftSyncService {
         }, {})
       };
     } catch (error) {
-      .error('Error getting sync stats:', error);
+      console.error('Error getting sync stats:', error);
       throw error;
     }
   }

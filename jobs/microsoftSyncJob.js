@@ -1,6 +1,5 @@
 const cron = require('node-cron');
 const microsoftSyncService = require('../services/microsoftSyncService');
-const  = require('../');
 
 class MicrosoftSyncJob {
   constructor() {
@@ -19,7 +18,7 @@ class MicrosoftSyncJob {
       timezone: "Asia/Ho_Chi_Minh"
     });
 
-    .info('Microsoft sync job scheduled for daily at 2:00 AM');
+    console.info('Microsoft sync job scheduled for daily at 2:00 AM');
   }
 
   // Khởi tạo job đồng bộ hàng giờ (tùy chọn)
@@ -32,13 +31,13 @@ class MicrosoftSyncJob {
       timezone: "Asia/Ho_Chi_Minh"
     });
 
-    .info('Microsoft sync job scheduled for hourly');
+    console.info('Microsoft sync job scheduled for hourly');
   }
 
   // Chạy đồng bộ hàng ngày
   async runDailySync() {
     if (this.isRunning) {
-      .info('Microsoft sync job is already running, skipping...');
+      console.info('Microsoft sync job is already running, skipping...');
       return;
     }
 
@@ -46,19 +45,19 @@ class MicrosoftSyncJob {
       this.isRunning = true;
       this.lastRun = new Date();
       
-      .info('Starting daily Microsoft sync job...');
+      console.info('Starting daily Microsoft sync job...');
       
       const results = await microsoftSyncService.syncAllUsers();
       
-      .info(`Daily Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
+      console.info(`Daily Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
       
       // Log chi tiết lỗi nếu có
       if (results.errors && results.errors.length > 0) {
-        .error('Microsoft sync errors:', results.errors);
+        console.error('Microsoft sync errors:', results.errors);
       }
       
     } catch (error) {
-      .error('Error in daily Microsoft sync job:', error);
+      console.error('Error in daily Microsoft sync job:', error);
     } finally {
       this.isRunning = false;
     }
@@ -67,7 +66,7 @@ class MicrosoftSyncJob {
   // Chạy đồng bộ hàng giờ (chỉ sync những user có thay đổi)
   async runHourlySync() {
     if (this.isRunning) {
-      .info('Microsoft sync job is already running, skipping hourly sync...');
+      console.info('Microsoft sync job is already running, skipping hourly sync...');
       return;
     }
 
@@ -75,7 +74,7 @@ class MicrosoftSyncJob {
       this.isRunning = true;
       this.lastRun = new Date();
       
-      .info('Starting hourly Microsoft sync job...');
+      console.info('Starting hourly Microsoft sync job...');
       
       // Chỉ sync những user được cập nhật trong 24h qua
       const yesterday = new Date();
@@ -83,10 +82,10 @@ class MicrosoftSyncJob {
       
       const results = await microsoftSyncService.syncAllUsers();
       
-      .info(`Hourly Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
+      console.info(`Hourly Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
       
     } catch (error) {
-      .error('Error in hourly Microsoft sync job:', error);
+      console.error('Error in hourly Microsoft sync job:', error);
     } finally {
       this.isRunning = false;
     }
@@ -102,15 +101,15 @@ class MicrosoftSyncJob {
       this.isRunning = true;
       this.lastRun = new Date();
       
-      .info('Starting manual Microsoft sync...');
+      console.info('Starting manual Microsoft sync...');
       
       const results = await microsoftSyncService.syncAllUsers();
       
-      .info(`Manual Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
+      console.info(`Manual Microsoft sync completed. Synced: ${results.synced}, Failed: ${results.failed}`);
       
       return results;
     } catch (error) {
-      .error('Error in manual Microsoft sync:', error);
+      console.error('Error in manual Microsoft sync:', error);
       throw error;
     } finally {
       this.isRunning = false;
@@ -135,7 +134,7 @@ class MicrosoftSyncJob {
       }
     });
     
-    .info('Microsoft sync jobs stopped');
+    console.info('Microsoft sync jobs stopped');
   }
 }
 
