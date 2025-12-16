@@ -321,9 +321,6 @@ exports.sendMessage = async (req, res) => {
                 } else {
                     console.error(`❌ [Backend] Failed to emit ${event} after all retries`);
                     // Use  if available, otherwise console.error
-                    if (typeof  !== 'undefined' && .error) {
-                        .error(`Failed to emit ${event} after retries:`, error);
-                    }
                 }
             }
         };
