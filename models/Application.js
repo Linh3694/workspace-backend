@@ -9,7 +9,7 @@ const ApplicationSchema = new mongoose.Schema({
     {
       school: { type: String, required: true },
       major: { type: String, required: true },
-      graduationYear: { type: String, required: true }
+      graduationYear: { type: String }  // Không bắt buộc
     }
   ],
   highestDegree: { type: String, enum: ["THPT", "Cao đẳng", "Đại học", "Thạc sĩ", "Tiến sĩ"] },

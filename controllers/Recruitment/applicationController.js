@@ -19,8 +19,9 @@ exports.submitApplication = async (req, res) => {
           item.school && item.school.trim() !== '' && 
           item.major && item.major.trim() !== ''
         ).map(item => ({
-          schoolName: item.school || item.schoolName,
-          major: item.major
+          school: item.school,
+          major: item.major,
+          graduationYear: item.graduationYear || ''
         }));
         console.log("=== PARSED GRADUATION SCHOOLS (filtered) ===");
         console.log(graduationSchools);
@@ -113,8 +114,9 @@ exports.submitOpenPositionApplication = async (req, res) => {
           item.school && item.school.trim() !== '' && 
           item.major && item.major.trim() !== ''
         ).map(item => ({
-          schoolName: item.school || item.schoolName,
-          major: item.major
+          school: item.school,
+          major: item.major,
+          graduationYear: item.graduationYear || ''
         }));
         console.log("=== PARSED GRADUATION SCHOOLS (filtered) ===");
         console.log(graduationSchools);
