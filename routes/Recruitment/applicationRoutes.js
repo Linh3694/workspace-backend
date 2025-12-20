@@ -25,5 +25,6 @@ router.post(
 router.get("/", applicationController.getApplications);
 router.get("/job/:jobId", applicationController.getApplicationsByJob);
 router.get("/open-positions", applicationController.getOpenPositionApplications);
+router.delete("/:id", applicationController.deleteApplication);
 
 module.exports = router;

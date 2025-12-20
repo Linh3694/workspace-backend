@@ -1,4 +1,6 @@
 const Application = require("../../models/Application");
+const fs = require("fs");
+const path = require("path");
 
 exports.submitApplication = async (req, res) => {
   console.log("=== REQUEST FILES ===");
@@ -153,5 +155,46 @@ exports.getOpenPositionApplications = async (req, res) => {
     res.status(200).json({ applications });
   } catch (error) {
     res.status(500).json({ message: "Error fetching open position applications", error });
+  }
+};
+
+// Xóa ứng viên
+exports.deleteApplication = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Tìm application để lấy thông tin file
+    const application = await Application.findById(id);
+    
+    if (!application) {
+      return res.status(404).json({ message: "Không tìm thấy ứng viên" });
+    }
+
+    // Xóa file CV nếu có
+    if (application.cvFile) {
+      const cvPath = path.join(__dirname, "../../", application.cvFile);
+      if (fs.existsSync(cvPath)) {
+        fs.unlinkSync(cvPath);
+        console.log(`Đã xóa file CV: ${cvPath}`);
+      }
+    }
+
+    // Xóa ảnh đại diện nếu có
+    if (application.profilePicture) {
+      const profilePath = path.join(__dirname, "../../", application.profilePicture);
+      if (fs.existsSync(profilePath)) {
+        fs.unlinkSync(profilePath);
+        console.log(`Đã xóa ảnh đại diện: ${profilePath}`);
+      }
+    }
+
+    // Xóa application khỏi database
+    await Application.findByIdAndDelete(id);
+
+    res.status(200).json({ message: "Đã xóa ứng viên thành công" });
+  } catch (error) {
+    console.log("=== ERROR IN DELETE APPLICATION ===");
+    console.log(error);
+    res.status(500).json({ message: "Lỗi khi xóa ứng viên", error });
   }
 };
