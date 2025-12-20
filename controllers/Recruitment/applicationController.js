@@ -1,6 +1,8 @@
 const Application = require("../../models/Application");
+const Job = require("../../models/Job");
 const fs = require("fs");
 const path = require("path");
+const emailNotificationService = require("../../services/emailNotificationService");
 
 exports.submitApplication = async (req, res) => {
   console.log("=== REQUEST FILES ===");
@@ -55,6 +57,31 @@ exports.submitApplication = async (req, res) => {
     await newApplication.save();
     console.log("=== SAVED APPLICATION ===");
     console.log(newApplication);
+
+    // Gửi email thông báo khi có CV mới (không block response)
+    try {
+      let jobInfo = null;
+      if (appliedJob) {
+        jobInfo = await Job.findById(appliedJob);
+      }
+      
+      // Gửi email bất đồng bộ, không chờ kết quả
+      emailNotificationService.notifyNewJobApplication(newApplication, jobInfo)
+        .then(result => {
+          if (result.success) {
+            console.log("[Email] Đã gửi thông báo CV mới thành công");
+          } else {
+            console.log("[Email] Gửi thông báo CV mới thất bại:", result.message);
+          }
+        })
+        .catch(err => {
+          console.error("[Email] Lỗi khi gửi thông báo:", err.message);
+        });
+    } catch (emailError) {
+      console.error("[Email] Lỗi khi chuẩn bị gửi email:", emailError.message);
+      // Không throw error để không ảnh hưởng đến việc submit application
+    }
+
     res.status(201).json({ message: "Application submitted successfully", application: newApplication });
   } catch (error) {
     console.log("=== ERROR IN SUBMIT APPLICATION ===");
@@ -117,6 +144,26 @@ exports.submitOpenPositionApplication = async (req, res) => {
     });
 
     await newApplication.save();
+
+    // Gửi email thông báo khi có CV mới ứng tuyển vị trí mở (không block response)
+    try {
+      // Gửi email bất đồng bộ, không chờ kết quả
+      emailNotificationService.notifyNewOpenPositionApplication(newApplication)
+        .then(result => {
+          if (result.success) {
+            console.log("[Email] Đã gửi thông báo CV mới (vị trí mở) thành công");
+          } else {
+            console.log("[Email] Gửi thông báo CV mới (vị trí mở) thất bại:", result.message);
+          }
+        })
+        .catch(err => {
+          console.error("[Email] Lỗi khi gửi thông báo:", err.message);
+        });
+    } catch (emailError) {
+      console.error("[Email] Lỗi khi chuẩn bị gửi email:", emailError.message);
+      // Không throw error để không ảnh hưởng đến việc submit application
+    }
+
     res.status(201).json({ 
       message: "Ứng tuyển vị trí mở thành công!", 
       application: newApplication 
