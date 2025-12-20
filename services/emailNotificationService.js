@@ -214,7 +214,7 @@ class EmailNotificationService {
       <body>
         <div class="container">
           <div class="header">
-            <h1 style="margin: 0; font-size: 24px;">📋 CV Mới Ứng Tuyển</h1>
+            <h1 style="margin: 0; font-size: 24px;">CV Mới Ứng Tuyển</h1>
             <p style="margin: 10px 0 0 0; opacity: 0.9;">Wellspring Recruitment System</p>
           </div>
           
@@ -224,47 +224,43 @@ class EmailNotificationService {
             
             <table class="info-table">
               <tr>
-                <td>👤 Họ tên:</td>
+                <td>Họ tên:</td>
                 <td><strong>${data.fullname}</strong></td>
               </tr>
               <tr>
-                <td>📧 Email:</td>
+                <td>Email:</td>
                 <td><a href="mailto:${data.email}">${data.email}</a></td>
               </tr>
               <tr>
-                <td>📱 Số điện thoại:</td>
+                <td>Số điện thoại:</td>
                 <td>${data.phone}</td>
               </tr>
               <tr>
-                <td>🎂 Ngày sinh:</td>
+                <td>Ngày sinh:</td>
                 <td>${data.birthdate ? new Date(data.birthdate).toLocaleDateString('vi-VN') : 'Chưa cung cấp'}</td>
               </tr>
               <tr>
-                <td>🎓 Trình độ cao nhất:</td>
+                <td>Trình độ cao nhất:</td>
                 <td>${data.highestDegree || 'Chưa cung cấp'}</td>
               </tr>
               <tr>
-                <td>🌐 Trình độ tiếng Anh:</td>
+                <td>Trình độ tiếng Anh:</td>
                 <td>${data.englishLevel || 'Chưa cung cấp'}</td>
               </tr>
               <tr>
-                <td>💰 Mức lương mong muốn:</td>
+                <td>Mức lương mong muốn:</td>
                 <td class="highlight">${data.expectedSalary || 'Chưa cung cấp'}</td>
               </tr>
               <tr>
-                <td>🏫 Trường đã tốt nghiệp:</td>
-                <td>${schoolsHtml}</td>
-              </tr>
-              <tr>
-                <td>💼 Vị trí ứng tuyển:</td>
+                <td>Vị trí ứng tuyển:</td>
                 <td><strong>${data.jobTitle}</strong></td>
               </tr>
               <tr>
-                <td>📌 Loại ứng tuyển:</td>
+                <td>Loại ứng tuyển:</td>
                 <td><span class="badge ${data.applicationType.includes('Công việc') ? 'badge-job' : 'badge-open'}">${data.applicationType}</span></td>
               </tr>
               <tr>
-                <td>🕐 Thời gian nộp:</td>
+                <td>Thời gian nộp:</td>
                 <td>${data.createdAt}</td>
               </tr>
             </table>
@@ -275,8 +271,8 @@ class EmailNotificationService {
           </div>
           
           <div class="footer">
-            <p>Email này được gửi tự động từ Wellspring Recruitment System.</p>
-            <p>© ${new Date().getFullYear()} Wellspring International School</p>
+            <p>Email này được gửi tự động từ Wellspring Automation System.</p>
+            <p>© ${new Date().getFullYear()} Wellspring Bilingual International Schools</p>
           </div>
         </div>
       </body>

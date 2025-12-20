@@ -13,8 +13,16 @@ exports.submitApplication = async (req, res) => {
     let graduationSchools = [];
     if (req.body.graduationSchools) {
       try {
-        graduationSchools = JSON.parse(req.body.graduationSchools);
-        console.log("=== PARSED GRADUATION SCHOOLS ===");
+        const parsed = JSON.parse(req.body.graduationSchools);
+        // Lọc bỏ các dòng trống (không có school hoặc major)
+        graduationSchools = parsed.filter(item => 
+          item.school && item.school.trim() !== '' && 
+          item.major && item.major.trim() !== ''
+        ).map(item => ({
+          schoolName: item.school || item.schoolName,
+          major: item.major
+        }));
+        console.log("=== PARSED GRADUATION SCHOOLS (filtered) ===");
         console.log(graduationSchools);
       } catch (e) {
         console.log("=== ERROR PARSING GRADUATION SCHOOLS ===");
@@ -99,7 +107,17 @@ exports.submitOpenPositionApplication = async (req, res) => {
     let graduationSchools = [];
     if (req.body.graduationSchools) {
       try {
-        graduationSchools = JSON.parse(req.body.graduationSchools);
+        const parsed = JSON.parse(req.body.graduationSchools);
+        // Lọc bỏ các dòng trống (không có school hoặc major)
+        graduationSchools = parsed.filter(item => 
+          item.school && item.school.trim() !== '' && 
+          item.major && item.major.trim() !== ''
+        ).map(item => ({
+          schoolName: item.school || item.schoolName,
+          major: item.major
+        }));
+        console.log("=== PARSED GRADUATION SCHOOLS (filtered) ===");
+        console.log(graduationSchools);
       } catch (e) {
         return res.status(400).json({ message: "graduationSchools không hợp lệ" });
       }
