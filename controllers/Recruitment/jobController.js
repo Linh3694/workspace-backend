@@ -24,8 +24,23 @@ exports.createJob = async (req, res) => {
 
 exports.getJobs = async (req, res) => {
   try {
+    const Application = require("../../models/Application");
+    
+    // Lấy tất cả jobs
     const jobs = await Job.find();
-    res.status(200).json(jobs);
+    
+    // Đếm số CV apply cho từng job
+    const jobsWithCount = await Promise.all(
+      jobs.map(async (job) => {
+        const cvCount = await Application.countDocuments({ appliedJob: job._id });
+        return {
+          ...job.toObject(),
+          cvCount
+        };
+      })
+    );
+    
+    res.status(200).json(jobsWithCount);
   } catch (error) {
     res.status(500).json({ message: "Error fetching jobs", error });
   }
