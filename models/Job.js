@@ -9,6 +9,8 @@ const JobSchema = new mongoose.Schema({
   active: { type: Boolean, default: true },
   jobType: { type: String, enum: ["fulltime", "parttime", "intern"], required: true },
   urgent: { type: Boolean, default: false },
+  pinned: { type: Boolean, default: false },
+  pinnedAt: { type: Date, default: null },
   deadline: { type: Date },
   updatedAt: { type: Date, default: Date.now },
 });

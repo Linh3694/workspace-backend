@@ -14,6 +14,8 @@ exports.submitApplication = async (req, res) => {
     if (req.body.graduationSchools) {
       try {
         const parsed = JSON.parse(req.body.graduationSchools);
+        console.log("=== RAW GRADUATION SCHOOLS FROM FRONTEND ===");
+        console.log(JSON.stringify(parsed, null, 2));
         // Lọc bỏ các dòng trống (không có school hoặc major)
         graduationSchools = parsed.filter(item => 
           item.school && item.school.trim() !== '' && 
@@ -24,7 +26,7 @@ exports.submitApplication = async (req, res) => {
           graduationYear: item.graduationYear || ''
         }));
         console.log("=== PARSED GRADUATION SCHOOLS (filtered) ===");
-        console.log(graduationSchools);
+        console.log(JSON.stringify(graduationSchools, null, 2));
       } catch (e) {
         console.log("=== ERROR PARSING GRADUATION SCHOOLS ===");
         console.log(e);
@@ -109,6 +111,8 @@ exports.submitOpenPositionApplication = async (req, res) => {
     if (req.body.graduationSchools) {
       try {
         const parsed = JSON.parse(req.body.graduationSchools);
+        console.log("=== [OPEN POSITION] RAW GRADUATION SCHOOLS FROM FRONTEND ===");
+        console.log(JSON.stringify(parsed, null, 2));
         // Lọc bỏ các dòng trống (không có school hoặc major)
         graduationSchools = parsed.filter(item => 
           item.school && item.school.trim() !== '' && 
@@ -118,8 +122,8 @@ exports.submitOpenPositionApplication = async (req, res) => {
           major: item.major,
           graduationYear: item.graduationYear || ''
         }));
-        console.log("=== PARSED GRADUATION SCHOOLS (filtered) ===");
-        console.log(graduationSchools);
+        console.log("=== [OPEN POSITION] PARSED GRADUATION SCHOOLS (filtered) ===");
+        console.log(JSON.stringify(graduationSchools, null, 2));
       } catch (e) {
         return res.status(400).json({ message: "graduationSchools không hợp lệ" });
       }

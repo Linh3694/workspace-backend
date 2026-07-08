@@ -11,6 +11,7 @@ exports.createJob = async (req, res) => {
 
     const newJob = new Job({
       ...req.body,
+      pinnedAt: req.body.pinned ? new Date() : null,
       updatedAt: new Date(),
     });
     await newJob.save();
@@ -49,14 +50,21 @@ exports.getJobs = async (req, res) => {
 exports.updateJob = async (req, res) => {
   try {
     const { id } = req.params;
-    const updatedJob = await Job.findByIdAndUpdate(
-      id,
-      { ...req.body, updatedAt: new Date() },
-      { new: true }
-    );
-    if (!updatedJob) {
+    const existingJob = await Job.findById(id);
+    if (!existingJob) {
       return res.status(404).json({ message: "Job not found" });
     }
+
+    const update = { ...req.body, updatedAt: new Date() };
+    // Cập nhật thời điểm ghim: chỉ set khi chuyển từ chưa ghim -> ghim,
+    // để "ghim trước đứng trước" theo pinnedAt tăng dần
+    if (req.body.pinned === true && !existingJob.pinned) {
+      update.pinnedAt = new Date();
+    } else if (req.body.pinned === false) {
+      update.pinnedAt = null;
+    }
+
+    const updatedJob = await Job.findByIdAndUpdate(id, update, { new: true });
     res.status(200).json({ message: "Job updated successfully", job: updatedJob });
   } catch (error) {
     res.status(500).json({ message: "Error updating job", error });
