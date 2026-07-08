@@ -3,8 +3,6 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const xlsx = require("xlsx");
 const User = require ("../../models/Users");
-const Teacher = require("../../models/Teacher");
-const Parent = require("../../models/Parent");
 
 // Thêm import cho Redis service và các models thiết bị (cần tạo sau)
 // const redisService = require('../services/redisService');
@@ -58,20 +56,6 @@ exports.createUser = async (req, res) => {
     });
 
     console.log('✅ [CreateUser] User created successfully:', newUser._id);
-
-    // Nếu role là teacher, tạo bản ghi Teacher tương ứng
-    if (role === "teacher") {
-      await Teacher.create({
-        user: newUser._id,
-        fullname: newUser.fullname,
-        email: newUser.email,
-        avatarUrl: newUser.avatarUrl,
-        subjects: [],
-        classes: [],
-        school: req.body.school || req.user?.school
-      });
-      console.log('✅ [CreateUser] Teacher record created for user:', newUser._id);
-    }
 
     // Xóa cache danh sách users (nếu có Redis)
     // await redisService.deleteAllUsersCache();
@@ -215,74 +199,6 @@ exports.updateUser = async (req, res) => {
       { new: true, omitUndefined: true }
     ).select("-password");
 
-    // Xử lý thay đổi role
-    if (role !== undefined && role !== oldUser.role) {
-      // Nếu role cũ là teacher, xóa bản ghi teacher
-      if (oldUser.role === "teacher") {
-        await Teacher.findOneAndDelete({ user: id });
-      }
-
-      // Nếu role mới là teacher, tạo bản ghi teacher mới
-      if (role === "teacher") {
-        // Kiểm tra xem đã có teacher record chưa
-        const existingTeacher = await Teacher.findOne({ user: id });
-        if (!existingTeacher) {
-          try {
-            await Teacher.create({
-              user: id,
-              fullname: updatedUser.fullname,
-              email: updatedUser.email,
-              phone: updatedUser.phone,
-              avatarUrl: updatedUser.avatarUrl,
-              // Không yêu cầu school là bắt buộc, có thể phân công sau
-              school: school || null,
-              subjects: [],
-              classes: [],
-              gradeLevels: [],
-              teachingAssignments: []
-            });
-          } catch (error) {
-            console.error('Error creating teacher record:', error);
-            // Rollback user update nếu tạo teacher thất bại
-            await User.findByIdAndUpdate(id, { role: oldUser.role });
-            return res.status(500).json({ 
-              message: "Không thể tạo hồ sơ giáo viên",
-              error: error.message 
-            });
-          }
-        }
-      }
-    } else if (role === "teacher" || (role === undefined && oldUser.role === "teacher")) {
-      // Nếu role không thay đổi và là teacher, cập nhật thông tin teacher
-      const teacher = await Teacher.findOne({ user: id });
-      if (teacher) {
-        await Teacher.findOneAndUpdate(
-          { user: id },
-          {
-            fullname: updatedUser.fullname,
-            email: updatedUser.email,
-            phone: updatedUser.phone,
-            avatarUrl: updatedUser.avatarUrl,
-            updatedAt: Date.now()
-          }
-        );
-      } else {
-        // Nếu không tìm thấy teacher record, tạo mới
-        await Teacher.create({
-          user: id,
-          fullname: updatedUser.fullname,
-          email: updatedUser.email,
-          phone: updatedUser.phone,
-          avatarUrl: updatedUser.avatarUrl,
-          school: null, // Có thể phân công trường sau
-          subjects: [],
-          classes: [],
-          gradeLevels: [],
-          teachingAssignments: []
-        });
-      }
-    }
-
     return res.json(updatedUser);
   } catch (err) {
     console.error('Error updating user:', err);
@@ -306,11 +222,6 @@ exports.deleteUser = async (req, res) => {
     // Không cho xóa admin chính (giả định admin đầu tiên)
     if (user.role === "admin" && (await User.countDocuments({ role: "admin" })) === 1) {
       return res.status(400).json({ message: "Cannot delete the last admin" });
-    }
-
-    // Xóa bản ghi teacher nếu user là teacher
-    if (user.role === "teacher") {
-      await Teacher.findOneAndDelete({ user: id });
     }
 
     await User.findByIdAndDelete(id);
@@ -418,20 +329,7 @@ exports.bulkUploadUsers = async (req, res) => {
 
     // Thêm vào database
     if (usersToInsert.length > 0) {
-      const createdUsers = await User.insertMany(usersToInsert);
-
-      // Tạo bản ghi Teacher cho các user có role là teacher
-      const teachersToCreate = createdUsers.filter(user => user.role === 'teacher');
-      if (teachersToCreate.length > 0) {
-        const teacherRecords = teachersToCreate.map(user => ({
-          user: user._id,
-          fullname: user.fullname,
-          email: user.email,
-          subjects: [],
-          classes: []
-        }));
-        await Teacher.insertMany(teacherRecords);
-      }
+      await User.insertMany(usersToInsert);
     }
 
     if (errors.length > 0) {
@@ -613,22 +511,6 @@ exports.createBatchUsers = async (req, res) => {
 
     // Thêm users vào database
     const createdUsers = await User.insertMany(usersToInsert);
-
-    // Tạo bản ghi Teacher cho các user có role là teacher
-    const teachersToCreate = createdUsers
-      .filter(user => user.role === 'teacher')
-      .map(user => ({
-        user: user._id,
-        fullname: user.fullname,
-        email: user.email,
-        subjects: [],
-        classes: [],
-        school: defaultSchool  // use defaultSchool for required field
-      }));
-
-    if (teachersToCreate.length > 0) {
-      await Teacher.insertMany(teachersToCreate);
-    }
 
     return res.status(201).json({
       message: `Đã tạo thành công ${createdUsers.length} người dùng`,
@@ -859,19 +741,6 @@ exports.bulkUpdateUsers = async (req, res) => {
         ).select("-password");
 
         if (updatedUser) {
-          // Cập nhật thông tin teacher nếu user hiện tại là teacher
-          if (updatedUser.role === "teacher") {
-            await Teacher.findOneAndUpdate(
-              { user: updatedUser._id },
-              {
-                fullname: updatedUser.fullname,
-                email: updatedUser.email,
-                avatarUrl: updatedUser.avatarUrl,
-                updatedAt: Date.now()
-              }
-            );
-          }
-
           // Xóa cache user (nếu có Redis)
           // await redisService.deleteUserCache(updatedUser._id);
           updateResults.push(updatedUser);
